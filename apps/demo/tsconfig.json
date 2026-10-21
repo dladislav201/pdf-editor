@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "paths": {
+      "@pdfsdk/editor": ["../../packages/editor/src/index.ts"],
+      "@pdfsdk/react": ["../../packages/react/src/index.tsx"]
+    }
+  },
+  "include": ["src"]
+}

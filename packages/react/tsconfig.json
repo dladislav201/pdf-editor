@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "@pdfsdk/editor": ["../editor/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
