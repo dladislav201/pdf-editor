@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "assets": "node ../../scripts/copy-pdfjs-assets.mjs public/pdfjs && mkdir -p public/fonts && cp ../../node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf public/fonts/",
+    "assets": "node ../../scripts/copy-engine-assets.mjs public/engine && mkdir -p public/fonts && cp ../../node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf public/fonts/",
     "predev": "npm run assets",
     "dev": "vite",
     "prebuild": "npm run assets",

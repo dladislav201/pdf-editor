@@ -7,10 +7,10 @@ files are never uploaded anywhere.
 
 | Path | What it is |
 |---|---|
-| `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (pdf.js), annotation tools, undo/redo, PDF annotation read/write (pdf-lib) |
+| `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (PDFium WebAssembly in a Web Worker), annotation tools, undo/redo, PDF annotation read/write (pdf-lib) |
 | `packages/react` | `@pdfsdk/react` — `<PdfEditor />` component |
 | `apps/demo` | Demo site (Vite + React) with a generated sample contract |
-| `scripts/copy-pdfjs-assets.mjs` | Copies the pdf.js worker, cmaps, fonts and wasm next to the bundle |
+| `scripts/copy-engine-assets.mjs` | Copies `pdfium.wasm` next to the bundle |
 
 ## Run
 
@@ -19,7 +19,7 @@ npm install
 npm run dev        # demo at http://localhost:5180, hot-reloads SDK sources
 npm run build      # builds both packages and the demo
 npm run typecheck
-npm test           # annotation read/write round-trip tests (vitest)
+npm test           # engine + annotation round-trip tests (vitest)
 ```
 
 ## Deploy the demo
@@ -43,7 +43,7 @@ import { PdfEditor } from '@pdfsdk/editor';
 const editor = await PdfEditor.create({
   container: document.getElementById('viewer')!, // needs an explicit height
   document: '/files/contract.pdf',               // URL, File/Blob, ArrayBuffer or Uint8Array
-  assetsUrl: '/pdfjs/',                          // where dist/pdfjs/* is served
+  assetsUrl: '/engine/',                         // where dist/engine/pdfium.wasm is served
   fontUrl: '/fonts/DejaVuSans.ttf',              // needed for non-Latin text annotations
   annotations: savedAnnotations,                 // optional, restored from your backend
 });
@@ -58,7 +58,7 @@ React:
 ```tsx
 <PdfEditor
   document={file}
-  assetsUrl="/pdfjs/"
+  assetsUrl="/engine/"
   onAnnotationsChange={save}
   ref={editorRef}
 />
@@ -89,13 +89,20 @@ The annotation id is stored in `/NM`, author in `/T`, comments in `/Contents`.
 
 On open, those four types are read from the file (including ones made by
 other tools: `/RD` insets, legacy `/Border`, gray/CMYK colors, `/DA` text
-color), removed from the copy pdf.js renders, and become editable. Their
+color), removed from the copy the engine renders, and become editable. Their
 popups go with them. Everything else (links, form fields, stamps, notes,
 hidden annotations) is left untouched and written back as is. Pass
 `importAnnotations: false` to keep all annotations as static page content, or
 `annotations` to start from your own saved state instead.
 
 ## Design notes
+
+- Rendering runs on PDFium (the engine in Chrome) compiled to WebAssembly
+  (`@embedpdf/pdfium`, MIT; PDFium itself BSD/Apache) inside a Web Worker, so
+  big pages never block the UI. The worker is a separate file in
+  `dist/assets/`; the 4.6 MB wasm (2.1 MB gzipped) is fetched from
+  `assetsUrl`. Pass `workerUrl` to serve the worker from elsewhere (CSP, CDN).
+  The same engine will edit page text, so what you see is what gets saved.
 
 - Annotations live in PDF user space (points, bottom-left origin), so they are
   zoom-independent and the exporter writes them without conversion.
@@ -112,7 +119,7 @@ hidden annotations) is left untouched and written back as is. Pass
 - Rich text (`/RC`) of FreeText annotations is read as plain `/Contents`;
   other markup types (underline, strike-out, circle, line, polygon, sticky
   notes) are shown but not editable yet.
-- Highlight is a free rectangle; text-aware highlighting needs the pdf.js text layer.
+- Highlight is a free rectangle; text-aware highlighting needs the text model (text editing, stage 2).
 - Text annotations on rotated pages are not counter-rotated.
 - No form filling, signatures, page operations, search, thumbnails or password
   prompt yet.

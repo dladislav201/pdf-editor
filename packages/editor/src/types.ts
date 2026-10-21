@@ -77,11 +77,16 @@ export interface EditorOptions {
   /** PDF to open right away. */
   document?: DocumentSource;
   /**
-   * Base URL where the pdf.js runtime assets are served (worker, cmaps,
-   * standard fonts, wasm). Defaults to the `pdfjs/` folder shipped next to
-   * the bundle.
+   * Base URL where the engine assets (`pdfium.wasm`) are served. Defaults to
+   * the `engine/` folder shipped next to the bundle.
    */
   assetsUrl?: string;
+  /**
+   * URL of the engine worker script, for setups that can't use the bundled
+   * one (e.g. a strict CSP or a CDN). Defaults to the worker shipped with the
+   * package.
+   */
+  workerUrl?: string | URL;
   /** TTF/OTF used for text annotations, in the viewer and in the exported PDF. Needed for non-Latin text. */
   fontUrl?: string;
   /** Show the built-in toolbar. Default `true`. */

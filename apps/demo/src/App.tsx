@@ -62,7 +62,7 @@ export function App() {
           <PdfEditor
             ref={editorRef}
             document={document ?? undefined}
-            assetsUrl="/pdfjs/"
+            assetsUrl="/engine/"
             fontUrl="/fonts/DejaVuSans.ttf"
             author="Demo user"
             onAnnotationsChange={setAnnotations}

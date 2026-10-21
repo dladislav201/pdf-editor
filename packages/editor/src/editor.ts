@@ -1,5 +1,5 @@
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
-import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
+import { EngineClient } from './engine/client';
+import { PageGeometry } from './engine/page-geometry';
 import { Emitter } from './events';
 import { exportPdf, type ExportOptions } from './export';
 import { TEXT_ASCENT, TEXT_LINE_HEIGHT, hitTest, rectFromPoints, round, translate } from './geometry';
@@ -61,7 +61,7 @@ function createId(): string {
 function defaultAssetsUrl(): string {
   // Kept in a variable so bundlers don't try to resolve the folder at build time.
   const base = import.meta.url;
-  return new URL('pdfjs/', base).href;
+  return new URL('engine/', base).href;
 }
 
 function withTrailingSlash(url: string): string {
@@ -112,8 +112,8 @@ export class PdfEditor {
   private readonly fontBytes: Promise<ArrayBuffer> | null;
   private readonly measureCtx: CanvasRenderingContext2D | null;
 
-  private loadingTask: PDFDocumentLoadingTask | null = null;
-  private pdf: PDFDocumentProxy | null = null;
+  private readonly engine: EngineClient;
+  private docId: number | null = null;
   private bytes: Uint8Array | null = null;
   private fileName = 'document.pdf';
   private views: PageView[] = [];
@@ -156,9 +156,15 @@ export class PdfEditor {
     this.zoomMode = options.initialZoom ?? 'fit-width';
     this.initialAnnotations = options.annotations ? structuredClone(options.annotations) : undefined;
     this.assetsUrl = withTrailingSlash(options.assetsUrl ?? defaultAssetsUrl());
-    if (!GlobalWorkerOptions.workerPort && !GlobalWorkerOptions.workerSrc) {
-      GlobalWorkerOptions.workerSrc = `${this.assetsUrl}pdf.worker.min.mjs`;
-    }
+    const { workerUrl } = options;
+    this.engine = new EngineClient(
+      () =>
+        workerUrl
+          ? new Worker(workerUrl, { type: 'module' })
+          : // Literal `new URL(…, import.meta.url)` so bundlers emit the worker as its own file.
+            new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' }),
+      `${this.assetsUrl}pdfium.wasm`,
+    );
 
     this.root = document.createElement('div');
     this.root.className = 'pdfsdk-root';
@@ -232,32 +238,25 @@ export class PdfEditor {
       const file = await readSource(source);
       if (token !== this.loadToken) return;
       // Editable annotations come out of the file into the editor; the stripped
-      // file is what pdf.js renders and what export writes them back into.
+      // file is what the engine renders and what export writes them back into.
       const { bytes, annotations: imported } = this.importEnabled
         ? await importAnnotations(file.bytes)
         : { bytes: file.bytes, annotations: [] };
       if (token !== this.loadToken) return;
-      const task = getDocument({
-        data: bytes.slice(),
-        cMapUrl: `${this.assetsUrl}cmaps/`,
-        cMapPacked: true,
-        standardFontDataUrl: `${this.assetsUrl}standard_fonts/`,
-        wasmUrl: `${this.assetsUrl}wasm/`,
-        iccUrl: `${this.assetsUrl}iccs/`,
-      });
-      const pdf = await task.promise;
-      const pages = await Promise.all(Array.from({ length: pdf.numPages }, (_, i) => pdf.getPage(i + 1)));
+      const { docId, pages } = await this.engine.open(bytes.slice());
       if (token !== this.loadToken || this.destroyed) {
-        void task.destroy();
+        void this.engine.close(docId);
         return;
       }
 
       this.teardownDocument();
-      this.loadingTask = task;
-      this.pdf = pdf;
+      this.docId = docId;
       this.bytes = bytes;
       this.fileName = file.name;
-      this.views = pages.map((page, i) => new PageView(i, page, this.zoom));
+      this.views = pages.map(
+        (info, i) =>
+          new PageView(i, new PageGeometry(info.box, info.rotation), (w, h) => this.engine.render(docId, i, w, h), this.zoom),
+      );
       this.pagesEl.append(...this.views.map((view) => view.el));
       for (const view of this.views) this.visibleObserver.observe(view.el);
 
@@ -271,7 +270,7 @@ export class PdfEditor {
       this.refresh();
       this.viewportEl.scrollTo(0, 0);
 
-      this.events.emit('documentLoaded', { pageCount: pdf.numPages });
+      this.events.emit('documentLoaded', { pageCount: pages.length });
       this.emitAnnotations();
       this.emitHistory();
       this.events.emit('selectionChange', { id: null });
@@ -444,6 +443,7 @@ export class PdfEditor {
     this.visibleObserver.disconnect();
     this.resizeObserver.disconnect();
     this.teardownDocument();
+    this.engine.terminate();
     this.toolbar?.destroy();
     this.root.remove();
     this.events.clear();
@@ -461,9 +461,8 @@ export class PdfEditor {
     }
     this.views = [];
     this.visible.clear();
-    void this.loadingTask?.destroy();
-    this.loadingTask = null;
-    this.pdf = null;
+    if (this.docId !== null) void this.engine.close(this.docId);
+    this.docId = null;
     this.bytes = null;
   }
 

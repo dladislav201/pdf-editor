@@ -8,8 +8,8 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
-# pdf.js runtime and fonts change only with a package upgrade.
-/pdfjs/*
+# Engine (PDFium wasm) and fonts change only with a package upgrade.
+/engine/*
   Cache-Control: public, max-age=604800
 /fonts/*
   Cache-Control: public, max-age=604800
