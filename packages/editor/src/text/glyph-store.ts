@@ -1,8 +1,25 @@
 import fontkit from '@pdf-lib/fontkit';
 import type { FontGlyphs } from '../engine/pdfium-glyphs';
+import type { TextFont } from './types';
 
-/** Pseudo font id for characters drawn with the fallback font (`fontUrl`). */
+/**
+ * Fallback fonts for characters a document's (usually subset) font lacks.
+ * Metric-compatible with the fonts most documents use: Arimo ≈ Arial and
+ * Helvetica, Tinos ≈ Times New Roman, Cousine ≈ Courier New. Ids are negative
+ * so they never clash with engine font handles.
+ */
+const FAMILIES = { sans: 'Arimo', serif: 'Tinos', mono: 'Cousine' } as const;
+const STYLES = ['Regular', 'Bold', 'Italic', 'BoldItalic'] as const;
+export type FallbackFamily = keyof typeof FAMILIES;
+
+const FALLBACKS = (Object.keys(FAMILIES) as FallbackFamily[]).flatMap((family) =>
+  STYLES.map((style) => ({ family, style, file: `${FAMILIES[family]}-${style}.ttf` })),
+);
+
+/** Fallback ids are -1, -2, … in the order above; -1 is the regular sans. */
 export const FALLBACK_FONT = -1;
+export const isFallback = (font: number) => font < 0;
+export const fallbackFile = (font: number): string => FALLBACKS[-font - 1]!.file;
 
 /** A drawable glyph: advance in ems, outline in its own units (y up). */
 export interface Glyph {
@@ -25,6 +42,8 @@ export interface FontSource {
 }
 
 type LoadGlyphs = (source: FontSource, chars: string[]) => Promise<FontGlyphs>;
+/** Fetches a fallback font file by name (e.g. `Tinos-Regular.ttf`). */
+export type LoadFallback = (file: string) => Promise<ArrayBuffer>;
 
 interface DocFont extends FontMetrics {
   source: FontSource;
@@ -32,6 +51,7 @@ interface DocFont extends FontMetrics {
 }
 
 interface FallbackFont extends FontMetrics {
+  bytes: ArrayBuffer;
   glyph(char: string): Glyph | null;
 }
 
@@ -43,11 +63,12 @@ const COMMON = Array.from(
     'ÀÁÂÄÅÆÇÈÉÊËÌÍÎÏÑÒÓÔÖØÙÚÛÜßàáâäåæçèéêëìíîïñòóôöøùúûüÿ',
 );
 
-function loadFallback(bytes: ArrayBuffer): FallbackFont {
+function parseFallback(bytes: ArrayBuffer): FallbackFont {
   const font = fontkit.create(new Uint8Array(bytes));
   const units = font.unitsPerEm;
   const cache = new Map<string, Glyph | null>();
   return {
+    bytes,
     ascent: font.ascent / units,
     descent: font.descent / units,
     glyph(char) {
@@ -67,21 +88,27 @@ function loadFallback(bytes: ArrayBuffer): FallbackFont {
 
 /**
  * Glyph outlines and advances for text editing. Document fonts come from the
- * engine (exact outlines of the embedded, often subset, font); anything they
- * lack comes from the fallback font. Lookups are synchronous once `ensure`d.
+ * engine (exact outlines of the embedded, often subset, font); characters they
+ * lack come from the fallback font matching their family and style. Lookups
+ * are synchronous; fonts not loaded yet resolve to `null` and `onChange`
+ * fires once they arrive.
  */
 export class GlyphStore {
   private readonly fonts = new Map<number, DocFont>();
   private readonly pending = new Map<number, Promise<void>>();
-  private fallback: FallbackFont | null = null;
+  private readonly infos = new Map<number, TextFont>();
+  private readonly fallbacks = new Map<number, FallbackFont>();
+  private readonly fallbackLoads = new Map<number, Promise<FallbackFont | null>>();
+  private readonly listeners = new Set<() => void>();
 
   constructor(
     private readonly load: LoadGlyphs,
-    fallbackBytes: Promise<ArrayBuffer> | null,
-  ) {
-    void fallbackBytes?.then((bytes) => {
-      this.fallback = loadFallback(bytes);
-    });
+    private readonly loadFallback: LoadFallback | null,
+  ) {}
+
+  /** Font descriptions from the page text model, used to pick fallbacks. */
+  registerFonts(fonts: Record<number, TextFont>): void {
+    for (const font of Object.values(fonts)) this.infos.set(font.id, font);
   }
 
   /** Fetches `chars` (plus a common set the first time) for a document font. */
@@ -106,13 +133,25 @@ export class GlyphStore {
     await request;
   }
 
-  /** The glyph to draw `char` with in `font`: the document font if it has one, else the fallback. */
+  /** The fallback that best matches a document font: same family class, weight and slant. */
+  fallbackFor(font: number): number {
+    if (isFallback(font)) return font;
+    const info = this.infos.get(font);
+    const family: FallbackFamily = info?.monospace ? 'mono' : info?.serif ? 'serif' : 'sans';
+    const bold = (info?.weight ?? 400) >= 600;
+    const italic = info?.italic ?? false;
+    const style = bold && italic ? 'BoldItalic' : bold ? 'Bold' : italic ? 'Italic' : 'Regular';
+    return -(FALLBACKS.findIndex((f) => f.family === family && f.style === style) + 1);
+  }
+
+  /** The glyph to draw `char` with: the document font if it has one, else its fallback. */
   resolve(font: number, char: string): { font: number; glyph: Glyph | null } {
-    if (font !== FALLBACK_FONT) {
+    if (!isFallback(font)) {
       const glyph = this.fonts.get(font)?.glyphs.get(char);
       if (glyph) return { font, glyph };
     }
-    return { font: FALLBACK_FONT, glyph: this.fallback?.glyph(char) ?? null };
+    const fallback = this.fallbackFor(font);
+    return { font: fallback, glyph: this.fallbackFont(fallback)?.glyph(char) ?? null };
   }
 
   /** True once the document font is loaded and `char` is known to be absent from it. */
@@ -121,11 +160,42 @@ export class GlyphStore {
   }
 
   metrics(font: number): FontMetrics {
-    if (font === FALLBACK_FONT) return this.fallback ?? { ascent: 0.8, descent: -0.2 };
-    return this.fonts.get(font) ?? { ascent: 0.8, descent: -0.2 };
+    const loaded = isFallback(font) ? this.fallbackFont(font) : this.fonts.get(font);
+    return loaded ?? { ascent: 0.8, descent: -0.2 };
   }
 
-  get hasFallback(): boolean {
-    return this.fallback !== null;
+  /** Advance of a character in points, as layout and drawing use it. */
+  advance(style: { font: number; size: number }, char: string): number {
+    if (char === '\n') return 0;
+    return (this.resolve(style.font, char).glyph?.advance ?? 0.5) * style.size;
+  }
+
+  /** Loads a fallback font (if it isn't yet) and returns its file bytes, for embedding on save. */
+  async fallbackBytes(font: number): Promise<ArrayBuffer | null> {
+    this.fallbackFont(font);
+    return (await this.fallbackLoads.get(font))?.bytes ?? null;
+  }
+
+  /** Called whenever a fallback font finishes loading (glyphs that were missing can now be drawn). */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private fallbackFont(font: number): FallbackFont | null {
+    const loaded = this.fallbacks.get(font);
+    if (loaded) return loaded;
+    if (!this.fallbackLoads.has(font) && this.loadFallback) {
+      const load = this.loadFallback(fallbackFile(font))
+        .then((bytes) => {
+          const parsed = parseFallback(bytes);
+          this.fallbacks.set(font, parsed);
+          for (const listener of [...this.listeners]) listener();
+          return parsed;
+        })
+        .catch(() => null);
+      this.fallbackLoads.set(font, load);
+    }
+    return null;
   }
 }

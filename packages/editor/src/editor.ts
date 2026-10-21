@@ -9,7 +9,8 @@ import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
 import { injectStyles } from './styles';
 import { TextEditSession, paragraphChars, paragraphFrame } from './text/edit-session';
-import { GlyphStore, type FontSource } from './text/glyph-store';
+import { GlyphStore, fallbackFile, type FontSource } from './text/glyph-store';
+import { buildWritePlan } from './text/write-plan';
 import type { StyledChar } from './text/layout';
 import type { PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
@@ -139,6 +140,7 @@ export class PdfEditor {
   private readonly messageEl: HTMLDivElement;
   private readonly toolbar: { el: HTMLElement; destroy: () => void } | null;
   private readonly assetsUrl: string;
+  private readonly fallbackFontsUrl: string;
   private readonly readOnly: boolean;
   private readonly author: string | undefined;
   private readonly importEnabled: boolean;
@@ -158,6 +160,8 @@ export class PdfEditor {
   private readonly history = new History<Annotation[]>();
   private selectedId: string | null = null;
   private textModels = new Map<number, Promise<PageText>>();
+  /** Page text models that have arrived, for synchronous checks such as overlap. */
+  private readonly pageTexts = new Map<number, PageText>();
   private hoveredParagraph: TextParagraph | null = null;
   private selectedParagraph: TextParagraph | null = null;
   private hoverToken = 0;
@@ -166,6 +170,9 @@ export class PdfEditor {
   /** Paragraphs whose text was changed, drawn by their (frozen) sessions until saved. */
   private textEdits = new Map<string, { paragraph: TextParagraph; session: TextEditSession }>();
   private textDragging = false;
+  /** A text edit session being opened (glyphs loading): its paragraph and the latest click on it. */
+  private opening: { id: string; point: Point; event: PointerEvent; token: number; clicks: number } | null = null;
+  private openToken = 0;
   private tool: ToolName = 'select';
   private colors = { ...DEFAULT_COLORS };
   private zoomMode: ZoomValue;
@@ -200,6 +207,7 @@ export class PdfEditor {
     this.zoomMode = options.initialZoom ?? 'fit-width';
     this.initialAnnotations = options.annotations ? structuredClone(options.annotations) : undefined;
     this.assetsUrl = withTrailingSlash(options.assetsUrl ?? defaultAssetsUrl());
+    this.fallbackFontsUrl = withTrailingSlash(options.fallbackFontsUrl ?? `${this.assetsUrl}fonts/`);
     const { workerUrl } = options;
     this.engine = new EngineClient(
       () =>
@@ -208,6 +216,7 @@ export class PdfEditor {
           : // Literal `new URL(…, import.meta.url)` so bundlers emit the worker as its own file.
             new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' }),
       `${this.assetsUrl}pdfium.wasm`,
+      `${this.assetsUrl}harfbuzz-subset.wasm`,
     );
 
     this.root = document.createElement('div');
@@ -308,6 +317,7 @@ export class PdfEditor {
       this.initialAnnotations = undefined;
       this.history.reset();
       this.textModels.clear();
+      this.pageTexts.clear();
       this.glyphs = this.createGlyphStore(docId);
       this.hoveredParagraph = null;
       if (this.selectedParagraph) {
@@ -356,10 +366,22 @@ export class PdfEditor {
    */
   async exportPdf(options: Pick<ExportOptions, 'flatten'> = {}): Promise<Uint8Array> {
     this.commitTextEditor();
+    this.endTextEdit();
     if (!this.bytes) throw new Error('No document is open.');
     const fontBytes = this.fontBytes ? await this.fontBytes : undefined;
     try {
-      return await exportPdf(this.bytes, this.annotations, { fontBytes, flatten: options.flatten });
+      // Page text first: the engine rewrites edited paragraphs in a copy of the file.
+      const plans = [...this.textEdits.values()].map(({ paragraph, session }) =>
+        buildWritePlan(paragraph, session.styledChars, session.layout, this.glyphs),
+      );
+      const fallbackFonts: Record<number, ArrayBuffer> = {};
+      for (const font of new Set(plans.flatMap((plan) => plan.fallback.map((word) => word.font)))) {
+        const bytes = await this.glyphs.fallbackBytes(font);
+        if (!bytes) throw new Error(`Could not load the fallback font for edited text (${fallbackFile(font)}).`);
+        fallbackFonts[font] = bytes;
+      }
+      const base = plans.length ? await this.engine.writeText(this.bytes, plans, fallbackFonts) : this.bytes;
+      return await exportPdf(base, this.annotations, { fontBytes, flatten: options.flatten });
     } catch (error) {
       this.events.emit('error', { error });
       throw error;
@@ -483,6 +505,7 @@ export class PdfEditor {
     if (!model) {
       model = this.engine.text(this.docId, pageIndex);
       this.textModels.set(pageIndex, model);
+      void model.then((text) => this.pageTexts.set(pageIndex, text), () => undefined);
       model.catch(() => this.textModels.delete(pageIndex));
     }
     return model;
@@ -708,9 +731,32 @@ export class PdfEditor {
       const outlines = [this.hoveredParagraph, this.selectedParagraph]
         .filter((p): p is TextParagraph => p?.pageIndex === pageIndex)
         .filter((p, i, list) => list.findIndex((q) => q.id === p.id) === i)
-        .map((p) => paragraphOutline(view, p, this.paragraphBox(p), p.id === this.selectedParagraph?.id));
+        .map((p) => {
+          const outline = paragraphOutline(view, p, this.paragraphBox(p), p.id === this.selectedParagraph?.id);
+          if (this.overlapsOtherText(p)) {
+            outline.classList.add('pdfsdk-paragraph--overflow');
+            const title = document.createElementNS(SVG_NS, 'title');
+            title.textContent = 'The edited text now overlaps other content on the page.';
+            outline.append(title);
+          }
+          return outline;
+        });
       view.textChrome.replaceChildren(...outlines);
     }
+  }
+
+  /** Edited text grows downwards without moving what's below (as in Acrobat); flag when it runs into it. */
+  private overlapsOtherText(paragraph: TextParagraph): boolean {
+    const session = this.textSession?.paragraph.id === paragraph.id ? this.textSession : this.textEdits.get(paragraph.id)?.session;
+    const model = this.pageTexts.get(paragraph.pageIndex);
+    if (!session || !model) return false;
+    const inset = 1;
+    const meets = (a: Rect, b: Rect) =>
+      a.x + inset < b.x + b.width && b.x + inset < a.x + a.width && a.y + inset < b.y + b.height && b.y + inset < a.y + a.height;
+    // Only new collisions count: loose text boxes of neighbours often touch already.
+    return model.paragraphs.some(
+      (other) => other.id !== paragraph.id && meets(other.box, session.box) && !meets(other.box, paragraph.box),
+    );
   }
 
   private paragraphBox(paragraph: TextParagraph): Rect {
@@ -721,7 +767,14 @@ export class PdfEditor {
   // ------------------------------------------------------ text editing
 
   private createGlyphStore(docId: number): GlyphStore {
-    return new GlyphStore((source: FontSource, chars) => this.engine.glyphs(docId, source.page, source.object, chars), this.fontBytes);
+    return new GlyphStore(
+      (source: FontSource, chars) => this.engine.glyphs(docId, source.page, source.object, chars),
+      async (file) => {
+        const response = await fetch(`${this.fallbackFontsUrl}${file}`);
+        if (!response.ok) throw new Error(`Could not load the fallback font ${file} (HTTP ${response.status}).`);
+        return response.arrayBuffer();
+      },
+    );
   }
 
   /** Page objects to leave out of a page's bitmap: those of every paragraph being or having been edited. */
@@ -744,7 +797,14 @@ export class PdfEditor {
     if (!paragraph.editable || this.readOnly) return;
     const view = this.views[paragraph.pageIndex];
     if (!view || this.textSession?.paragraph.id === paragraph.id) return;
+    // Clicks that arrive while the session opens (a double click) apply once it exists.
+    if (this.opening?.id === paragraph.id) {
+      this.opening = { ...this.opening, point, event, clicks: this.opening.clicks + 1 };
+      return;
+    }
     this.endTextEdit();
+    const token = ++this.openToken;
+    this.opening = { id: paragraph.id, point, event, token, clicks: 1 };
 
     // Load every glyph the paragraph uses (plus common characters) before showing it.
     const fonts = new Map<number, { source: FontSource; chars: Set<string> }>();
@@ -754,12 +814,18 @@ export class PdfEditor {
       fonts.set(char.font, entry);
     }
     const store = this.glyphs;
-    await Promise.all([...fonts].map(([font, { source, chars }]) => store.ensure(font, source, chars)));
     const page = await this.getPageText(paragraph.pageIndex);
+    store.registerFonts(page.fonts);
+    await Promise.all([...fonts].map(([font, { source, chars }]) => store.ensure(font, source, chars)));
+    const opening = this.opening;
+    if (opening?.token !== token) return;
+    this.opening = null;
     if (this.selectedParagraph?.id !== paragraph.id || this.tool !== 'editText' || store !== this.glyphs) return;
 
     const previous = this.textEdits.get(paragraph.id);
-    const initial: StyledChar[] = previous ? previous.session.styledChars : paragraphChars(paragraph);
+    const initial: StyledChar[] = previous
+      ? previous.session.styledChars
+      : paragraphChars(paragraph, (style, char) => store.advance(style, char));
     previous?.session.destroy();
     this.textEdits.delete(paragraph.id);
     this.textSession = new TextEditSession(view, paragraph, paragraphFrame(paragraph, page.block), store, {
@@ -768,12 +834,13 @@ export class PdfEditor {
     }, initial);
     this.root.dataset.editing = 'text';
     this.updateHidden(paragraph.pageIndex);
-    this.textSession.pointerDown(point, event);
+    this.textSession.pointerDown(opening.point, opening.event, opening.clicks);
     this.textSession.pointerUp();
   }
 
   /** Leaves the paragraph being edited; changed text stays on the page (written into the PDF on save, next stage). */
   private endTextEdit(): void {
+    this.opening = null;
     const session = this.textSession;
     if (!session) return;
     this.textSession = null;
@@ -845,7 +912,8 @@ export class PdfEditor {
           view.overlay.setPointerCapture(event.pointerId);
           return;
         }
-        this.endTextEdit();
+        // Leave an open paragraph; one still opening is kept, so a double click doesn't cancel it.
+        if (this.textSession) this.endTextEdit();
         void this.paragraphAt(view, point).then(
           (paragraph) => {
             this.selectParagraph(paragraph);

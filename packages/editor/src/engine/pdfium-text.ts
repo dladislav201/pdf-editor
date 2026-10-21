@@ -35,6 +35,14 @@ function fontInfo(lib: WrappedPdfiumModule, font: number, scratch: number): Text
   const family = readString(lib, (ptr, len) => lib.FPDFFont_GetFamilyName(font, ptr, len));
   const italicAngle = lib.FPDFFont_GetItalicAngle(font, scratch) ? (heaps(lib).HEAPU32[scratch >> 2]! | 0) : 0;
   const embedded = lib.FPDFFont_GetIsEmbedded(font) === 1;
+  // PDF font descriptor flags: bit 1 FixedPitch, bit 2 Serif. Names fill in when producers leave them out.
+  const flags = lib.FPDFFont_GetFlags(font);
+  const plain = name.replace(/^[A-Z]{6}\+/, '');
+  const monospace = (flags & 1) !== 0 || /courier|mono|consol|menlo|monaco|code/i.test(plain);
+  const serif =
+    !monospace &&
+    ((flags & 2) !== 0 || /times|georgia|garamond|serif|roman|cambria|book|palatino|minion|baskerville|caslon/i.test(plain)) &&
+    !/sans/i.test(plain);
   return {
     id: font,
     name,
@@ -43,6 +51,8 @@ function fontInfo(lib: WrappedPdfiumModule, font: number, scratch: number): Text
     italic: italicAngle !== 0 || /italic|oblique/i.test(name),
     embedded,
     subset: embedded && /^[A-Z]{6}\+/.test(name),
+    serif,
+    monospace,
   };
 }
 

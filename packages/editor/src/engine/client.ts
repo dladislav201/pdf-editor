@@ -1,4 +1,5 @@
 import type { PageText } from '../text/types';
+import type { TextWritePlan } from '../text/write-plan';
 import type { FontGlyphs } from './pdfium-glyphs';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
 
@@ -22,7 +23,7 @@ export class EngineClient {
   private nextId = 1;
   private terminated = false;
 
-  constructor(createWorker: () => Worker, wasmUrl: string) {
+  constructor(createWorker: () => Worker, wasmUrl: string, subsetWasmUrl: string) {
     this.worker = createWorker();
     this.worker.onmessage = (event: MessageEvent<EngineResponse>) => {
       const response = event.data;
@@ -40,7 +41,7 @@ export class EngineClient {
       event.preventDefault();
       this.failAll(new Error(event.message || 'The PDF engine crashed.'));
     };
-    this.ready = this.send({ type: 'init', wasmUrl }).promise;
+    this.ready = this.send({ type: 'init', wasmUrl, subsetWasmUrl }).promise;
     // Init failures surface through `open()`; an editor destroyed before
     // opening anything must not leave an unhandled rejection behind.
     this.ready.catch(() => undefined);
@@ -83,6 +84,13 @@ export class EngineClient {
   /** Outlines and advances of `chars` in the font of a page's text object. */
   async glyphs(docId: number, page: number, object: number, chars: string[]): Promise<FontGlyphs> {
     return (await this.send({ type: 'glyphs', docId, page, object, chars }).promise) as FontGlyphs;
+  }
+
+  /** A copy of `bytes` with the planned text edits written in; `fallbackFonts` are the TTFs fallback words use. */
+  async writeText(bytes: Uint8Array, plans: TextWritePlan[], fallbackFonts: Record<number, ArrayBuffer>): Promise<Uint8Array> {
+    await this.ready;
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return (await this.send({ type: 'writeText', data: buffer, plans, fallbackFonts }, [buffer]).promise) as Uint8Array;
   }
 
   async close(docId: number): Promise<void> {

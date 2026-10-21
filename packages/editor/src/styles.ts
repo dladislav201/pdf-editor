@@ -166,6 +166,7 @@ const CSS = /* css */ `
 .pdfsdk-paragraph--hover { stroke-dasharray: 4 3; }
 .pdfsdk-paragraph--selected { stroke-width: 1.5px; fill: color-mix(in srgb, var(--pdfsdk-accent) 7%, transparent); }
 .pdfsdk-paragraph--readonly { stroke: var(--pdfsdk-muted); }
+.pdfsdk-paragraph--overflow { stroke: #d93025; stroke-dasharray: none; fill: color-mix(in srgb, #d93025 6%, transparent); }
 .pdfsdk-root[data-editing="text"] .pdfsdk-page__overlay { cursor: text; }
 .pdfsdk-text-edit__selection rect { fill: var(--pdfsdk-accent); fill-opacity: 0.25; }
 .pdfsdk-caret {

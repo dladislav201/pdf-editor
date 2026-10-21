@@ -17,6 +17,9 @@ export interface TextFont {
   embedded: boolean;
   /** Embedded fonts with a `XXXXXX+` prefix contain only the glyphs the file uses. */
   subset: boolean;
+  /** Has serifs (from the PDF font flags or the name), to pick a matching fallback font. */
+  serif: boolean;
+  monospace: boolean;
 }
 
 /** One glyph as drawn on the page (generated spaces/line breaks are not glyphs). */
@@ -60,6 +63,8 @@ export interface TextLine {
   runs: TextRun[];
   /** Index into `chars` where each word starts. */
   wordStarts: number[];
+  /** Page objects that draw only (invisible) space glyphs on this line, with their x. */
+  spaceObjects: { object: number; x: number }[];
   baseline: number;
   /** Ends with a hyphen that may come from hyphenation (rejoining the word may drop it). */
   hyphenated: boolean;

@@ -1,7 +1,15 @@
 import type { PageView } from '../page-view';
 import type { Point, Rect } from '../types';
 import { FALLBACK_FONT, type GlyphStore } from './glyph-store';
-import { layoutParagraph, type CharStyle, type ParagraphFrame, type ParagraphLayout, type StyledChar } from './layout';
+import { withWordFallback } from './word-fonts';
+import {
+  layoutParagraph,
+  type CharStyle,
+  type Measure,
+  type ParagraphFrame,
+  type ParagraphLayout,
+  type StyledChar,
+} from './layout';
 import type { TextParagraph } from './types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -28,9 +36,15 @@ export interface TextEditCallbacks {
   onExit(): void;
 }
 
-/** Characters of a paragraph as the engine read them, with spaces at word gaps and line joins. */
-export function paragraphChars(paragraph: TextParagraph): StyledChar[] {
+/**
+ * Characters of a paragraph as the engine read them, with spaces at word gaps
+ * and line joins. Each keeps its original spacing within its word and a link
+ * to its page glyph, so untouched text keeps its exact positions.
+ */
+export function paragraphChars(paragraph: TextParagraph, measure?: Measure): StyledChar[] {
   const chars: StyledChar[] = [];
+  const glyphsPerObject = new Map<number, number>();
+  for (const c of paragraph.lines.flatMap((l) => l.chars)) glyphsPerObject.set(c.object, (glyphsPerObject.get(c.object) ?? 0) + 1);
   paragraph.lines.forEach((line, lineIndex) => {
     if (lineIndex > 0 && !paragraph.lines[lineIndex - 1]!.hyphenated && chars.length) {
       chars.push({ char: ' ', style: chars[chars.length - 1]!.style });
@@ -42,8 +56,30 @@ export function paragraphChars(paragraph: TextParagraph): StyledChar[] {
         color: c.color,
         rise: Math.round((c.y - line.baseline) * 100) / 100,
       };
-      if (i > 0 && line.wordStarts.includes(i)) chars.push({ char: ' ', style: { ...style, rise: 0 } });
-      for (const char of c.text) chars.push({ char, style });
+      if (i > 0 && line.wordStarts.includes(i)) {
+        // Keep the page's space width where nothing stretches it (justified lines get
+        // theirs from layout): whatever is left between the previous word, set with
+        // the font's advances, and this one.
+        const stretched = paragraph.align === 'justify' && lineIndex < paragraph.lines.length - 1;
+        const prev = line.chars[i - 1]!;
+        const prevStyle = chars[chars.length - 1]!.style;
+        const gap = measure && !stretched ? c.x - prev.x - measure(prevStyle, prev.text) : 0;
+        chars.push({ char: ' ', style: { ...style, rise: 0 }, ...(gap > 0 ? { advance: gap } : {}) });
+      }
+      const next = line.chars[i + 1];
+      const sameWord = next && !line.wordStarts.includes(i + 1);
+      [...c.text].forEach((char, k) => {
+        const first = k === 0;
+        chars.push({
+          char,
+          style,
+          // Within a word: the distance to the next glyph, kerning included. A word's last
+          // glyph takes the font's advance, like the producer did; the space absorbs the rest.
+          // Ligatures read as several characters from one glyph: only the first carries the glyph.
+          ...(first && sameWord && c.text.length === 1 ? { advance: next.x - c.x } : {}),
+          ...(first ? { source: { object: c.object, x: c.x, y: c.y, ownObject: glyphsPerObject.get(c.object) === 1 } } : {}),
+        });
+      });
     });
   });
   return chars;
@@ -69,6 +105,7 @@ export function paragraphFrame(paragraph: TextParagraph, block: TextBlock): Para
     x,
     width: right - x,
     firstBaseline: lines[0]!.baseline,
+    baselines: lines.map((l) => l.baseline),
     leading: paragraph.leading,
     indent: paragraph.indent,
     align: paragraph.align,
@@ -106,6 +143,9 @@ export class TextEditSession {
   private goalX: number | null = null;
   private dragging = false;
   private destroyed = false;
+  /** Pointer events report no click count (`detail` is 0), so double/triple clicks are counted here. */
+  private lastPress = { time: -Infinity, x: 0, y: 0, count: 0 };
+  private readonly unsubscribe: () => void;
 
   constructor(
     readonly view: PageView,
@@ -147,6 +187,8 @@ export class TextEditSession {
     this.input.addEventListener('cut', this.onCut);
     this.input.addEventListener('paste', this.onPaste);
 
+    // A fallback font arriving changes advances and outlines: lay out again.
+    this.unsubscribe = store.onChange(() => this.refresh());
     this.render();
     this.focus();
   }
@@ -166,7 +208,9 @@ export class TextEditSession {
   }
 
   get layout(): ParagraphLayout {
-    this.layoutCache ??= layoutParagraph(this.displayChars(), this.frame, (style, char) => this.advance(style, char));
+    this.layoutCache ??= layoutParagraph(withWordFallback(this.displayChars(), this.store), this.frame, (style, char) =>
+      this.advance(style, char),
+    );
     return this.layoutCache;
   }
 
@@ -202,12 +246,17 @@ export class TextEditSession {
     this.render();
   }
 
-  pointerDown(point: Point, event: PointerEvent): void {
+  /** `clicks` overrides the counted click number (e.g. clicks that arrived before the session opened). */
+  pointerDown(point: Point, event: PointerEvent, clicks?: number): void {
     const offset = this.layout.hit(point[0], point[1]);
     this.goalX = null;
-    if (event.detail === 2) {
+    const last = this.lastPress;
+    const repeat = event.timeStamp - last.time < 500 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 5;
+    const count = clicks ?? (repeat ? last.count + 1 : 1);
+    this.lastPress = { time: event.timeStamp, x: event.clientX, y: event.clientY, count };
+    if (count === 2) {
       this.selectWord(offset);
-    } else if (event.detail >= 3) {
+    } else if (count >= 3) {
       this.anchor = 0;
       this.caretOffset = this.chars.length;
     } else {
@@ -231,6 +280,7 @@ export class TextEditSession {
 
   /** Draws the final glyphs without caret or selection, for a paragraph that was edited and left. */
   freeze(): void {
+    this.dragging = false;
     this.selectionLayer.replaceChildren();
     this.caretEl.style.display = 'none';
     this.input.remove();
@@ -239,6 +289,7 @@ export class TextEditSession {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.unsubscribe();
     this.group.remove();
     this.input.remove();
   }
@@ -545,9 +596,7 @@ export class TextEditSession {
   }
 
   private advance(style: CharStyle, char: string): number {
-    if (char === '\n') return 0;
-    const { glyph } = this.store.resolve(style.font, char);
-    return (glyph?.advance ?? 0.5) * style.size;
+    return this.store.advance(style, char);
   }
 
   private render(): void {

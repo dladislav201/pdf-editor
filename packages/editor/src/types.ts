@@ -91,6 +91,12 @@ export interface EditorOptions {
   workerUrl?: string | URL;
   /** TTF/OTF used for text annotations, in the viewer and in the exported PDF. Needed for non-Latin text. */
   fontUrl?: string;
+  /**
+   * Folder with the fallback fonts for edited page text (Arimo, Tinos, Cousine
+   * in four styles, shipped in `dist/engine/fonts/`). Defaults to `fonts/`
+   * under `assetsUrl`.
+   */
+  fallbackFontsUrl?: string;
   /** Show the built-in toolbar. Default `true`. */
   toolbar?: boolean;
   /** Default `'fit-width'`. */

@@ -1,5 +1,6 @@
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
 import type { RawPageText } from '../text/types';
+import type { TextWritePlan } from '../text/write-plan';
 import type { Rotation } from './page-geometry';
 import { fontGlyphs, type FontGlyphs } from './pdfium-glyphs';
 import { extractPageText } from './pdfium-text';
@@ -38,6 +39,11 @@ function heapU8(lib: WrappedPdfiumModule): Uint8Array {
 }
 function heapF32(lib: WrappedPdfiumModule): Float32Array {
   return (lib.pdfium as unknown as { HEAPF32: Float32Array }).HEAPF32;
+}
+
+function parseColor(hex: string): [number, number, number] {
+  const n = Number.parseInt(hex.replace('#', ''), 16);
+  return Number.isNaN(n) ? [0, 0, 0] : [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
 function loadError(code: number): EngineError {
@@ -136,6 +142,111 @@ export class PdfiumDocument {
     } finally {
       lib.FPDFBitmap_Destroy(bitmap);
       for (const object of inactive) lib.FPDFPageObj_SetIsActive(object, true);
+    }
+  }
+
+  /**
+   * Rewrites paragraphs on their pages: drops the objects a plan removes,
+   * moves the glyph objects it keeps and adds new words in document fonts or,
+   * for characters those lack, in fallback fonts (`fallbackFonts`: TrueType
+   * bytes by fallback id, ideally already subset), then regenerates the page
+   * content.
+   */
+  applyTextPlans(plans: TextWritePlan[], fallbackFonts: Record<number, Uint8Array> = {}): void {
+    const lib = this.lib;
+    const { wasmExports } = lib.pdfium;
+    const FPDF_FONT_TRUETYPE = 2;
+    const loadedFallbacks = new Map<number, number>();
+    const fallbackFont = (id: number): number => {
+      let font = loadedFallbacks.get(id);
+      if (font === undefined) {
+        const bytes = fallbackFonts[id];
+        if (!bytes) throw new EngineError('EngineError', 'A fallback font needed for edited text is missing.');
+        const ptr = wasmExports.malloc(bytes.length);
+        try {
+          heapU8(lib).set(bytes, ptr);
+          // As a CID font, so any Unicode text maps through the font's own cmap.
+          font = lib.FPDFText_LoadFont(this.handle, ptr, bytes.length, FPDF_FONT_TRUETYPE, true);
+        } finally {
+          wasmExports.free(ptr);
+        }
+        if (!font) throw new EngineError('EngineError', 'Could not embed a fallback font.');
+        loadedFallbacks.set(id, font);
+      }
+      return font;
+    };
+    const touched = new Set<number>();
+    // Resolve every index of every plan before changing anything: removing and
+    // inserting objects shifts the indices the next plan on the same page refers to.
+    const resolved = plans.map((plan) => {
+      const page = this.page(plan.page);
+      const handle = (index: number) => {
+        const object = lib.FPDFPage_GetObject(page, index);
+        if (!object) throw new EngineError('EngineError', `Page ${plan.page + 1} has no object ${index}.`);
+        return object;
+      };
+      return {
+        plan,
+        page,
+        removed: plan.remove.map(handle),
+        moved: plan.moves.map((move) => ({ ...move, object: handle(move.object) })),
+        words: [
+          ...plan.words.map((word) => ({ ...word, font: lib.FPDFTextObj_GetFont(handle(word.fontObject)) })),
+          ...plan.fallback.map((word) => ({ ...word, font: fallbackFont(word.font) })),
+        ],
+      };
+    });
+    for (const { plan, page, removed, moved, words } of resolved) {
+      for (const move of moved) lib.FPDFPageObj_Transform(move.object, 1, 0, 0, 1, move.dx, move.dy);
+      words.forEach((word) => {
+        const object = lib.FPDFPageObj_CreateTextObj(this.handle, word.font, word.size);
+        if (!object) throw new EngineError('EngineError', 'Could not create a text object.');
+        const bytes = (word.text.length + 1) * 2;
+        const text = wasmExports.malloc(bytes);
+        const matrix = wasmExports.malloc(24);
+        try {
+          lib.pdfium.stringToUTF16(word.text, text, bytes);
+          lib.FPDFText_SetText(object, text);
+          heapF32(lib).set([1, 0, 0, 1, word.x, word.y], matrix >> 2);
+          lib.FPDFPageObj_SetMatrix(object, matrix);
+        } finally {
+          wasmExports.free(text);
+          wasmExports.free(matrix);
+        }
+        lib.FPDFPageObj_SetFillColor(object, ...parseColor(word.color), 255);
+        lib.FPDFPage_InsertObject(page, object);
+      });
+      for (const object of removed) {
+        lib.FPDFPage_RemoveObject(page, object);
+        lib.FPDFPageObj_Destroy(object);
+      }
+      touched.add(plan.page);
+    }
+    for (const index of touched) {
+      if (!lib.FPDFPage_GenerateContent(this.page(index))) {
+        throw new EngineError('EngineError', `Could not write page ${index + 1}.`);
+      }
+    }
+    // The text objects keep their own references to the fonts.
+    for (const font of loadedFallbacks.values()) lib.FPDFFont_Close(font);
+  }
+
+  /** The document as a PDF file, including changes made through the engine. */
+  save(): Uint8Array {
+    const lib = this.lib;
+    const writer = lib.PDFiumExt_OpenFileWriter();
+    try {
+      if (!lib.PDFiumExt_SaveAsCopy(this.handle, writer)) throw new EngineError('EngineError', 'Could not save the PDF.');
+      const size = lib.PDFiumExt_GetFileWriterSize(writer);
+      const ptr = lib.pdfium.wasmExports.malloc(size);
+      try {
+        lib.PDFiumExt_GetFileWriterData(writer, ptr, size);
+        return heapU8(lib).slice(ptr, ptr + size);
+      } finally {
+        lib.pdfium.wasmExports.free(ptr);
+      }
+    } finally {
+      lib.PDFiumExt_CloseFileWriter(writer);
     }
   }
 

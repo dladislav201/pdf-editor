@@ -10,7 +10,7 @@ files are never uploaded anywhere.
 | `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (PDFium WebAssembly in a Web Worker), annotation tools, undo/redo, PDF annotation read/write (pdf-lib) |
 | `packages/react` | `@pdfsdk/react` — `<PdfEditor />` component |
 | `apps/demo` | Demo site (Vite + React) with a generated sample contract |
-| `scripts/copy-engine-assets.mjs` | Copies `pdfium.wasm` next to the bundle |
+| `scripts/copy-engine-assets.mjs` | Copies `pdfium.wasm`, `harfbuzz-subset.wasm` and the fallback fonts next to the bundle |
 
 ## Run
 
@@ -107,8 +107,8 @@ justify), leading and first-line indent, all in PDF points. The Edit text tool
 ## Editing page text in place
 
 With Edit text (E), clicking a paragraph opens it for editing right on the
-page. Writing the edits into the saved PDF is the next stage; until then they
-are a preview (`getTextEdits()`, `textEditsChange`).
+page; `exportPdf()` / Download write the edits into the PDF
+(`getTextEdits()`, `textEditsChange`).
 
 - Glyphs are drawn from the document's own font outlines (PDFium
   `FPDFFont_GetGlyphPath`), so subset fonts without a usable cmap still look
@@ -131,6 +131,37 @@ are a preview (`getTextEdits()`, `textEditsChange`).
   paragraphs stay drawn and reopen with their edits.
 - Paragraphs whose page objects also hold other text, or that sit in form
   XObjects, are read-only for now.
+- Text that grows into other content is flagged with a red outline; content
+  below does not move (as in Acrobat).
+
+### Writing edits into the PDF
+
+On save, each edited paragraph becomes a plan (`text/write-plan.ts`) that the
+engine applies to a copy of the file (`applyTextPlans`), then
+`FPDFPage_GenerateContent`:
+
+- A glyph that still exists keeps its own page object and is only moved
+  (Chrome/Skia draw one object per glyph), so unchanged text stays the same
+  glyphs, kerning included. Original glyph spacing and line baselines are kept
+  in the layout, so a paragraph whose text didn't change is rewritten with
+  **zero changed pixels** (tested).
+- New or retyped text becomes words in the same document font; lines drawn as
+  one object (Quartz, pdf-lib, Word) are redrawn word by word.
+- Invisible space glyphs (Chrome writes them as objects) are kept when their
+  neighbours stay together and removed otherwise, so copy/search don't see
+  spaces inside reflowed words.
+- A word with any character the (subset) document font lacks is set entirely
+  in a fallback font matching the family and style: Arimo (≈ Arial/Helvetica),
+  Tinos (≈ Times), Cousine (≈ Courier), each in regular/bold/italic/bold
+  italic, metric-compatible and with full Cyrillic. They load lazily from
+  `fallbackFontsUrl` (default `engine/fonts/`) and are embedded subset to the
+  used characters with HarfBuzz's `hb-subset` (`harfbuzz-subset.wasm`) — a few
+  KB instead of 300+. (pdf-lib's fontkit subsetter drops composite glyphs in
+  these fonts, so it is not used for this.)
+
+Checked by `src/text/write.test.ts` on Chrome, Quartz and standard-font files
+(text read back, pixels outside the paragraph unchanged, fallback words
+actually rendered) and by eye in Apple Quick Look and pdf.js.
 
 Built from PDFium's glyphs in the worker (~20 ms per page):
 
@@ -178,10 +209,12 @@ Fixtures from Chrome, macOS Quartz and pdf-lib live in
 - Text model: two plain text lines without spacing (e.g. from a .txt) read as one
   paragraph; bullets drawn as shapes are not part of the item's text; vertical
   and rotated text is skipped.
-- Text editing: edits are not written into the PDF yet; the fallback font is a
-  single file (`fontUrl`) rather than a metric-compatible match per family
-  (Liberation for Arial/Times/Courier); no bold/italic toggles; text edits are
-  outside the editor's undo history.
+- Text editing: no bold/italic toggles or font picker; text edits have their own
+  undo inside a paragraph but are outside the editor's undo history; the
+  live document isn't modified until save, so page text search/selection
+  reflects the original until the file is reopened; a paragraph that grows
+  overlaps content below instead of pushing it down; not yet checked in
+  Acrobat and Chrome.
 - Text annotations on rotated pages are not counter-rotated.
 - No form filling, signatures, page operations, search, thumbnails or password
   prompt yet.

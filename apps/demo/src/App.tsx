@@ -131,8 +131,8 @@ export function App() {
             </h2>
             {textEdits > 0 && (
               <p className="notice">
-                {textEdits} edited {textEdits === 1 ? 'paragraph' : 'paragraphs'}. Text edits are a preview for now:
-                writing them into the downloaded PDF is the next step.
+                {textEdits} edited {textEdits === 1 ? 'paragraph' : 'paragraphs'}, written into the PDF when you
+                download it.
               </p>
             )}
             {paragraph ? (

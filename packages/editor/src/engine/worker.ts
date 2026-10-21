@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium';
 import { analyzePage } from '../text/analyze';
+import { createSubsetter, type Subsetter } from './hb-subset';
 import { EngineError, PdfiumDocument, initLibrary } from './pdfium-core';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
 
@@ -9,6 +10,8 @@ declare const self: DedicatedWorkerGlobalScope;
 type RenderRequest = Extract<EngineRequest, { type: 'render' }>;
 
 let library: Promise<WrappedPdfiumModule> | null = null;
+let subsetWasmUrl = '';
+let subsetter: Promise<Subsetter> | null = null;
 let current: { id: number; doc: PdfiumDocument } | null = null;
 let nextDocId = 1;
 const queue: RenderRequest[] = [];
@@ -64,6 +67,7 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
   const request = event.data;
   switch (request.type) {
     case 'init':
+      subsetWasmUrl = request.subsetWasmUrl;
       library ??= loadLibrary(request.wasmUrl);
       try {
         await library;
@@ -102,6 +106,43 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         fail(request.id, error);
       }
       return;
+    case 'writeText': {
+      let copy: PdfiumDocument | null = null;
+      try {
+        if (!library) throw new EngineError('EngineError', 'The engine is not initialised.');
+        copy = new PdfiumDocument(await library, new Uint8Array(request.data));
+        // Fallback fonts go in subset to the characters their words use.
+        const needed = new Map<number, Set<string>>();
+        for (const word of request.plans.flatMap((plan) => plan.fallback)) {
+          const chars = needed.get(word.font) ?? new Set<string>();
+          for (const char of word.text) chars.add(char);
+          needed.set(word.font, chars);
+        }
+        const fonts: Record<number, Uint8Array> = {};
+        if (needed.size) {
+          subsetter ??= fetch(subsetWasmUrl).then(async (response) => {
+            if (!response.ok) throw new EngineError('EngineError', `Could not load the font subsetter (HTTP ${response.status}).`);
+            return createSubsetter(await response.arrayBuffer());
+          });
+          const hb = await subsetter.catch((error: unknown) => {
+            subsetter = null;
+            throw error;
+          });
+          for (const [font, chars] of needed) {
+            const bytes = request.fallbackFonts[font];
+            if (bytes) fonts[font] = hb.subset(new Uint8Array(bytes), chars);
+          }
+        }
+        copy.applyTextPlans(request.plans, fonts);
+        const saved = copy.save();
+        reply({ id: request.id, ok: true, result: saved }, [saved.buffer]);
+      } catch (error) {
+        fail(request.id, error);
+      } finally {
+        copy?.close();
+      }
+      return;
+    }
     case 'text':
       try {
         if (!current || current.id !== request.docId) throw new EngineError('EngineError', 'The document is no longer open.');

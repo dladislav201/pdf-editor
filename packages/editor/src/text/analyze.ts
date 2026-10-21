@@ -178,9 +178,13 @@ function buildLine(chars: RawChar[]): TextLine {
       .join('');
   }
 
+  const glyphObjects = new Set(glyphs.map((g) => g.object));
   return {
     chars: glyphs.map(toChar),
     text,
+    spaceObjects: spaces
+      .filter((s, i) => s.object >= 0 && !glyphObjects.has(s.object) && spaces.findIndex((t) => t.object === s.object) === i)
+      .map((s) => ({ object: s.object, x: s.x })),
     runs,
     wordStarts,
     hyphenated: glyphs[glyphs.length - 1]!.lineEndHyphen,

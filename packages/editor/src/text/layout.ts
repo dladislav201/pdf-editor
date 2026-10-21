@@ -12,6 +12,13 @@ export interface CharStyle {
 export interface StyledChar {
   char: string;
   style: CharStyle;
+  /**
+   * Advance taken from the original page (glyph spacing incl. kerning) for
+   * characters that come from it; the font's advance is used otherwise.
+   */
+  advance?: number;
+  /** The page glyph this character was read from; lets a save move it instead of redrawing it. */
+  source?: { object: number; x: number; y: number; ownObject: boolean };
 }
 
 /** Where and how a paragraph is set, in PDF user space (y up). */
@@ -24,6 +31,8 @@ export interface ParagraphFrame {
   /** Extra left offset of the first line. */
   indent: number;
   align: TextAlign;
+  /** Baselines of the original lines; lines past them continue one `leading` apart. */
+  baselines?: number[];
 }
 
 export type Measure = (style: CharStyle, char: string) => number;
@@ -109,7 +118,7 @@ function tokenize(chars: StyledChar[], widths: number[]): Token[] {
  * last and those ending in a hard break).
  */
 export function layoutParagraph(chars: StyledChar[], frame: ParagraphFrame, measure: Measure): ParagraphLayout {
-  const widths = chars.map((c) => (c.char === '\n' ? 0 : measure(c.style, c.char)));
+  const widths = chars.map((c) => (c.char === '\n' ? 0 : (c.advance ?? measure(c.style, c.char))));
   const tokens = tokenize(chars, widths);
   const available = (line: number) => frame.width - (line === 0 ? frame.indent : 0);
 
@@ -168,7 +177,11 @@ export function layoutParagraph(chars: StyledChar[], frame: ParagraphFrame, meas
     else if (frame.align === 'center') offset = room / 2;
     else if (frame.align === 'justify' && !isLast && !range.hardBreak && gaps > 0 && room > 0) stretch = room / gaps;
 
-    const baseline = frame.firstBaseline - lineIndex * frame.leading;
+    const known = frame.baselines ?? [frame.firstBaseline];
+    const baseline =
+      lineIndex < known.length
+        ? known[lineIndex]!
+        : known[known.length - 1]! - (lineIndex - known.length + 1) * frame.leading;
     let x = frame.x + (lineIndex === 0 ? frame.indent : 0) + offset;
     const left = x;
     const glyphs: PlacedGlyph[] = [];
