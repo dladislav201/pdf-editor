@@ -21,6 +21,19 @@ npm run build      # builds both packages and the demo
 npm run typecheck
 ```
 
+## Deploy the demo
+
+Live: https://pdf-sdk-demo.peer-mcp.workers.dev
+
+The demo is a static site on Cloudflare Workers static assets (the successor
+of Pages, free for static traffic). Config: `apps/demo/wrangler.toml`,
+response headers: `apps/demo/public/_headers`.
+
+```bash
+npx wrangler login     # once per machine
+npm run deploy:demo    # builds the demo and uploads it
+```
+
 ## Usage
 
 ```ts

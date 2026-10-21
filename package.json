@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "npm run dev --workspace=apps/demo",
     "build": "npm run build --workspace=packages/editor && npm run build --workspace=packages/react && npm run build --workspace=apps/demo",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "deploy:demo": "npm run deploy --workspace=apps/demo"
   },
   "engines": {
     "node": ">=22.13"
