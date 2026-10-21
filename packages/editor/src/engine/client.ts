@@ -1,7 +1,8 @@
 import type { InvisibleWord } from '../ocr/place';
 import type { PageText } from '../text/types';
 import type { TextWritePlan } from '../text/write-plan';
-import type { ScanInfo } from './pdfium-core';
+import type { ScanErase } from '../text/scan-edit';
+import type { ScanInfo, ScanPatch } from './pdfium-core';
 import type { FontGlyphs } from './pdfium-glyphs';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
 
@@ -100,14 +101,23 @@ export class EngineClient {
     return (await this.send({ type: 'scanInfo', docId, page }).promise) as ScanInfo;
   }
 
+  /** The scan under an edited paragraph with its words erased, and where it goes. */
+  async scanPatch(docId: number, page: number, erase: ScanErase): Promise<ScanPatch> {
+    return (await this.send({ type: 'scanPatch', docId, page, erase }).promise) as ScanPatch;
+  }
+
   /** RGBA pixels of a page at the given size, without annotations. */
   async raster(docId: number, page: number, width: number, height: number): Promise<Uint8ClampedArray> {
     return (await this.send({ type: 'raster', docId, page, width, height }).promise) as Uint8ClampedArray;
   }
 
   /** Writes recognized words into the open document as invisible text; returns the saved file. */
-  async addInvisibleText(docId: number, pages: { page: number; words: InvisibleWord[] }[], font: ArrayBuffer): Promise<Uint8Array> {
-    return (await this.send({ type: 'addInvisibleText', docId, pages, font }).promise) as Uint8Array;
+  async addInvisibleText(
+    docId: number,
+    pages: { page: number; words: InvisibleWord[] }[],
+    fonts: { regular: ArrayBuffer; bold: ArrayBuffer },
+  ): Promise<Uint8Array> {
+    return (await this.send({ type: 'addInvisibleText', docId, pages, fonts }).promise) as Uint8Array;
   }
 
   async close(docId: number): Promise<void> {

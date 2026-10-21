@@ -105,7 +105,7 @@ describe('layout analysis', () => {
     expect(page.paragraphs[1]!.lines[0]!.size).toBeCloseTo(12, 1);
   });
 
-  it('keeps invisible (OCR) text read-only, ignores rotated text and marks text in form XObjects read-only', async () => {
+  it('reads invisible (OCR) text as recognized, ignores rotated text and marks text in form XObjects read-only', async () => {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const page = doc.addPage([400, 400]);
@@ -123,7 +123,7 @@ describe('layout analysis', () => {
     const result = analyze(await doc.save());
     expect(result.paragraphs.map((p) => p.text)).toEqual(['Visible text', 'Invisible OCR layer', 'Inside a form']);
     expect(result.paragraphs[0]!.editable).toBe(true);
-    expect(result.paragraphs[1]).toMatchObject({ editable: false, recognized: true, reason: expect.stringContaining('recognized') });
+    expect(result.paragraphs[1]).toMatchObject({ editable: true, recognized: true });
     expect(result.paragraphs[2]).toMatchObject({ editable: false, reason: expect.stringContaining('form XObject') });
   });
 

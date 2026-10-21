@@ -139,6 +139,7 @@ export class TextEditSession {
   private undoStack: Snapshot[] = [];
   private redoStack: Snapshot[] = [];
   private lastTyping = 0;
+  private background: SVGImageElement | null = null;
   /** Remembered x for repeated up/down moves. */
   private goalX: number | null = null;
   private dragging = false;
@@ -214,7 +215,7 @@ export class TextEditSession {
     return this.layoutCache;
   }
 
-  /** Extent of the laid out text in PDF user space. */
+  /** Extent of the laid out text (its ink, not the whole column) in PDF user space. */
   get box(): Rect {
     const lines = this.layout.lines;
     const metrics = (line: (typeof lines)[number]) => {
@@ -226,8 +227,10 @@ export class TextEditSession {
     };
     const top = metrics(lines[0]!).top;
     const bottom = metrics(lines[lines.length - 1]!).bottom;
-    const left = Math.min(this.frame.x, ...lines.map((l) => l.left));
-    const right = Math.max(this.frame.x + this.frame.width, ...lines.map((l) => l.right));
+    // The column of a single line reaches across the page's text block (so a title
+    // can grow); a table cell's number shouldn't claim its whole row.
+    const left = Math.min(...lines.map((l) => l.left));
+    const right = Math.max(...lines.map((l) => l.right));
     return { x: left, y: bottom, width: right - left, height: top - bottom };
   }
 
@@ -238,6 +241,22 @@ export class TextEditSession {
 
   focus(): void {
     this.input.focus({ preventScroll: true });
+  }
+
+  /**
+   * An image drawn under the glyphs: for recognized text, the scan with the
+   * paragraph's words erased, so the old words don't show through. `origin`
+   * is its bottom-left corner, `xAxis` and `yAxis` its edges, in user space.
+   */
+  setBackground(image: { href: string; width: number; height: number; origin: Point; xAxis: Point; yAxis: Point }): void {
+    if (this.destroyed) return;
+    const { width: w, height: h, origin, xAxis, yAxis } = image;
+    // Image rows run down from the top edge (origin + yAxis).
+    const transform = `matrix(${xAxis[0] / w} ${xAxis[1] / w} ${-yAxis[0] / h} ${-yAxis[1] / h} ${origin[0] + yAxis[0]} ${origin[1] + yAxis[1]})`;
+    const el = svg('image', { href: image.href, width: w, height: h, transform, preserveAspectRatio: 'none' });
+    this.background?.remove();
+    this.background = el;
+    this.group.prepend(el);
   }
 
   /** Re-lays out after glyphs arrived or the zoom changed. */
@@ -421,10 +440,13 @@ export class TextEditSession {
       this.anchor = this.caretOffset = offset;
       return;
     }
+    // A separator between digits is part of the number: "4 779,50", "01.09.2026".
+    const at = (i: number) => this.chars[i]?.char ?? '';
+    const inWord = (i: number) => WORD_CHAR.test(at(i)) || (/^[.,]$/.test(at(i)) && /\p{N}/u.test(at(i - 1)) && /\p{N}/u.test(at(i + 1)));
     let start = offset;
     let end = offset;
-    while (start > 0 && WORD_CHAR.test(this.chars[start - 1]!.char)) start--;
-    while (end < this.chars.length && WORD_CHAR.test(this.chars[end]!.char)) end++;
+    while (start > 0 && inWord(start - 1)) start--;
+    while (end < this.chars.length && inWord(end)) end++;
     this.anchor = start;
     this.caretOffset = end;
   }

@@ -1,4 +1,5 @@
 import type { InvisibleWord } from '../ocr/place';
+import type { ScanErase } from '../text/scan-edit';
 import type { TextWritePlan } from '../text/write-plan';
 import type { PageInfo } from './pdfium-core';
 
@@ -15,7 +16,15 @@ export type EngineRequest =
   /** RGBA pixels of a page (no annotations), for recognition. */
   | { id: number; type: 'raster'; docId: number; page: number; width: number; height: number }
   /** Writes recognized text as invisible text into the open document and returns the saved file. */
-  | { id: number; type: 'addInvisibleText'; docId: number; pages: { page: number; words: InvisibleWord[] }[]; font: ArrayBuffer }
+  | {
+      id: number;
+      type: 'addInvisibleText';
+      docId: number;
+      pages: { page: number; words: InvisibleWord[] }[];
+      fonts: { regular: ArrayBuffer; bold: ArrayBuffer };
+    }
+  /** A cleaned piece of a scan for an edited paragraph, see `PdfiumDocument.scanPatch`. */
+  | { id: number; type: 'scanPatch'; docId: number; page: number; erase: ScanErase }
   | { id: number; type: 'cancel'; target: number }
   | { id: number; type: 'close'; docId: number };
 

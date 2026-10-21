@@ -2,6 +2,7 @@ import { estimateSkew, rotate, unrotateBox, unrotatePoint } from './deskew';
 import { detectTableCells } from './grid';
 import { removeColoredInk } from './ink';
 import { fixLine, isNoise } from './post';
+import { inkColor, lineColor, lineSize, strokeWidth } from './style';
 import type { PixelBox, PlacedWord, Raster, RecognizedWord } from './types';
 
 /** What the pipeline needs from an OCR engine (Tesseract in practice). */
@@ -29,6 +30,8 @@ const CELL_INSET = 1;
 const BORDER_REACH = 8;
 /** Line numbers of re-read cells start here, a block of this many per cell. */
 const CELL_LINES = 100_000;
+/** Stroke-to-height ratio above the page's median by this factor reads as bold. */
+const BOLD_RATIO = 1.3;
 
 /** Whitens rows and columns near the crop's edges that are mostly dark: the cell's own borders. */
 function eraseBorders(image: Raster): void {
@@ -145,6 +148,18 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine): Promis
   words = words.filter((w) => !isNoise(w.text, w.confidence));
   const byLine = new Map<number, RecognizedWord[]>();
   for (const word of words) byLine.set(word.line, [...(byLine.get(word.line) ?? []), word]);
+  // Font size per line from the height of its ink; bold where strokes are clearly
+  // thicker, for that size, than the page's typical text.
+  const sizes = new Map<number, number>();
+  for (const [line, lineWords] of byLine) {
+    const ascents = lineWords.map((w) => ({ text: w.text, ascent: w.baseline - w.box.y0 }));
+    sizes.set(line, lineSize(ascents, lineWords[0]!.lineHeight));
+  }
+  const weight = new Map(words.map((w) => [w, strokeWidth(straight, w.box) / sizes.get(w.line)!]));
+  const weights = [...weight.values()].sort((a, b) => a - b);
+  const typical = weights[weights.length >> 1] ?? 0;
+  const isBold = (w: RecognizedWord) => weights.length >= 10 && weight.get(w)! > typical * BOLD_RATIO;
+
   const fixed: PlacedWord[] = [];
   const back = (point: [number, number]) => (straight === clean ? point : unrotatePoint(point, angle, source.width, source.height));
   // Words go back onto the skewed original, along their (now tilted) baselines.
@@ -152,15 +167,32 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine): Promis
   for (const [, lineWords] of [...byLine].sort((a, b) => a[0] - b[0])) {
     lineWords.sort((a, b) => a.box.x0 - b.box.x0);
     const texts = fixLine(lineWords.map((w) => w.text));
+    const color = lineColor(
+      lineWords.map((w) => inkColor(source, straight === clean ? w.box : unrotateBox(w.box, angle, source.width, source.height))),
+    );
     lineWords.forEach((w, i) => {
       // Tesseract now and then gives a word the box of half its line; it ends where the next word starts.
       const next = lineWords[i + 1];
       const own = next && w.box.x1 > next.box.x0 ? { ...w.box, x1: Math.max(w.box.x0 + 1, next.box.x0 - 1) } : w.box;
+      // Short words ("№", "1") measure poorly: a line that is mostly bold is all bold, and vice versa.
+      const boldShare = lineWords.filter(isBold).length / lineWords.length;
+      const bold = boldShare >= 0.6 || (boldShare > 0.4 && isBold(w));
       w = { ...w, box: own };
       const box = straight === clean ? own : unrotateBox(own, angle, source.width, source.height);
       const start = back([w.box.x0, w.baseline]);
       const end = back([w.box.x1, w.baseline]);
-      fixed.push({ ...w, text: texts[i]!, box, baseline: start[1], start, end, up: straight === clean ? [0, -1] : up });
+      fixed.push({
+        ...w,
+        text: texts[i]!,
+        box,
+        baseline: start[1],
+        start,
+        end,
+        up: straight === clean ? [0, -1] : up,
+        size: sizes.get(w.line)!,
+        bold,
+        color,
+      });
     });
   }
   return { words: fixed, angle, cells: reread };

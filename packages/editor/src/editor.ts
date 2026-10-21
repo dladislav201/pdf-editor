@@ -4,7 +4,7 @@ import { Emitter } from './events';
 import { exportPdf, type ExportOptions } from './export';
 import { TEXT_ASCENT, TEXT_LINE_HEIGHT, hitTest, rectFromPoints, round, translate } from './geometry';
 import { History } from './history';
-import type { ScanInfo } from './engine/pdfium-core';
+import type { ScanInfo, ScanPatch } from './engine/pdfium-core';
 import { placeWords, type InvisibleWord } from './ocr/place';
 import { recognizeRaster } from './ocr/recognize';
 import { TesseractEngine } from './ocr/tesseract';
@@ -14,8 +14,9 @@ import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
 import { injectStyles } from './styles';
 import { TextEditSession, paragraphChars, paragraphFrame } from './text/edit-session';
-import { FALLBACK_FONT, GlyphStore, fallbackFile, type FontSource } from './text/glyph-store';
-import { buildWritePlan } from './text/write-plan';
+import { FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontSource } from './text/glyph-store';
+import { recognizedChars, scanErase, type ScanErase } from './text/scan-edit';
+import { buildWritePlan, type TextWritePlan } from './text/write-plan';
 import type { StyledChar } from './text/layout';
 import type { PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
@@ -165,6 +166,8 @@ export class PdfEditor {
   private recognizing = false;
   private geometries: PageGeometry[] = [];
   private scanInfos = new Map<number, Promise<ScanInfo>>();
+  /** Cleaned scan under each recognized paragraph opened for editing, as an object URL. */
+  private scanPatches = new Map<string, Promise<{ href: string; patch: Omit<ScanPatch, 'image'> & { width: number; height: number } }>>();
   private readonly readOnly: boolean;
   private readonly author: string | undefined;
   private readonly importEnabled: boolean;
@@ -397,8 +400,12 @@ export class PdfEditor {
     const fontBytes = this.fontBytes ? await this.fontBytes : undefined;
     try {
       // Page text first: the engine rewrites edited paragraphs in a copy of the file.
-      const plans = [...this.textEdits.values()].map(({ paragraph, session }) =>
-        buildWritePlan(paragraph, session.styledChars, session.layout, this.glyphs),
+      const plans: TextWritePlan[] = await Promise.all(
+        [...this.textEdits.values()].map(async ({ paragraph, session }) => {
+          const plan = buildWritePlan(paragraph, session.styledChars, session.layout, this.glyphs);
+          // Recognized text of a scan: its words come off the scan underneath.
+          return paragraph.recognized ? { ...plan, erase: await this.scanEraseFor(paragraph) } : plan;
+        }),
       );
       const fallbackFonts: Record<number, ArrayBuffer> = {};
       for (const font of new Set(plans.flatMap((plan) => plan.fallback.map((word) => word.font)))) {
@@ -620,11 +627,15 @@ export class PdfEditor {
       }
 
       if (layers.length) {
-        // The regular sans fallback (Arimo) covers Latin and Cyrillic; the engine embeds a subset.
-        const font = await this.glyphs.fallbackBytes(FALLBACK_FONT);
-        if (!font) throw new Error(`Could not load the font for recognized text (${fallbackFile(FALLBACK_FONT)}).`);
+        // The sans fallback (Arimo) covers Latin and Cyrillic; the engine embeds subsets.
+        const load = async (font: number) => {
+          const bytes = await this.glyphs.fallbackBytes(font);
+          if (!bytes) throw new Error(`Could not load the font for recognized text (${fallbackFile(font)}).`);
+          return bytes;
+        };
+        const [regular, bold] = await Promise.all([load(FALLBACK_FONT), load(fallbackId('sans', 'Bold'))]);
         check();
-        this.bytes = await this.engine.addInvisibleText(docId, layers, font);
+        this.bytes = await this.engine.addInvisibleText(docId, layers, { regular, bold });
         for (const { page } of layers) {
           this.textModels.delete(page);
           this.pageTexts.delete(page);
@@ -690,6 +701,8 @@ export class PdfEditor {
     this.textSession = null;
     for (const edit of this.textEdits.values()) edit.session.destroy();
     this.textEdits.clear();
+    for (const patch of this.scanPatches.values()) void patch.then(({ href }) => URL.revokeObjectURL(href), () => undefined);
+    this.scanPatches.clear();
     this.textEditor?.el.remove();
     this.textEditor = null;
     this.interaction = null;
@@ -949,6 +962,11 @@ export class PdfEditor {
     const page = await this.getPageText(paragraph.pageIndex);
     store.registerFonts(page.fonts);
     await Promise.all([...fonts].map(([font, { source, chars }]) => store.ensure(font, source, chars)));
+    // Recognized text is set anew in a fallback font, over the scan with its words
+    // erased: have both ready, so the old words never show through the new ones.
+    const background = paragraph.recognized ? this.scanPatch(paragraph).catch(() => null) : null;
+    if (paragraph.recognized) await Promise.all([...fonts.keys()].map((font) => store.fallbackBytes(store.fallbackFor(font))));
+    const ready = await background;
     const opening = this.opening;
     if (opening?.token !== token) return;
     this.opening = null;
@@ -957,7 +975,9 @@ export class PdfEditor {
     const previous = this.textEdits.get(paragraph.id);
     const initial: StyledChar[] = previous
       ? previous.session.styledChars
-      : paragraphChars(paragraph, (style, char) => store.advance(style, char));
+      : paragraph.recognized
+        ? recognizedChars(paragraph, (font) => store.fallbackFor(font))
+        : paragraphChars(paragraph, (style, char) => store.advance(style, char));
     previous?.session.destroy();
     this.textEdits.delete(paragraph.id);
     this.textSession = new TextEditSession(view, paragraph, paragraphFrame(paragraph, page.block), store, {
@@ -965,9 +985,41 @@ export class PdfEditor {
       onExit: () => this.endTextEdit(),
     }, initial);
     this.root.dataset.editing = 'text';
+    if (ready) this.textSession.setBackground({ href: ready.href, ...ready.patch });
     this.updateHidden(paragraph.pageIndex);
     this.textSession.pointerDown(opening.point, opening.event, opening.clicks);
     this.textSession.pointerUp();
+  }
+
+  private scanEraseFor(paragraph: TextParagraph): Promise<ScanErase> {
+    // Stored at the scan's own resolution when it has to be rendered.
+    return this.getScanInfo(paragraph.pageIndex).then(
+      (info) => scanErase(paragraph, Math.min(400, Math.max(150, info.dpi || OCR_DPI)) / 72),
+      () => scanErase(paragraph, OCR_DPI / 72),
+    );
+  }
+
+  /** The scan under a recognized paragraph with its words erased, as an image URL (cached per paragraph). */
+  private scanPatch(paragraph: TextParagraph): Promise<{ href: string; patch: Omit<ScanPatch, 'image'> & { width: number; height: number } }> {
+    const docId = this.docId;
+    if (docId === null) return Promise.reject(new Error('No document is open.'));
+    let patch = this.scanPatches.get(paragraph.id);
+    if (!patch) {
+      patch = this.scanEraseFor(paragraph)
+        .then((erase) => this.engine.scanPatch(docId, paragraph.pageIndex, erase))
+        .then(async ({ image, ...placement }) => {
+          const canvas = new OffscreenCanvas(image.width, image.height);
+          canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(image.rgba), image.width, image.height), 0, 0);
+          const href = URL.createObjectURL(await canvas.convertToBlob({ type: 'image/png' }));
+          return { href, patch: { ...placement, width: image.width, height: image.height } };
+        });
+      this.scanPatches.set(paragraph.id, patch);
+      patch.catch((error: unknown) => {
+        this.scanPatches.delete(paragraph.id);
+        this.events.emit('error', { error });
+      });
+    }
+    return patch;
   }
 
   /** Leaves the paragraph being edited; changed text stays on the page (written into the PDF on save, next stage). */

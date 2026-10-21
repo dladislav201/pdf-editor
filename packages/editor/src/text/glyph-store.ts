@@ -20,6 +20,9 @@ const FALLBACKS = (Object.keys(FAMILIES) as FallbackFamily[]).flatMap((family) =
 export const FALLBACK_FONT = -1;
 export const isFallback = (font: number) => font < 0;
 export const fallbackFile = (font: number): string => FALLBACKS[-font - 1]!.file;
+/** Id of the fallback font of a family and style. */
+export const fallbackId = (family: FallbackFamily, style: (typeof STYLES)[number]): number =>
+  -(FALLBACKS.findIndex((f) => f.family === family && f.style === style) + 1);
 
 /** A drawable glyph: advance in ems, outline in its own units (y up). */
 export interface Glyph {
@@ -141,7 +144,7 @@ export class GlyphStore {
     const bold = (info?.weight ?? 400) >= 600;
     const italic = info?.italic ?? false;
     const style = bold && italic ? 'BoldItalic' : bold ? 'Bold' : italic ? 'Italic' : 'Regular';
-    return -(FALLBACKS.findIndex((f) => f.family === family && f.style === style) + 1);
+    return fallbackId(family, style);
   }
 
   /** The glyph to draw `char` with: the document font if it has one, else its fallback. */

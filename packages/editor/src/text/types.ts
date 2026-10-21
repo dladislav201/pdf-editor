@@ -91,7 +91,10 @@ export interface TextParagraph {
   /** False when some glyphs can't be rewritten yet; `reason` says why. */
   editable: boolean;
   reason?: string;
-  /** Invisible text recognized from a scan (an OCR layer), read-only. */
+  /**
+   * Invisible text recognized from a scan (an OCR layer). Editing it writes
+   * the paragraph as visible text and erases its words from the scan.
+   */
   recognized?: boolean;
 }
 

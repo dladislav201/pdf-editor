@@ -39,6 +39,12 @@ export interface PlacedWord extends RecognizedWord {
   end: [number, number];
   /** Unit vector pointing up from the baseline, in raster pixels (y down, so usually `[0, -1]`). */
   up: [number, number];
+  /** Font size of the word's line, in pixels, from the height of its ink. */
+  size: number;
+  /** Thicker strokes than the page's text of the same size. */
+  bold: boolean;
+  /** CSS hex colour of the ink. */
+  color: string;
 }
 
 /** Recognized text of a page, in PDF user space. */
@@ -50,6 +56,8 @@ export interface OcrWord {
   /** Estimated font size in points. */
   size: number;
   line: number;
+  bold: boolean;
+  color: string;
 }
 
 export interface OcrPage {

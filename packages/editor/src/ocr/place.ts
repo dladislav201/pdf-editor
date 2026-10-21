@@ -9,7 +9,10 @@ import type { OcrWord, PlacedWord } from './types';
  */
 export interface InvisibleWord {
   text: string;
+  /** The size the text appears in on the scan, so it can be edited as such. */
   size: number;
+  bold: boolean;
+  color: string;
   origin: Point;
   run: Point;
   up: Point;
@@ -23,17 +26,13 @@ export interface InvisibleWord {
 export function placeWords(words: PlacedWord[], geometry: PageGeometry): { words: OcrWord[]; layer: InvisibleWord[] } {
   const out: OcrWord[] = [];
   const layer: InvisibleWord[] = [];
-  // Tesseract's row height is sometimes that of the whole block (a cell with two
-  // lines); the tallest word of the line keeps the size honest.
-  const tallest = new Map<number, number>();
-  for (const word of words) tallest.set(word.line, Math.max(tallest.get(word.line) ?? 0, word.box.y1 - word.box.y0));
   for (const word of words) {
     const origin = geometry.toPdf(word.start);
     const end = geometry.toPdf(word.end);
     const top = geometry.toPdf([word.start[0] + word.up[0], word.start[1] + word.up[1]]);
     const up: Point = [top[0] - origin[0], top[1] - origin[1]];
     const length = Math.hypot(...up) || 1;
-    const size = Math.min(word.lineHeight, 1.3 * tallest.get(word.line)!) / geometry.scale;
+    const size = word.size / geometry.scale;
     const [x0, y0] = geometry.toPdf([word.box.x0, word.box.y1]);
     const [x1, y1] = geometry.toPdf([word.box.x1, word.box.y0]);
     out.push({
@@ -43,8 +42,18 @@ export function placeWords(words: PlacedWord[], geometry: PageGeometry): { words
       baseline: origin[1],
       size,
       line: word.line,
+      bold: word.bold,
+      color: word.color,
     });
-    layer.push({ text: word.text, size, origin, run: [end[0] - origin[0], end[1] - origin[1]], up: [up[0] / length, up[1] / length] });
+    layer.push({
+      text: word.text,
+      size,
+      bold: word.bold,
+      color: word.color,
+      origin,
+      run: [end[0] - origin[0], end[1] - origin[1]],
+      up: [up[0] / length, up[1] / length],
+    });
   }
   return { words: out, layer };
 }

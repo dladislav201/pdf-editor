@@ -176,12 +176,25 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         fail(request.id, error);
       }
       return;
+    case 'scanPatch':
+      try {
+        const patch = openDoc(request.docId).scanPatch(request.page, request.erase);
+        reply({ id: request.id, ok: true, result: patch }, [patch.image.rgba.buffer]);
+      } catch (error) {
+        fail(request.id, error);
+      }
+      return;
     case 'addInvisibleText':
       try {
         const doc = openDoc(request.docId);
-        const chars = new Set(request.pages.flatMap((p) => p.words.flatMap((w) => [...w.text])));
-        const font = (await loadSubsetter()).subset(new Uint8Array(request.font), chars);
-        doc.addInvisibleText(request.pages, font);
+        const hb = await loadSubsetter();
+        const words = request.pages.flatMap((p) => p.words);
+        const subset = (font: ArrayBuffer, bold: boolean) =>
+          hb.subset(new Uint8Array(font), new Set(words.filter((w) => w.bold === bold).flatMap((w) => [...w.text])));
+        doc.addInvisibleText(request.pages, {
+          regular: subset(request.fonts.regular, false),
+          ...(words.some((w) => w.bold) ? { bold: subset(request.fonts.bold, true) } : {}),
+        });
         const saved = doc.save();
         reply({ id: request.id, ok: true, result: saved }, [saved.buffer]);
       } catch (error) {

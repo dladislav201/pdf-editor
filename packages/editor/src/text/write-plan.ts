@@ -1,5 +1,6 @@
 import { isFallback, type GlyphStore } from './glyph-store';
 import type { ParagraphLayout, PlacedGlyph, StyledChar } from './layout';
+import type { ScanErase } from './scan-edit';
 import type { TextParagraph } from './types';
 
 /** A word written with a document font, by the engine. */
@@ -34,6 +35,8 @@ export interface TextWritePlan {
   moves: { object: number; dx: number; dy: number }[];
   words: PlannedWord[];
   fallback: PlannedFallbackWord[];
+  /** For recognized text: its words are erased from the scan underneath first. */
+  erase?: ScanErase;
 }
 
 const isBlank = (char: string) => char === ' ' || char === ' ' || char === '\t' || char === '\n';

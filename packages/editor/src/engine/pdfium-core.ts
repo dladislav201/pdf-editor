@@ -1,8 +1,12 @@
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
+import { eraseInk } from '../ocr/erase';
 import type { InvisibleWord } from '../ocr/place';
+import type { Raster } from '../ocr/types';
+import type { ScanErase } from '../text/scan-edit';
+import type { Point } from '../types';
 import type { RawPageText } from '../text/types';
 import type { TextWritePlan } from '../text/write-plan';
-import type { Rotation } from './page-geometry';
+import { PageGeometry, type Rotation } from './page-geometry';
 import { fontGlyphs, type FontGlyphs } from './pdfium-glyphs';
 import { extractPageText } from './pdfium-text';
 
@@ -21,6 +25,17 @@ export interface ScanInfo {
   recognized: boolean;
   /** Resolution of the biggest picture on the page, in pixels per inch (0 without one). */
   dpi: number;
+}
+
+/**
+ * A cleaned piece of a scan and where it goes on the page: its bottom-left
+ * corner and the page vectors its bottom and left edges run along.
+ */
+export interface ScanPatch {
+  image: Raster;
+  origin: Point;
+  xAxis: Point;
+  yAxis: Point;
 }
 
 /** Errors keep a stable `name`, so callers can tell "password" from "not a PDF" across the worker boundary. */
@@ -164,6 +179,224 @@ export class PdfiumDocument {
   }
 
   /**
+   * A copy of the page area `erase.region` with the ink of `erase.words`
+   * removed: what goes under an edited paragraph of a scan. Cut from the
+   * scan's own pixels and placed exactly on them, so nothing but the erased
+   * words changes; pages without a picture there are rendered instead.
+   */
+  scanPatch(index: number, erase: ScanErase): ScanPatch {
+    return this.imagePatch(index, erase) ?? this.renderedPatch(index, erase);
+  }
+
+  /** The patch cut from the picture under the area (the scan), on its own pixel grid. */
+  private imagePatch(index: number, erase: ScanErase): ScanPatch | null {
+    const page = this.page(index);
+    const lib = this.lib;
+    const { wasmExports } = lib.pdfium;
+    const { region } = erase;
+    const cx = region.x + region.width / 2;
+    const cy = region.y + region.height / 2;
+    const scratch = wasmExports.malloc(24);
+    let best: { object: number; area: number; m: number[] } | null = null;
+    try {
+      const count = lib.FPDFPage_CountObjects(page);
+      for (let i = 0; i < count; i++) {
+        const object = lib.FPDFPage_GetObject(page, i);
+        if (lib.FPDFPageObj_GetType(object) !== FPDF_PAGEOBJ_IMAGE) continue;
+        if (!lib.FPDFPageObj_GetBounds(object, scratch, scratch + 4, scratch + 8, scratch + 12)) continue;
+        const [left, bottom, right, top] = [...heapF32(lib).subarray(scratch >> 2, (scratch >> 2) + 4)];
+        if (cx < left! || cx > right! || cy < bottom! || cy > top!) continue;
+        const area = (right! - left!) * (top! - bottom!);
+        if (best && area <= best.area) continue;
+        if (!lib.FPDFPageObj_GetMatrix(object, scratch)) continue;
+        best = { object, area, m: [...heapF32(lib).subarray(scratch >> 2, (scratch >> 2) + 6)] };
+      }
+    } finally {
+      wasmExports.free(scratch);
+    }
+    if (!best) return null;
+    const [a, b, c, d, e, f] = best.m as [number, number, number, number, number, number];
+    const det = a * d - b * c;
+    if (Math.abs(det) < 1e-9) return null;
+
+    const bitmap = lib.FPDFImageObj_GetBitmap(best.object);
+    if (!bitmap) return null;
+    try {
+      const format = lib.FPDFBitmap_GetFormat(bitmap);
+      // fpdfview.h: 1 gray, 2 BGR, 3 BGRx, 4 BGRA.
+      const bytesPerPixel = { 1: 1, 2: 3, 3: 4, 4: 4 }[format];
+      if (!bytesPerPixel) return null;
+      const W = lib.FPDFBitmap_GetWidth(bitmap);
+      const H = lib.FPDFBitmap_GetHeight(bitmap);
+      const stride = lib.FPDFBitmap_GetStride(bitmap);
+      // User space → image pixels (the image is the unit square, its first row at the top).
+      const toPixel = (x: number, y: number): [number, number] => {
+        const u = (d * (x - e) - c * (y - f)) / det;
+        const v = (-b * (x - e) + a * (y - f)) / det;
+        return [u * W, (1 - v) * H];
+      };
+      const toUser = (px: number, py: number): Point => {
+        const u = px / W;
+        const v = 1 - py / H;
+        return [a * u + c * v + e, b * u + d * v + f];
+      };
+      const boxOf = (r: { x: number; y: number; width: number; height: number }) => {
+        const corners = [
+          toPixel(r.x, r.y),
+          toPixel(r.x + r.width, r.y),
+          toPixel(r.x, r.y + r.height),
+          toPixel(r.x + r.width, r.y + r.height),
+        ];
+        return {
+          x0: Math.min(...corners.map((p) => p[0])),
+          y0: Math.min(...corners.map((p) => p[1])),
+          x1: Math.max(...corners.map((p) => p[0])),
+          y1: Math.max(...corners.map((p) => p[1])),
+        };
+      };
+      const area = boxOf(region);
+      const px0 = Math.max(0, Math.floor(area.x0));
+      const py0 = Math.max(0, Math.floor(area.y0));
+      const px1 = Math.min(W, Math.ceil(area.x1));
+      const py1 = Math.min(H, Math.ceil(area.y1));
+      if (px1 <= px0 || py1 <= py0) return null;
+      const width = px1 - px0;
+      const height = py1 - py0;
+      const source = lib.FPDFBitmap_GetBuffer(bitmap);
+      const heap = heapU8(lib);
+      const rgba = new Uint8ClampedArray(width * height * 4);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const from = source + (py0 + y) * stride + (px0 + x) * bytesPerPixel;
+          const to = (y * width + x) * 4;
+          if (bytesPerPixel === 1) {
+            rgba[to] = rgba[to + 1] = rgba[to + 2] = heap[from]!;
+          } else {
+            rgba[to] = heap[from + 2]!;
+            rgba[to + 1] = heap[from + 1]!;
+            rgba[to + 2] = heap[from]!;
+          }
+          rgba[to + 3] = 255;
+        }
+      }
+      const pixelsPerPoint = W / Math.hypot(a, b);
+      const image = eraseInk(
+        { width, height, rgba },
+        erase.words.map((word) => {
+          const box = boxOf(word);
+          return { x0: box.x0 - px0, y0: box.y0 - py0, x1: box.x1 - px0, y1: box.y1 - py0 };
+        }),
+        erase.size * pixelsPerPoint,
+      );
+      const origin = toUser(px0, py1);
+      const right = toUser(px1, py1);
+      const top = toUser(px0, py0);
+      return {
+        image,
+        origin,
+        xAxis: [right[0] - origin[0], right[1] - origin[1]],
+        yAxis: [top[0] - origin[0], top[1] - origin[1]],
+      };
+    } finally {
+      lib.FPDFBitmap_Destroy(bitmap);
+    }
+  }
+
+  /** The patch from the page as rendered at `erase.scale`, for areas without a picture under them. */
+  private renderedPatch(index: number, erase: ScanErase): ScanPatch {
+    const page = this.page(index);
+    const lib = this.lib;
+    const { wasmExports } = lib.pdfium;
+    const info = this.pageInfo(index);
+    const geometry = new PageGeometry(info.box, info.rotation, erase.scale);
+    const toPixels = (r: { x: number; y: number; width: number; height: number }) => {
+      const corners = [geometry.toViewport([r.x, r.y]), geometry.toViewport([r.x + r.width, r.y + r.height])];
+      return {
+        x0: Math.min(corners[0]![0], corners[1]![0]),
+        y0: Math.min(corners[0]![1], corners[1]![1]),
+        x1: Math.max(corners[0]![0], corners[1]![0]),
+        y1: Math.max(corners[0]![1], corners[1]![1]),
+      };
+    };
+    const area = toPixels(erase.region);
+    const px0 = Math.max(0, Math.floor(area.x0));
+    const py0 = Math.max(0, Math.floor(area.y0));
+    const px1 = Math.min(Math.ceil(geometry.width), Math.ceil(area.x1));
+    const py1 = Math.min(Math.ceil(geometry.height), Math.ceil(area.y1));
+    const width = Math.max(1, px1 - px0);
+    const height = Math.max(1, py1 - py0);
+
+    const bitmap = lib.FPDFBitmap_Create(width, height, 1);
+    if (!bitmap) throw new EngineError('EngineError', 'Not enough memory to render the page.');
+    const matrix = wasmExports.malloc(24);
+    const clip = wasmExports.malloc(16);
+    let rgba: Uint8ClampedArray<ArrayBuffer>;
+    try {
+      lib.FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
+      // The page at `scale`, shifted so the area's corner lands at the bitmap's origin.
+      heapF32(lib).set([erase.scale, 0, 0, erase.scale, -px0, -py0], matrix >> 2);
+      heapF32(lib).set([0, 0, width, height], clip >> 2);
+      lib.FPDF_RenderPageBitmapWithMatrix(bitmap, page, matrix, clip, FPDF_REVERSE_BYTE_ORDER);
+      const ptr = lib.FPDFBitmap_GetBuffer(bitmap);
+      rgba = new Uint8ClampedArray(heapU8(lib).slice(ptr, ptr + width * height * 4).buffer);
+    } finally {
+      wasmExports.free(matrix);
+      wasmExports.free(clip);
+      lib.FPDFBitmap_Destroy(bitmap);
+    }
+    const image = eraseInk(
+      { width, height, rgba },
+      erase.words.map((word) => {
+        const box = toPixels(word);
+        return { x0: box.x0 - px0, y0: box.y0 - py0, x1: box.x1 - px0, y1: box.y1 - py0 };
+      }),
+      erase.size * erase.scale,
+    );
+    const origin = geometry.toPdf([px0, py1]);
+    const right = geometry.toPdf([px1, py1]);
+    const top = geometry.toPdf([px0, py0]);
+    return {
+      image,
+      origin,
+      xAxis: [right[0] - origin[0], right[1] - origin[1]],
+      yAxis: [top[0] - origin[0], top[1] - origin[1]],
+    };
+  }
+
+  /** Puts a cleaned piece of a scan onto the page, above what is there. */
+  private insertPatch(pageIndex: number, patch: ScanPatch): void {
+    const lib = this.lib;
+    const { width, height, rgba } = patch.image;
+    const bitmap = lib.FPDFBitmap_Create(width, height, 0);
+    if (!bitmap) throw new EngineError('EngineError', 'Not enough memory to write the page.');
+    try {
+      const stride = lib.FPDFBitmap_GetStride(bitmap);
+      const ptr = lib.FPDFBitmap_GetBuffer(bitmap);
+      const heap = heapU8(lib);
+      // BGRx rows.
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const from = (y * width + x) * 4;
+          const to = ptr + y * stride + x * 4;
+          heap[to] = rgba[from + 2]!;
+          heap[to + 1] = rgba[from + 1]!;
+          heap[to + 2] = rgba[from]!;
+          heap[to + 3] = 255;
+        }
+      }
+      const object = lib.FPDFPageObj_NewImageObj(this.handle);
+      if (!object) throw new EngineError('EngineError', 'Could not create an image.');
+      if (!lib.FPDFImageObj_SetBitmap(0, 0, object, bitmap)) throw new EngineError('EngineError', 'Could not store an image.');
+      const [a, b] = patch.xAxis;
+      const [c, d] = patch.yAxis;
+      lib.FPDFImageObj_SetMatrix(object, a, b, c, d, patch.origin[0], patch.origin[1]);
+      lib.FPDFPage_InsertObject(this.page(pageIndex), object);
+    } finally {
+      lib.FPDFBitmap_Destroy(bitmap);
+    }
+  }
+
+  /**
    * Rewrites paragraphs on their pages: drops the objects a plan removes,
    * moves the glyph objects it keeps and adds new words in document fonts or,
    * for characters those lack, in fallback fonts (`fallbackFonts`: TrueType
@@ -211,9 +444,12 @@ export class PdfiumDocument {
           ...plan.words.map((word) => ({ ...word, font: lib.FPDFTextObj_GetFont(handle(word.fontObject)) })),
           ...plan.fallback.map((word) => ({ ...word, font: fallbackFont(word.font) })),
         ],
+        // Cleaned from the page as it is before any plan changes it.
+        patch: plan.erase ? this.scanPatch(plan.page, plan.erase) : null,
       };
     });
-    for (const { plan, page, removed, moved, words } of resolved) {
+    for (const { plan, page, removed, moved, words, patch } of resolved) {
+      if (patch) this.insertPatch(plan.page, patch);
       for (const move of moved) lib.FPDFPageObj_Transform(move.object, 1, 0, 0, 1, move.dx, move.dy);
       words.forEach((word) => {
         const object = lib.FPDFPageObj_CreateTextObj(this.handle, word.font, word.size);
@@ -288,26 +524,32 @@ export class PdfiumDocument {
    * Adds recognized text under the page images as invisible text (render
    * mode 3), the way OCR software makes scans searchable and selectable. Each
    * word is stretched along its baseline to cover the word on the scan.
-   * `font` is a TrueType font with every character used (ideally subset).
+   * Size, weight and colour are those of the text on the scan (the fill colour
+   * isn't drawn, but it is what editing the text later starts from).
+   * `fonts` are TrueType fonts with every character used (ideally subset).
    */
-  addInvisibleText(pages: { page: number; words: InvisibleWord[] }[], font: Uint8Array): void {
+  addInvisibleText(pages: { page: number; words: InvisibleWord[] }[], fonts: { regular: Uint8Array; bold?: Uint8Array }): void {
     const lib = this.lib;
     const { wasmExports } = lib.pdfium;
-    const fontPtr = wasmExports.malloc(font.length);
-    let handle: number;
-    try {
-      heapU8(lib).set(font, fontPtr);
-      handle = lib.FPDFText_LoadFont(this.handle, fontPtr, font.length, FPDF_FONT_TRUETYPE, true);
-    } finally {
-      wasmExports.free(fontPtr);
-    }
-    if (!handle) throw new EngineError('EngineError', 'Could not embed the font for recognized text.');
+    const load = (font: Uint8Array): number => {
+      const ptr = wasmExports.malloc(font.length);
+      try {
+        heapU8(lib).set(font, ptr);
+        const handle = lib.FPDFText_LoadFont(this.handle, ptr, font.length, FPDF_FONT_TRUETYPE, true);
+        if (!handle) throw new EngineError('EngineError', 'Could not embed the font for recognized text.');
+        return handle;
+      } finally {
+        wasmExports.free(ptr);
+      }
+    };
+    const regular = load(fonts.regular);
+    const bold = fonts.bold ? load(fonts.bold) : regular;
     const bounds = wasmExports.malloc(16);
     try {
       for (const { page: index, words } of pages) {
         const page = this.page(index);
         for (const word of words) {
-          const object = lib.FPDFPageObj_CreateTextObj(this.handle, handle, word.size);
+          const object = lib.FPDFPageObj_CreateTextObj(this.handle, word.bold ? bold : regular, word.size);
           if (!object) throw new EngineError('EngineError', 'Could not create a text object.');
           const bytes = (word.text.length + 1) * 2;
           const text = wasmExports.malloc(bytes);
@@ -318,6 +560,7 @@ export class PdfiumDocument {
             wasmExports.free(text);
           }
           lib.FPDFTextObj_SetTextRenderMode(object, RENDER_INVISIBLE);
+          lib.FPDFPageObj_SetFillColor(object, ...parseColor(word.color), 255);
           // Natural width at the identity matrix, then stretch it to the word on the scan.
           lib.FPDFPageObj_GetBounds(object, bounds, bounds + 4, bounds + 8, bounds + 12);
           const [left, , right] = heapF32(lib).subarray(bounds >> 2, (bounds >> 2) + 4) as unknown as number[];
@@ -337,7 +580,8 @@ export class PdfiumDocument {
       }
     } finally {
       wasmExports.free(bounds);
-      lib.FPDFFont_Close(handle);
+      lib.FPDFFont_Close(regular);
+      if (bold !== regular) lib.FPDFFont_Close(bold);
     }
   }
 

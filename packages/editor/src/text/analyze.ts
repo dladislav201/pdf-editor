@@ -426,39 +426,48 @@ function rotateRect(rect: Rect, angle: number): Rect {
 
 /**
  * Invisible text: the recognized (OCR) layer of a scan. It runs along the
- * scan's skew, so it is straightened first, grouped like any text, and the
- * paragraph and line boxes are turned back onto the page. Glyph positions
- * inside stay straightened. It can be read, searched and copied, not edited.
+ * scan's skew, so it is straightened to be grouped like any text, then put
+ * back: glyphs and boxes sit where they are on the page, and each line's
+ * baseline is that of its first glyph. Editing it rewrites it as visible text.
  */
-function recognizedParagraphs(raw: RawPageText): TextParagraph[] {
+function recognizedParagraphs(raw: RawPageText): { paragraphs: TextParagraph[]; margins: Margins | null } {
   const invisible = raw.chars.filter((c) => c.invisible);
-  if (!invisible.length) return [];
+  if (!invisible.length) return { paragraphs: [], margins: null };
   const angle = median(invisible.map((c) => normalAngle(c.angle)));
   // PDFium measures char angles clockwise; user space turns counterclockwise.
   const skew = -angle;
+  const turn = <T extends TextChar>(c: T, by: number): T => {
+    const [x, y] = rotatePoint(c.x, c.y, by);
+    const [cx, cy] = rotatePoint(c.box.x + c.box.width / 2, c.box.y + c.box.height / 2, by);
+    return { ...c, x, y, box: { ...c.box, x: cx - c.box.width / 2, y: cy - c.box.height / 2 } };
+  };
   const straight = invisible
     .filter((c) => Math.abs(normalAngle(c.angle) - angle) < MAX_SKEW)
-    .map((c) => {
-      const [x, y] = rotatePoint(c.x, c.y, -skew);
-      const [cx, cy] = rotatePoint(c.box.x + c.box.width / 2, c.box.y + c.box.height / 2, -skew);
-      return { ...c, x, y, angle: 0, box: { ...c.box, x: cx - c.box.width / 2, y: cy - c.box.height / 2 } };
-    });
+    .map((c) => ({ ...turn(c, -skew), angle: 0 }));
   // Word sizes come from the scan and vary a little; that's not super- or subscript.
-  return layoutChars(raw, straight, false).paragraphs.map((paragraph) => ({
-    ...paragraph,
-    box: rotateRect(paragraph.box, skew),
-    lines: paragraph.lines.map((line) => ({ ...line, box: rotateRect(line.box, skew) })),
-    editable: false,
-    recognized: true,
-    reason: 'This is recognized (OCR) text of a scan; it can be searched and copied, not edited.',
-  }));
+  const { paragraphs, margins } = layoutChars(raw, straight, false);
+  return {
+    paragraphs: paragraphs.map((paragraph) => ({
+      ...paragraph,
+      box: rotateRect(paragraph.box, skew),
+      lines: paragraph.lines.map((line) => {
+        const chars = line.chars.map((c) => turn(c, skew));
+        return { ...line, chars, box: rotateRect(line.box, skew), baseline: chars[0]!.y };
+      }),
+      recognized: true,
+    })),
+    margins,
+  };
 }
 
 export function analyzePage(raw: RawPageText): PageText {
   const visible = raw.chars.filter((c) => !c.invisible && isHorizontal(c.angle));
   const { paragraphs: drawn, margins } = layoutChars(raw, visible);
-  const paragraphs = [...drawn, ...recognizedParagraphs(raw)]
+  const recognized = recognizedParagraphs(raw);
+  const paragraphs = [...drawn, ...recognized.paragraphs]
     .sort((a, b) => top(b.box) - top(a.box) || a.box.x - b.box.x)
     .map((paragraph, i) => ({ ...paragraph, id: `p${raw.pageIndex}-${i}` }));
-  return { pageIndex: raw.pageIndex, fonts: raw.fonts, paragraphs, block: margins };
+  // A scan has no drawn text: its text block is that of the recognized text.
+  const block = drawn.length || !recognized.margins ? margins : recognized.margins;
+  return { pageIndex: raw.pageIndex, fonts: raw.fonts, paragraphs, block };
 }

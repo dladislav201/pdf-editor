@@ -174,9 +174,8 @@ Built from PDFium's glyphs in the worker (~20 ms per page):
 - justification is told from ragged text by stretched word gaps, not edges;
 - single lines are aligned against the page's text block (centered titles,
   right-aligned page numbers);
-- invisible text (an OCR layer) becomes read-only paragraphs with
-  `recognized: true`, straightened along the scan's skew; rotated text is
-  skipped; text inside form XObjects is read but marked `editable: false`
+- invisible text (an OCR layer) becomes paragraphs with `recognized: true`,
+  grouped along the scan's skew; rotated text is skipped; text inside form XObjects is read but marked `editable: false`
   with a `reason`.
 
 Fixtures from Chrome, macOS Quartz and pdf-lib live in
@@ -210,7 +209,23 @@ Per page (all in the browser, Tesseract.js 7 LSTM `best_int` models):
    ("TOBAPUCTBO", "Ha", "Ne 17" → «№ 17»), real Latin words stay;
 6. each word goes into the page as invisible text (render mode 3) in an Arimo
    subset, stretched along its baseline over the word on the scan, skew
-   included.
+   included, at the size it appears in (from the height of its ink), bold
+   where its strokes are thick for that size, in the colour of its ink.
+
+### Editing a scan
+
+Recognized text is edited like any text, with the Edit text tool (as in
+Acrobat): the paragraph is set anew in Arimo of its weight, at the measured
+size and colour, and its words come off the scan underneath. The cleaned
+piece is cut from the scan's own pixels and put back exactly on them, with
+only the words' ink replaced by the paper colour; table borders and rules
+crossing it are kept, and nothing outside it changes (`src/text/scan-edit.ts`,
+`src/ocr/erase.ts`, `PdfiumDocument.scanPatch`). While editing, the same
+cleaned piece is shown under the new text; on save it goes into the PDF as an
+image, under the new visible text, and the paragraph's invisible text is
+removed. `src/text/scan-edit.test.ts` checks it on the synthetic scan: the
+total and a table cell edited, the rest of the page pixel-identical, borders
+kept, the new text extracted as visible text.
 
 Assets: `dist/engine/ocr/` (worker, three LSTM cores — the browser picks
 relaxed-SIMD, SIMD or plain — and `lang/{ukr,eng}.traineddata.gz`, ~5 MB),
@@ -262,9 +277,10 @@ reads back as whole lines.
   overlaps content below instead of pushing it down; not yet checked in
   Acrobat and Chrome.
 - Text annotations on rotated pages are not counter-rotated.
-- OCR: recognized text is read-only (editing a scan like real text — erase
-  the pixels, draw the words in a matching font — is the next step);
-  the image work (ink, skew, cells) runs on the main thread between
+- OCR: edited scan text is always set in Arimo (no serif or other look-alike
+  font yet); the cleaned area is flat paper colour, so on grainy scans its
+  edge can show faintly; a stamp crossing an edited word loses the part over
+  it; the image work (ink, skew, cells) runs on the main thread between
   Tesseract calls; handwriting and photographed (perspective) pages are
   not handled; only Ukrainian and English models ship.
 - No form filling, signatures, page operations, search, thumbnails or password

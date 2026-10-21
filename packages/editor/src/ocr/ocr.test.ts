@@ -21,10 +21,8 @@ const require = createRequire(import.meta.url);
 const { createCanvas } = require('@napi-rs/canvas') as typeof import('@napi-rs/canvas');
 const wasm = readFileSync(join(dirname(require.resolve('@embedpdf/pdfium')), 'pdfium.wasm'));
 const fixture = (name: string) => new Uint8Array(readFileSync(new URL(`../../test/fixtures/${name}`, import.meta.url)));
-const arimo = () => {
-  const bytes = readFileSync(join(dirname(require.resolve('@expo-google-fonts/arimo/package.json')), '400Regular', 'Arimo_400Regular.ttf'));
-  return new Uint8Array(bytes);
-};
+const arimo = (style: '400Regular' | '700Bold') =>
+  new Uint8Array(readFileSync(join(dirname(require.resolve('@expo-google-fonts/arimo/package.json')), style, `Arimo_${style}.ttf`)));
 
 let lib: Awaited<ReturnType<typeof init>>;
 let subsetter: Subsetter;
@@ -139,8 +137,10 @@ describe('recognizing a scanned page', () => {
       expect(841.89 - total.baseline).toBeGreaterThan(275);
       expect(841.89 - total.baseline).toBeLessThan(295);
 
-      const chars = new Set(layer.flatMap((w) => [...w.text]));
-      doc.addInvisibleText([{ page: 0, words: layer }], subsetter.subset(arimo(), chars));
+      doc.addInvisibleText([{ page: 0, words: layer }], {
+        regular: subsetter.subset(arimo('400Regular'), new Set(layer.filter((w) => !w.bold).flatMap((w) => [...w.text]))),
+        bold: subsetter.subset(arimo('700Bold'), new Set(layer.filter((w) => w.bold).flatMap((w) => [...w.text]))),
+      });
       const saved = doc.save();
 
       const reopened = new PdfiumDocument(lib, saved);
@@ -155,7 +155,7 @@ describe('recognizing a scanned page', () => {
         }
         const model = analyzePage(reopened.extractText(0));
         expect(model.paragraphs.length).toBeGreaterThan(5);
-        expect(model.paragraphs.every((p) => p.recognized && !p.editable)).toBe(true);
+        expect(model.paragraphs.every((p) => p.recognized && p.editable)).toBe(true);
         const all = model.paragraphs.map((p) => p.text).join('\n');
         expect(all).toContain('Видаткова накладна');
         expect(all).toMatch(/Разом без ПДВ: 4779,50 грн/);
