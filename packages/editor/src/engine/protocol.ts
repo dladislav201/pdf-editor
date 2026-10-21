@@ -1,3 +1,4 @@
+import type { InvisibleWord } from '../ocr/place';
 import type { TextWritePlan } from '../text/write-plan';
 import type { PageInfo } from './pdfium-core';
 
@@ -10,6 +11,11 @@ export type EngineRequest =
   | { id: number; type: 'glyphs'; docId: number; page: number; object: number; chars: string[] }
   /** Applies text edits to a fresh copy of `data` and returns the saved file; the open document is untouched. */
   | { id: number; type: 'writeText'; data: ArrayBuffer; plans: TextWritePlan[]; fallbackFonts: Record<number, ArrayBuffer> }
+  | { id: number; type: 'scanInfo'; docId: number; page: number }
+  /** RGBA pixels of a page (no annotations), for recognition. */
+  | { id: number; type: 'raster'; docId: number; page: number; width: number; height: number }
+  /** Writes recognized text as invisible text into the open document and returns the saved file. */
+  | { id: number; type: 'addInvisibleText'; docId: number; pages: { page: number; words: InvisibleWord[] }[]; font: ArrayBuffer }
   | { id: number; type: 'cancel'; target: number }
   | { id: number; type: 'close'; docId: number };
 

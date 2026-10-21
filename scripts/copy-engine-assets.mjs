@@ -28,4 +28,18 @@ for (const [family, pkg] of Object.entries(families)) {
     cpSync(join(root, folder, `${family}_${folder}.ttf`), join(out, 'fonts', `${family}-${style}.ttf`));
   }
 }
+// OCR: Tesseract's worker, its LSTM-only WebAssembly cores (the browser picks
+// one by SIMD support) and the Ukrainian + English models. Loaded only when
+// text recognition runs.
+mkdirSync(join(out, 'ocr', 'lang'), { recursive: true });
+const tesseractDist = join(dirname(require.resolve('tesseract.js/package.json')), 'dist');
+cpSync(join(tesseractDist, 'worker.min.js'), join(out, 'ocr', 'worker.min.js'));
+const coreDir = dirname(require.resolve('tesseract.js-core/package.json', { paths: [tesseractDist] }));
+for (const core of ['tesseract-core-lstm', 'tesseract-core-simd-lstm', 'tesseract-core-relaxedsimd-lstm']) {
+  cpSync(join(coreDir, `${core}.wasm.js`), join(out, 'ocr', `${core}.wasm.js`));
+}
+for (const lang of ['ukr', 'eng']) {
+  const data = dirname(require.resolve(`@tesseract.js-data/${lang}/package.json`));
+  cpSync(join(data, '4.0.0_best_int', `${lang}.traineddata.gz`), join(out, 'ocr', 'lang', `${lang}.traineddata.gz`));
+}
 console.log(`engine assets copied to ${out}`);

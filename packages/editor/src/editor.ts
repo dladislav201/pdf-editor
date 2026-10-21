@@ -4,12 +4,17 @@ import { Emitter } from './events';
 import { exportPdf, type ExportOptions } from './export';
 import { TEXT_ASCENT, TEXT_LINE_HEIGHT, hitTest, rectFromPoints, round, translate } from './geometry';
 import { History } from './history';
+import type { ScanInfo } from './engine/pdfium-core';
+import { placeWords, type InvisibleWord } from './ocr/place';
+import { recognizeRaster } from './ocr/recognize';
+import { TesseractEngine } from './ocr/tesseract';
+import type { OcrPage, Raster } from './ocr/types';
 import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
 import { injectStyles } from './styles';
 import { TextEditSession, paragraphChars, paragraphFrame } from './text/edit-session';
-import { GlyphStore, fallbackFile, type FontSource } from './text/glyph-store';
+import { FALLBACK_FONT, GlyphStore, fallbackFile, type FontSource } from './text/glyph-store';
 import { buildWritePlan } from './text/write-plan';
 import type { StyledChar } from './text/layout';
 import type { PageText, TextParagraph } from './text/types';
@@ -20,6 +25,7 @@ import type {
   EditorEventMap,
   EditorOptions,
   Point,
+  RecognizeOptions,
   Rect,
   TextAnnotation,
   ToolName,
@@ -121,6 +127,19 @@ async function readSource(source: DocumentSource): Promise<{ bytes: Uint8Array; 
   return { bytes, name: 'document.pdf' };
 }
 
+/** Tesseract reads best at about 300 dpi; much larger pages only cost memory. */
+const OCR_DPI = 300;
+const OCR_MAX_PIXELS = 40_000_000;
+
+/** A raster as Tesseract.js takes it in the browser: a canvas it encodes to PNG itself. */
+function rasterCanvas({ width, height, rgba }: Raster): OffscreenCanvas {
+  const canvas = new OffscreenCanvas(width, height);
+  canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
+  return canvas;
+}
+
+const abortError = (message: string) => Object.assign(new Error(message), { name: 'AbortError' });
+
 function describeLoadError(error: unknown): string {
   const name = (error as { name?: string })?.name;
   if (name === 'PasswordException') return 'This PDF is password-protected.';
@@ -141,6 +160,11 @@ export class PdfEditor {
   private readonly toolbar: { el: HTMLElement; destroy: () => void } | null;
   private readonly assetsUrl: string;
   private readonly fallbackFontsUrl: string;
+  private readonly ocrUrl: string;
+  private ocr: { engine: TesseractEngine; languages: string } | null = null;
+  private recognizing = false;
+  private geometries: PageGeometry[] = [];
+  private scanInfos = new Map<number, Promise<ScanInfo>>();
   private readonly readOnly: boolean;
   private readonly author: string | undefined;
   private readonly importEnabled: boolean;
@@ -208,6 +232,7 @@ export class PdfEditor {
     this.initialAnnotations = options.annotations ? structuredClone(options.annotations) : undefined;
     this.assetsUrl = withTrailingSlash(options.assetsUrl ?? defaultAssetsUrl());
     this.fallbackFontsUrl = withTrailingSlash(options.fallbackFontsUrl ?? `${this.assetsUrl}fonts/`);
+    this.ocrUrl = withTrailingSlash(options.ocrUrl ?? `${this.assetsUrl}ocr/`);
     const { workerUrl } = options;
     this.engine = new EngineClient(
       () =>
@@ -306,9 +331,9 @@ export class PdfEditor {
       this.docId = docId;
       this.bytes = bytes;
       this.fileName = file.name;
-      this.views = pages.map(
-        (info, i) =>
-          new PageView(i, new PageGeometry(info.box, info.rotation), (w, h, hidden) => this.engine.render(docId, i, w, h, hidden), this.zoom),
+      this.geometries = pages.map((info) => new PageGeometry(info.box, info.rotation));
+      this.views = this.geometries.map(
+        (geometry, i) => new PageView(i, geometry, (w, h, hidden) => this.engine.render(docId, i, w, h, hidden), this.zoom),
       );
       this.pagesEl.append(...this.views.map((view) => view.el));
       for (const view of this.views) this.visibleObserver.observe(view.el);
@@ -318,6 +343,7 @@ export class PdfEditor {
       this.history.reset();
       this.textModels.clear();
       this.pageTexts.clear();
+      this.scanInfos.clear();
       this.glyphs = this.createGlyphStore(docId);
       this.hoveredParagraph = null;
       if (this.selectedParagraph) {
@@ -511,6 +537,111 @@ export class PdfEditor {
     return model;
   }
 
+  // ------------------------------------------------------------------- OCR
+
+  /** Whether a page is a scan (a picture with no real text) and whether it already has recognized text. */
+  getScanInfo(pageIndex: number): Promise<ScanInfo> {
+    if (this.docId === null) return Promise.reject(new Error('No document is open.'));
+    let info = this.scanInfos.get(pageIndex);
+    if (!info) {
+      info = this.engine.scanInfo(this.docId, pageIndex);
+      this.scanInfos.set(pageIndex, info);
+      info.catch(() => this.scanInfos.delete(pageIndex));
+    }
+    return info;
+  }
+
+  /**
+   * Recognizes the text of scanned pages and adds it under the scan as an
+   * invisible text layer, as Acrobat's "Recognize text" does: the page looks
+   * the same, but its text can be searched, selected and copied, here and in
+   * any viewer, and is part of the exported PDF. Coloured ink (stamps,
+   * signatures) is ignored, the page is straightened, table cells are re-read
+   * one by one, and Latin look-alikes in Cyrillic words are fixed.
+   *
+   * By default every scanned page without recognized text is read; pass
+   * `pages` to choose. Pages with unsaved text edits are skipped.
+   */
+  async recognizeText(options: RecognizeOptions = {}): Promise<OcrPage[]> {
+    const docId = this.docId;
+    if (docId === null) throw new Error('No document is open.');
+    if (this.recognizing) throw new Error('Text recognition is already running.');
+    this.recognizing = true;
+    const token = this.loadToken;
+    const check = () => {
+      if (options.signal?.aborted) throw abortError('Text recognition was cancelled.');
+      if (token !== this.loadToken || this.docId !== docId) throw abortError('The document was closed.');
+    };
+    try {
+      const edited = new Set([...this.textEdits.values()].map((e) => e.paragraph.pageIndex));
+      if (this.textSession) edited.add(this.textSession.paragraph.pageIndex);
+      const pages: number[] = [];
+      for (const pageIndex of options.pages ?? this.views.map((_, i) => i)) {
+        if (!this.views[pageIndex] || edited.has(pageIndex)) continue;
+        const info = await this.getScanInfo(pageIndex);
+        // Never a second layer on top of one: the text would be found twice.
+        if (info.recognized) continue;
+        if (options.pages || info.scanned) pages.push(pageIndex);
+      }
+      check();
+
+      const languages = options.languages ?? ['ukr', 'eng'];
+      if (this.ocr?.languages !== languages.join('+')) {
+        void this.ocr?.engine.terminate();
+        const paths = { workerPath: `${this.ocrUrl}worker.min.js`, corePath: this.ocrUrl, langPath: `${this.ocrUrl}lang` };
+        const engine = new TesseractEngine(() => import('tesseract.js'), async (raster) => rasterCanvas(raster), paths, languages);
+        this.ocr = { engine, languages: languages.join('+') };
+      }
+      const { engine } = this.ocr;
+
+      const results: OcrPage[] = [];
+      const layers: { page: number; words: InvisibleWord[] }[] = [];
+      for (const [done, pageIndex] of pages.entries()) {
+        this.events.emit('ocrProgress', { pageIndex, done, total: pages.length });
+        const started = performance.now();
+        let geometry = this.geometries[pageIndex]!.scaled((options.dpi ?? OCR_DPI) / 72);
+        const area = geometry.width * geometry.height;
+        if (area > OCR_MAX_PIXELS) geometry = geometry.scaled(geometry.scale * Math.sqrt(OCR_MAX_PIXELS / area));
+        const width = Math.round(geometry.width);
+        const height = Math.round(geometry.height);
+        const rgba = await this.engine.raster(docId, pageIndex, width, height);
+        check();
+        const result = await recognizeRaster({ width, height, rgba }, engine);
+        check();
+        const { words, layer } = placeWords(result.words, geometry);
+        results.push({
+          pageIndex,
+          words,
+          confidence: words.reduce((sum, w) => sum + w.confidence, 0) / Math.max(1, words.length),
+          cells: result.cells,
+          durationMs: Math.round(performance.now() - started),
+        });
+        if (layer.length) layers.push({ page: pageIndex, words: layer });
+      }
+
+      if (layers.length) {
+        // The regular sans fallback (Arimo) covers Latin and Cyrillic; the engine embeds a subset.
+        const font = await this.glyphs.fallbackBytes(FALLBACK_FONT);
+        if (!font) throw new Error(`Could not load the font for recognized text (${fallbackFile(FALLBACK_FONT)}).`);
+        check();
+        this.bytes = await this.engine.addInvisibleText(docId, layers, font);
+        for (const { page } of layers) {
+          this.textModels.delete(page);
+          this.pageTexts.delete(page);
+          this.scanInfos.delete(page);
+        }
+      }
+      this.events.emit('textRecognized', { pages: results });
+      return results;
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') this.events.emit('error', { error });
+      throw error;
+    } finally {
+      this.recognizing = false;
+      this.events.emit('ocrProgress', { pageIndex: -1, done: 0, total: 0 });
+    }
+  }
+
   /** The paragraph picked with the Edit text tool. */
   getSelectedParagraph(): TextParagraph | null {
     return this.selectedParagraph;
@@ -546,6 +677,7 @@ export class PdfEditor {
     this.resizeObserver.disconnect();
     this.teardownDocument();
     this.engine.terminate();
+    void this.ocr?.engine.terminate();
     this.toolbar?.destroy();
     this.root.remove();
     this.events.clear();

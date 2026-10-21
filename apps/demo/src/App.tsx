@@ -1,5 +1,13 @@
-import { PdfEditor, type Annotation, type PageText, type PdfEditorInstance, type TextParagraph } from '@pdfsdk/react';
+import {
+  PdfEditor,
+  type Annotation,
+  type OcrPage,
+  type PageText,
+  type PdfEditorInstance,
+  type TextParagraph,
+} from '@pdfsdk/react';
 import { useEffect, useRef, useState } from 'react';
+import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url';
 import { createSamplePdf } from './sample-pdf';
 
 const TYPE_LABELS: Record<Annotation['type'], string> = {
@@ -60,6 +68,59 @@ function TextInspector({ paragraph, fonts }: { paragraph: TextParagraph; fonts: 
   );
 }
 
+type ScanState =
+  | { kind: 'none' }
+  | { kind: 'scanned'; pages: number[] }
+  | { kind: 'reading'; done: number; total: number }
+  | { kind: 'done'; pages: OcrPage[] };
+
+function ScanPanel({ state, onRecognize, onSample }: { state: ScanState; onRecognize: () => void; onSample: () => void }) {
+  if (state.kind === 'reading') {
+    return (
+      <p className="notice">
+        Reading page {state.done + 1} of {state.total}… Stamps and signatures are ignored, tables are read cell by cell.
+      </p>
+    );
+  }
+  if (state.kind === 'done') {
+    const words = state.pages.reduce((n, p) => n + p.words.length, 0);
+    return (
+      <>
+        <p className="notice">
+          Recognized {words} words on {state.pages.length} {state.pages.length === 1 ? 'page' : 'pages'} (
+          {state.pages.map((p) => `${(p.durationMs / 1000).toFixed(1)} s, ${Math.round(p.confidence)}% confidence`).join('; ')}).
+          The text now sits invisibly under the scan: select it, search it, copy it, and it's in the downloaded PDF.
+        </p>
+        <blockquote className="quote">
+          {state.pages[0]?.words.slice(0, 40).map((w) => w.text).join(' ')}…
+        </blockquote>
+      </>
+    );
+  }
+  if (state.kind === 'scanned') {
+    return (
+      <>
+        <p className="notice">
+          {state.pages.length === 1 ? 'Page' : 'Pages'} {state.pages.map((i) => i + 1).join(', ')}{' '}
+          {state.pages.length === 1 ? 'is a scan' : 'are scans'}: an image without text. Recognize the text (Ukrainian
+          and English) to make it searchable and selectable.
+        </p>
+        <button type="button" className="secondary-button" onClick={onRecognize}>
+          Recognize text
+        </button>
+      </>
+    );
+  }
+  return (
+    <>
+      <p className="hint">Scanned pages are found on open. Recognition runs in your browser; nothing is uploaded.</p>
+      <button type="button" className="secondary-button" onClick={onSample}>
+        Open a scanned sample
+      </button>
+    </>
+  );
+}
+
 export function App() {
   const [document, setDocument] = useState<Uint8Array | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -67,6 +128,7 @@ export function App() {
   const [paragraph, setParagraph] = useState<TextParagraph | null>(null);
   const [textEdits, setTextEdits] = useState(0);
   const [fonts, setFonts] = useState<PageText['fonts']>({});
+  const [scan, setScan] = useState<ScanState>({ kind: 'none' });
   const editorRef = useRef<PdfEditorInstance | null>(null);
 
   const inspect = (selected: TextParagraph | null) => {
@@ -77,6 +139,30 @@ export function App() {
   useEffect(() => {
     createSamplePdf().then(setDocument, (e: unknown) => setError(String(e)));
   }, []);
+
+  const findScans = async (pageCount: number) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    setScan({ kind: 'none' });
+    const pages: number[] = [];
+    for (let i = 0; i < Math.min(pageCount, 50); i++) {
+      const info = await editor.getScanInfo(i).catch(() => null);
+      if (info?.scanned && !info.recognized) pages.push(i);
+    }
+    if (pages.length) setScan({ kind: 'scanned', pages });
+  };
+
+  const recognize = () => {
+    void editorRef.current
+      ?.recognizeText()
+      .then((pages) => setScan({ kind: 'done', pages }))
+      .catch(() => setScan({ kind: 'none' }));
+  };
+
+  const openScanSample = async () => {
+    const response = await fetch(scanSampleUrl);
+    setDocument(new Uint8Array(await response.arrayBuffer()));
+  };
 
   const focus = (annotation: Annotation) => {
     const editor = editorRef.current;
@@ -112,6 +198,11 @@ export function App() {
             onAnnotationsChange={setAnnotations}
             onParagraphSelect={inspect}
             onTextEditsChange={(edits) => setTextEdits(edits.length)}
+            onDocumentLoaded={({ pageCount }) => void findScans(pageCount)}
+            onOcrProgress={({ pageIndex, done, total }) => {
+              if (pageIndex >= 0) setScan({ kind: 'reading', done, total });
+            }}
+            onTextRecognized={(pages) => setScan({ kind: 'done', pages })}
             onError={(e) => setError(e instanceof Error ? e.message : String(e))}
           />
           {error && (
@@ -143,6 +234,11 @@ export function App() {
                 the paragraph.
               </p>
             )}
+          </section>
+
+          <section className="panel">
+            <h2>Scans</h2>
+            <ScanPanel state={scan} onRecognize={recognize} onSample={() => void openScanSample()} />
           </section>
 
           <section className="panel">

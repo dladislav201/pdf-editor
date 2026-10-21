@@ -1,5 +1,7 @@
 export { PdfEditor } from './editor';
 export { exportPdf, type ExportOptions } from './export';
+export type { ScanInfo } from './engine/pdfium-core';
+export type { OcrPage, OcrWord } from './ocr/types';
 export { importAnnotations, type ImportResult } from './pdf/read-annotations';
 export type {
   PageText,
@@ -19,6 +21,7 @@ export type {
   InkAnnotation,
   Point,
   Rect,
+  RecognizeOptions,
   RectangleAnnotation,
   TextAnnotation,
   ToolName,

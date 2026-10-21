@@ -105,7 +105,7 @@ describe('layout analysis', () => {
     expect(page.paragraphs[1]!.lines[0]!.size).toBeCloseTo(12, 1);
   });
 
-  it('ignores invisible (OCR) and rotated text, and marks text in form XObjects read-only', async () => {
+  it('keeps invisible (OCR) text read-only, ignores rotated text and marks text in form XObjects read-only', async () => {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const page = doc.addPage([400, 400]);
@@ -121,9 +121,10 @@ describe('layout analysis', () => {
     page.drawPage(embedded!, { x: 40, y: 200 });
 
     const result = analyze(await doc.save());
-    expect(result.paragraphs.map((p) => p.text)).toEqual(['Visible text', 'Inside a form']);
+    expect(result.paragraphs.map((p) => p.text)).toEqual(['Visible text', 'Invisible OCR layer', 'Inside a form']);
     expect(result.paragraphs[0]!.editable).toBe(true);
-    expect(result.paragraphs[1]).toMatchObject({ editable: false, reason: expect.stringContaining('form XObject') });
+    expect(result.paragraphs[1]).toMatchObject({ editable: false, recognized: true, reason: expect.stringContaining('recognized') });
+    expect(result.paragraphs[2]).toMatchObject({ editable: false, reason: expect.stringContaining('form XObject') });
   });
 
   it('marks paragraphs that share a page object with other text as read-only', async () => {

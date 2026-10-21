@@ -15,6 +15,7 @@ const ICONS = {
   fitWidth: '<path d="M3 12h18"/><path d="m7 8-4 4 4 4"/><path d="m17 8 4 4-4 4"/>',
   open: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+  recognize: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8h8"/><path d="M7 12h10"/><path d="M7 16h6"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
 } as const;
 
@@ -112,6 +113,33 @@ export function createToolbar(editor: PdfEditor, readOnly: boolean): { el: HTMLE
   pageLabel.className = 'pdfsdk-page-label';
   el.append(pageLabel);
 
+  // Recognize text (OCR) of scanned pages; the label shows progress and the outcome.
+  let recognizeBtn: HTMLButtonElement | null = null;
+  let recognizing = false;
+  let labelTimer = 0;
+  if (!readOnly) {
+    recognizeBtn = button('Recognize text in scanned pages (OCR)', `${icon('recognize')}<span>Recognize text</span>`, () => {
+      recognizing = true;
+      sync();
+      editor
+        .recognizeText()
+        .then((pages) => setRecognizeLabel(pages.length ? `Recognized ${pages.length} page${pages.length > 1 ? 's' : ''}` : 'No scanned pages'))
+        .catch(() => setRecognizeLabel('Recognition failed'))
+        .finally(() => {
+          recognizing = false;
+          sync();
+        });
+    });
+    el.append(separator(), recognizeBtn);
+  }
+  const setRecognizeLabel = (text: string, sticky = false) => {
+    const label = recognizeBtn?.querySelector('span');
+    if (!label) return;
+    label.textContent = text;
+    clearTimeout(labelTimer);
+    if (!sticky) labelTimer = window.setTimeout(() => (label.textContent = 'Recognize text'), 4000);
+  };
+
   const spacer = document.createElement('div');
   spacer.className = 'pdfsdk-toolbar__spacer';
   const downloadBtn = button('Download PDF', `${icon('download')}<span>Download</span>`, () => {
@@ -132,17 +160,26 @@ export function createToolbar(editor: PdfEditor, readOnly: boolean): { el: HTMLE
     const count = editor.pageCount;
     pageLabel.textContent = count ? `${editor.getPageIndex() + 1} / ${count}` : '–';
     downloadBtn.disabled = count === 0;
+    if (recognizeBtn) recognizeBtn.disabled = count === 0 || recognizing;
   };
 
   const unsubscribers = (
     ['toolChange', 'colorChange', 'zoomChange', 'pageChange', 'historyChange', 'selectionChange', 'documentLoaded', 'annotationsChange'] as const
   ).map((event) => editor.on(event, sync));
+  unsubscribers.push(
+    editor.on('ocrProgress', ({ pageIndex, done, total }) => {
+      if (pageIndex >= 0) setRecognizeLabel(`Reading page ${done + 1} of ${total}…`, true);
+      // Started elsewhere (the host's own button): put the label back.
+      else if (!recognizing) setRecognizeLabel('Recognize text', true);
+    }),
+  );
   sync();
 
   return {
     el,
     destroy: () => {
       for (const off of unsubscribers) off();
+      clearTimeout(labelTimer);
       el.remove();
     },
   };

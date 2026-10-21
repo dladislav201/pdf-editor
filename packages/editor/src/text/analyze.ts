@@ -154,7 +154,9 @@ function buildLine(chars: RawChar[]): TextLine {
     const next = glyphs[i]!;
     const gap = next.x - right(prev.box);
     const spaceBetween = spaces.some((s) => s.x >= prev.x && s.x <= next.x);
-    if (spaceBetween || gap > WORD_GAP * Math.max(prev.size, next.size)) {
+    // OCR layers draw one object per word, stretched over the word on the scan, so gaps can be tiny.
+    const nextWord = prev.invisible && next.invisible && prev.object !== next.object;
+    if (spaceBetween || nextWord || gap > WORD_GAP * Math.max(prev.size, next.size)) {
       wordStarts.push(i);
       text += ' ';
     }
@@ -325,9 +327,10 @@ function joinLines(lines: TextLine[]): string {
 
 // ---------------------------------------------------------------- public
 
-export function analyzePage(raw: RawPageText): PageText {
-  const usable = raw.chars.filter((c) => !c.invisible && isHorizontal(c.angle));
-  const lines = mergeScripts(baselines(usable).flatMap(segments))
+/** Paragraphs (ids not set yet) and the main text block of a set of horizontal glyphs. */
+function layoutChars(raw: RawPageText, usable: RawChar[], scripts = true): { paragraphs: TextParagraph[]; margins: Margins } {
+  const pieces = baselines(usable).flatMap(segments);
+  const lines = (scripts ? mergeScripts(pieces) : pieces)
     .map(buildLine)
     .sort((a, b) => b.baseline - a.baseline || a.box.x - b.box.x);
 
@@ -373,32 +376,89 @@ export function analyzePage(raw: RawPageText): PageText {
     }
   }
 
-  const paragraphs: TextParagraph[] = drafts
-    .map((draft) => {
-      const size = mostCommon(draft.lines.map((l) => l.size));
-      const indent =
-        draft.lines.length >= 2 ? Math.max(0, lineLeft(draft.lines[0]!) - Math.min(...draft.lines.slice(1).map(lineLeft))) : 0;
-      const chars = draft.lines.flatMap((l) => l.chars);
-      const reason = chars.some((c) => c.object < 0)
-        ? 'Text inside a form XObject can not be edited yet.'
-        : chars.some((c) => (owners.get(c.object)?.size ?? 0) > 1)
-          ? 'This text is drawn together with other text and can not be edited on its own yet.'
-          : chars.map((c) => blocked.get(`${c.x},${c.y}`)).find(Boolean);
-      return {
-        id: '',
-        pageIndex: raw.pageIndex,
-        lines: draft.lines,
-        text: joinLines(draft.lines),
-        box: union(draft.lines.map((l) => l.box)),
-        align: alignment(draft.lines, size, indent > 0.5 * size ? indent : 0, margins),
-        leading: leadingOf(draft) ?? Math.round(size * 1.2 * 100) / 100,
-        indent: indent > 0.5 * size ? indent : 0,
-        editable: !reason,
-        ...(reason ? { reason } : {}),
-      };
-    })
+  const paragraphs: TextParagraph[] = drafts.map((draft) => {
+    const size = mostCommon(draft.lines.map((l) => l.size));
+    const indent =
+      draft.lines.length >= 2 ? Math.max(0, lineLeft(draft.lines[0]!) - Math.min(...draft.lines.slice(1).map(lineLeft))) : 0;
+    const chars = draft.lines.flatMap((l) => l.chars);
+    const reason = chars.some((c) => c.object < 0)
+      ? 'Text inside a form XObject can not be edited yet.'
+      : chars.some((c) => (owners.get(c.object)?.size ?? 0) > 1)
+        ? 'This text is drawn together with other text and can not be edited on its own yet.'
+        : chars.map((c) => blocked.get(`${c.x},${c.y}`)).find(Boolean);
+    return {
+      id: '',
+      pageIndex: raw.pageIndex,
+      lines: draft.lines,
+      text: joinLines(draft.lines),
+      box: union(draft.lines.map((l) => l.box)),
+      align: alignment(draft.lines, size, indent > 0.5 * size ? indent : 0, margins),
+      leading: leadingOf(draft) ?? Math.round(size * 1.2 * 100) / 100,
+      indent: indent > 0.5 * size ? indent : 0,
+      editable: !reason,
+      ...(reason ? { reason } : {}),
+    };
+  });
+  return { paragraphs, margins };
+}
+
+const normalAngle = (angle: number) => (angle > Math.PI ? angle - 2 * Math.PI : angle);
+/** Recognized text follows the scan, which is rarely more than a few degrees off. */
+const MAX_SKEW = 0.1;
+
+function rotatePoint(x: number, y: number, angle: number): [number, number] {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return [x * cos - y * sin, x * sin + y * cos];
+}
+
+function rotateRect(rect: Rect, angle: number): Rect {
+  const corners = [
+    rotatePoint(rect.x, rect.y, angle),
+    rotatePoint(right(rect), rect.y, angle),
+    rotatePoint(rect.x, top(rect), angle),
+    rotatePoint(right(rect), top(rect), angle),
+  ];
+  const x = Math.min(...corners.map((c) => c[0]));
+  const y = Math.min(...corners.map((c) => c[1]));
+  return { x, y, width: Math.max(...corners.map((c) => c[0])) - x, height: Math.max(...corners.map((c) => c[1])) - y };
+}
+
+/**
+ * Invisible text: the recognized (OCR) layer of a scan. It runs along the
+ * scan's skew, so it is straightened first, grouped like any text, and the
+ * paragraph and line boxes are turned back onto the page. Glyph positions
+ * inside stay straightened. It can be read, searched and copied, not edited.
+ */
+function recognizedParagraphs(raw: RawPageText): TextParagraph[] {
+  const invisible = raw.chars.filter((c) => c.invisible);
+  if (!invisible.length) return [];
+  const angle = median(invisible.map((c) => normalAngle(c.angle)));
+  // PDFium measures char angles clockwise; user space turns counterclockwise.
+  const skew = -angle;
+  const straight = invisible
+    .filter((c) => Math.abs(normalAngle(c.angle) - angle) < MAX_SKEW)
+    .map((c) => {
+      const [x, y] = rotatePoint(c.x, c.y, -skew);
+      const [cx, cy] = rotatePoint(c.box.x + c.box.width / 2, c.box.y + c.box.height / 2, -skew);
+      return { ...c, x, y, angle: 0, box: { ...c.box, x: cx - c.box.width / 2, y: cy - c.box.height / 2 } };
+    });
+  // Word sizes come from the scan and vary a little; that's not super- or subscript.
+  return layoutChars(raw, straight, false).paragraphs.map((paragraph) => ({
+    ...paragraph,
+    box: rotateRect(paragraph.box, skew),
+    lines: paragraph.lines.map((line) => ({ ...line, box: rotateRect(line.box, skew) })),
+    editable: false,
+    recognized: true,
+    reason: 'This is recognized (OCR) text of a scan; it can be searched and copied, not edited.',
+  }));
+}
+
+export function analyzePage(raw: RawPageText): PageText {
+  const visible = raw.chars.filter((c) => !c.invisible && isHorizontal(c.angle));
+  const { paragraphs: drawn, margins } = layoutChars(raw, visible);
+  const paragraphs = [...drawn, ...recognizedParagraphs(raw)]
     .sort((a, b) => top(b.box) - top(a.box) || a.box.x - b.box.x)
     .map((paragraph, i) => ({ ...paragraph, id: `p${raw.pageIndex}-${i}` }));
-
   return { pageIndex: raw.pageIndex, fonts: raw.fonts, paragraphs, block: margins };
 }

@@ -34,6 +34,22 @@ async function loadLibrary(wasmUrl: string): Promise<WrappedPdfiumModule> {
   return initLibrary(await init({ wasmBinary: await response.arrayBuffer() }));
 }
 
+function loadSubsetter(): Promise<Subsetter> {
+  subsetter ??= fetch(subsetWasmUrl).then(async (response) => {
+    if (!response.ok) throw new EngineError('EngineError', `Could not load the font subsetter (HTTP ${response.status}).`);
+    return createSubsetter(await response.arrayBuffer());
+  });
+  return subsetter.catch((error: unknown) => {
+    subsetter = null;
+    throw error;
+  });
+}
+
+function openDoc(docId: number): PdfiumDocument {
+  if (!current || current.id !== docId) throw new EngineError('EngineError', 'The document is no longer open.');
+  return current.doc;
+}
+
 /**
  * Renders run one at a time and yield between jobs, so a `cancel` sent while
  * the user zooms or scrolls arrives before stale pages are drawn.
@@ -120,14 +136,7 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         }
         const fonts: Record<number, Uint8Array> = {};
         if (needed.size) {
-          subsetter ??= fetch(subsetWasmUrl).then(async (response) => {
-            if (!response.ok) throw new EngineError('EngineError', `Could not load the font subsetter (HTTP ${response.status}).`);
-            return createSubsetter(await response.arrayBuffer());
-          });
-          const hb = await subsetter.catch((error: unknown) => {
-            subsetter = null;
-            throw error;
-          });
+          const hb = await loadSubsetter();
           for (const [font, chars] of needed) {
             const bytes = request.fallbackFonts[font];
             if (bytes) fonts[font] = hb.subset(new Uint8Array(bytes), chars);
@@ -147,6 +156,34 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
       try {
         if (!current || current.id !== request.docId) throw new EngineError('EngineError', 'The document is no longer open.');
         reply({ id: request.id, ok: true, result: analyzePage(current.doc.extractText(request.page)) });
+      } catch (error) {
+        fail(request.id, error);
+      }
+      return;
+    case 'scanInfo':
+      try {
+        reply({ id: request.id, ok: true, result: openDoc(request.docId).scanInfo(request.page) });
+      } catch (error) {
+        fail(request.id, error);
+      }
+      return;
+    case 'raster':
+      try {
+        // Without annotations: notes and highlights on top of a scan aren't part of its text.
+        const pixels = openDoc(request.docId).render(request.page, request.width, request.height, [], false);
+        reply({ id: request.id, ok: true, result: pixels }, [pixels.buffer]);
+      } catch (error) {
+        fail(request.id, error);
+      }
+      return;
+    case 'addInvisibleText':
+      try {
+        const doc = openDoc(request.docId);
+        const chars = new Set(request.pages.flatMap((p) => p.words.flatMap((w) => [...w.text])));
+        const font = (await loadSubsetter()).subset(new Uint8Array(request.font), chars);
+        doc.addInvisibleText(request.pages, font);
+        const saved = doc.save();
+        reply({ id: request.id, ok: true, result: saved }, [saved.buffer]);
       } catch (error) {
         fail(request.id, error);
       }

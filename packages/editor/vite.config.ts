@@ -10,7 +10,8 @@ export default defineConfig({
       fileName: 'index',
     },
     rollupOptions: {
-      external: [/^pdf-lib/, /^@pdf-lib\//],
+      // Tesseract.js is loaded on first use of text recognition, from the host's own dependencies.
+      external: [/^pdf-lib/, /^@pdf-lib\//, /^tesseract\.js/],
     },
     sourcemap: true,
     emptyOutDir: true,

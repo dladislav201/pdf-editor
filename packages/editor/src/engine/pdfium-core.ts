@@ -1,4 +1,5 @@
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
+import type { InvisibleWord } from '../ocr/place';
 import type { RawPageText } from '../text/types';
 import type { TextWritePlan } from '../text/write-plan';
 import type { Rotation } from './page-geometry';
@@ -10,6 +11,16 @@ export interface PageInfo {
   /** Visible box (crop box clipped to the media box) in user space: `[x0, y0, x1, y1]`. */
   box: [number, number, number, number];
   rotation: Rotation;
+}
+
+/** What a page is made of, to tell scans from born-digital pages. */
+export interface ScanInfo {
+  /** Mostly one big picture and (almost) no visible text: a scan or a photo. */
+  scanned: boolean;
+  /** Has invisible text: a recognized (OCR) layer is already there. */
+  recognized: boolean;
+  /** Resolution of the biggest picture on the page, in pixels per inch (0 without one). */
+  dpi: number;
 }
 
 /** Errors keep a stable `name`, so callers can tell "password" from "not a PDF" across the worker boundary. */
@@ -27,6 +38,13 @@ const FPDF_ERR_PASSWORD = 4;
 const FPDF_ERR_SECURITY = 5;
 const FPDF_ANNOT = 0x01;
 const FPDF_REVERSE_BYTE_ORDER = 0x10;
+// fpdf_edit.h
+const FPDF_PAGEOBJ_IMAGE = 3;
+const FPDF_FONT_TRUETYPE = 2;
+const RENDER_INVISIBLE = 3;
+/** A picture covering this much of the page, with fewer visible characters than below, makes a scan. */
+const SCAN_COVER = 0.5;
+const SCAN_MAX_CHARS = 20;
 /** Pages kept parsed; parsing is the expensive part of re-rendering at a new zoom. */
 const PAGE_CACHE_SIZE = 8;
 
@@ -126,7 +144,7 @@ export class PdfiumDocument {
    * Renders the page (with its annotations' appearances) to RGBA pixels.
    * `hidden` page objects are left out, e.g. the text of a paragraph being edited.
    */
-  render(index: number, width: number, height: number, hidden: number[] = []): Uint8ClampedArray<ArrayBuffer> {
+  render(index: number, width: number, height: number, hidden: number[] = [], annotations = true): Uint8ClampedArray<ArrayBuffer> {
     const page = this.page(index);
     const lib = this.lib;
     const inactive = hidden.map((i) => lib.FPDFPage_GetObject(page, i)).filter(Boolean);
@@ -135,7 +153,7 @@ export class PdfiumDocument {
     if (!bitmap) throw new EngineError('EngineError', 'Not enough memory to render the page.');
     try {
       lib.FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
-      lib.FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT | FPDF_REVERSE_BYTE_ORDER);
+      lib.FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, (annotations ? FPDF_ANNOT : 0) | FPDF_REVERSE_BYTE_ORDER);
       const ptr = lib.FPDFBitmap_GetBuffer(bitmap);
       // Copy out of the WASM heap: the heap may grow (and move) on the next call.
       return new Uint8ClampedArray(heapU8(lib).slice(ptr, ptr + width * height * 4).buffer);
@@ -155,7 +173,6 @@ export class PdfiumDocument {
   applyTextPlans(plans: TextWritePlan[], fallbackFonts: Record<number, Uint8Array> = {}): void {
     const lib = this.lib;
     const { wasmExports } = lib.pdfium;
-    const FPDF_FONT_TRUETYPE = 2;
     const loadedFallbacks = new Map<number, number>();
     const fallbackFont = (id: number): number => {
       let font = loadedFallbacks.get(id);
@@ -229,6 +246,99 @@ export class PdfiumDocument {
     }
     // The text objects keep their own references to the fonts.
     for (const font of loadedFallbacks.values()) lib.FPDFFont_Close(font);
+  }
+
+  /** Whether a page is a scan (one big picture, no real text) and whether it already has an OCR layer. */
+  scanInfo(index: number): ScanInfo {
+    const page = this.page(index);
+    const lib = this.lib;
+    const { wasmExports } = lib.pdfium;
+    const [x0, y0, x1, y1] = this.pageInfo(index).box;
+    const pageArea = (x1 - x0) * (y1 - y0);
+    let cover = 0;
+    let dpi = 0;
+    const scratch = wasmExports.malloc(16);
+    try {
+      const count = lib.FPDFPage_CountObjects(page);
+      for (let i = 0; i < count; i++) {
+        const object = lib.FPDFPage_GetObject(page, i);
+        if (lib.FPDFPageObj_GetType(object) !== FPDF_PAGEOBJ_IMAGE) continue;
+        if (!lib.FPDFPageObj_GetBounds(object, scratch, scratch + 4, scratch + 8, scratch + 12)) continue;
+        const [left, bottom, right, top] = heapF32(lib).subarray(scratch >> 2, (scratch >> 2) + 4) as unknown as number[];
+        const width = Math.min(right!, x1) - Math.max(left!, x0);
+        const height = Math.min(top!, y1) - Math.max(bottom!, y0);
+        if (width <= 0 || height <= 0) continue;
+        const share = (width * height) / pageArea;
+        if (share <= cover) continue;
+        cover = share;
+        if (lib.FPDFImageObj_GetImagePixelSize(object, scratch, scratch + 4)) {
+          const pixels = new Uint32Array(heapU8(lib).buffer, scratch, 1)[0]!;
+          dpi = Math.round(pixels / ((right! - left!) / 72));
+        }
+      }
+    } finally {
+      wasmExports.free(scratch);
+    }
+    const { chars } = this.extractText(index);
+    const visible = chars.filter((c) => !c.invisible && !c.isSpace).length;
+    return { scanned: cover >= SCAN_COVER && visible < SCAN_MAX_CHARS, recognized: chars.some((c) => c.invisible), dpi };
+  }
+
+  /**
+   * Adds recognized text under the page images as invisible text (render
+   * mode 3), the way OCR software makes scans searchable and selectable. Each
+   * word is stretched along its baseline to cover the word on the scan.
+   * `font` is a TrueType font with every character used (ideally subset).
+   */
+  addInvisibleText(pages: { page: number; words: InvisibleWord[] }[], font: Uint8Array): void {
+    const lib = this.lib;
+    const { wasmExports } = lib.pdfium;
+    const fontPtr = wasmExports.malloc(font.length);
+    let handle: number;
+    try {
+      heapU8(lib).set(font, fontPtr);
+      handle = lib.FPDFText_LoadFont(this.handle, fontPtr, font.length, FPDF_FONT_TRUETYPE, true);
+    } finally {
+      wasmExports.free(fontPtr);
+    }
+    if (!handle) throw new EngineError('EngineError', 'Could not embed the font for recognized text.');
+    const bounds = wasmExports.malloc(16);
+    try {
+      for (const { page: index, words } of pages) {
+        const page = this.page(index);
+        for (const word of words) {
+          const object = lib.FPDFPageObj_CreateTextObj(this.handle, handle, word.size);
+          if (!object) throw new EngineError('EngineError', 'Could not create a text object.');
+          const bytes = (word.text.length + 1) * 2;
+          const text = wasmExports.malloc(bytes);
+          try {
+            lib.pdfium.stringToUTF16(word.text, text, bytes);
+            lib.FPDFText_SetText(object, text);
+          } finally {
+            wasmExports.free(text);
+          }
+          lib.FPDFTextObj_SetTextRenderMode(object, RENDER_INVISIBLE);
+          // Natural width at the identity matrix, then stretch it to the word on the scan.
+          lib.FPDFPageObj_GetBounds(object, bounds, bounds + 4, bounds + 8, bounds + 12);
+          const [left, , right] = heapF32(lib).subarray(bounds >> 2, (bounds >> 2) + 4) as unknown as number[];
+          const natural = Math.max(right! - left!, 0.01);
+          const matrix = wasmExports.malloc(24);
+          try {
+            const [rx, ry] = word.run;
+            const [ux, uy] = word.up;
+            heapF32(lib).set([rx / natural, ry / natural, ux, uy, word.origin[0], word.origin[1]], matrix >> 2);
+            lib.FPDFPageObj_SetMatrix(object, matrix);
+          } finally {
+            wasmExports.free(matrix);
+          }
+          lib.FPDFPage_InsertObject(page, object);
+        }
+        if (!lib.FPDFPage_GenerateContent(page)) throw new EngineError('EngineError', `Could not write page ${index + 1}.`);
+      }
+    } finally {
+      wasmExports.free(bounds);
+      lib.FPDFFont_Close(handle);
+    }
   }
 
   /** The document as a PDF file, including changes made through the engine. */

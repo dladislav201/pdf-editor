@@ -91,6 +91,8 @@ export interface TextParagraph {
   /** False when some glyphs can't be rewritten yet; `reason` says why. */
   editable: boolean;
   reason?: string;
+  /** Invisible text recognized from a scan (an OCR layer), read-only. */
+  recognized?: boolean;
 }
 
 export interface PageText {

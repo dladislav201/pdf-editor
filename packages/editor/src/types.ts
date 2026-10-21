@@ -1,3 +1,4 @@
+import type { OcrPage } from './ocr/types';
 import type { TextParagraph } from './text/types';
 
 /**
@@ -97,6 +98,12 @@ export interface EditorOptions {
    * under `assetsUrl`.
    */
   fallbackFontsUrl?: string;
+  /**
+   * Folder with the OCR assets (Tesseract's worker and cores, and `lang/` with
+   * `*.traineddata.gz` models), shipped in `dist/engine/ocr/` with Ukrainian
+   * and English. Defaults to `ocr/` under `assetsUrl`.
+   */
+  ocrUrl?: string;
   /** Show the built-in toolbar. Default `true`. */
   toolbar?: boolean;
   /** Default `'fit-width'`. */
@@ -133,5 +140,19 @@ export interface EditorEventMap {
   paragraphSelect: { paragraph: TextParagraph | null };
   /** Page text was edited (fires when an edit session ends). */
   textEditsChange: { edits: { paragraphId: string; pageIndex: number; text: string }[] };
+  /** Text recognition is reading `pageIndex` (after `done` of `total` pages); `pageIndex` is -1 once it has stopped. */
+  ocrProgress: { pageIndex: number; done: number; total: number };
+  /** Recognized text was added to scanned pages. */
+  textRecognized: { pages: OcrPage[] };
   error: { error: unknown };
+}
+
+export interface RecognizeOptions {
+  /** Pages to read (0-based). Default: every scanned page without recognized text. */
+  pages?: number[];
+  /** Tesseract language codes; models are loaded from `ocrUrl`. Default `['ukr', 'eng']`. */
+  languages?: string[];
+  /** Resolution pages are read at. Default 300. */
+  dpi?: number;
+  signal?: AbortSignal;
 }
