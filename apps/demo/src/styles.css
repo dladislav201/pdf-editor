@@ -187,6 +187,23 @@ body {
   cursor: pointer;
 }
 
+.secondary-button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.secondary-button:hover:not(:disabled) {
+  background: var(--code-bg);
+}
+.secondary-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .code {
   margin: 0;
   padding: 10px 12px;

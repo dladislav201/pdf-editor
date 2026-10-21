@@ -24,11 +24,19 @@ interface AnnotationBase {
   /** ISO timestamp. */
   createdAt: string;
   author?: string;
+  /** Comment attached to the markup (the PDF `/Contents` of non-text annotations). */
+  comment?: string;
 }
 
 export interface HighlightAnnotation extends AnnotationBase {
   type: 'highlight';
+  /** Bounding box of the highlight. */
   rect: Rect;
+  /**
+   * Per-line boxes when the highlight spans several lines, as text highlights
+   * from Acrobat and other viewers do. When absent, `rect` is the highlight.
+   */
+  segments?: Rect[];
   opacity: number;
 }
 
@@ -80,8 +88,17 @@ export interface EditorOptions {
   toolbar?: boolean;
   /** Default `'fit-width'`. */
   initialZoom?: ZoomValue;
-  /** Annotations to show on load, e.g. restored from your backend. */
+  /**
+   * Annotations to show on load, e.g. restored from your backend. When given,
+   * they replace the annotations stored in the PDF file itself.
+   */
   annotations?: Annotation[];
+  /**
+   * Read highlight, rectangle, ink and free-text annotations stored in the PDF
+   * and make them editable. Default `true`. Other annotation types (links,
+   * form fields, stamps, …) are always kept as they are.
+   */
+  importAnnotations?: boolean;
   /** Written into every new annotation. */
   author?: string;
   /** Default `'auto'` (follows the OS setting). */

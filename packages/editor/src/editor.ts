@@ -1,9 +1,10 @@
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import { Emitter } from './events';
-import { exportPdf } from './export';
+import { exportPdf, type ExportOptions } from './export';
 import { TEXT_ASCENT, TEXT_LINE_HEIGHT, hitTest, rectFromPoints, round, translate } from './geometry';
 import { History } from './history';
+import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
 import { injectStyles } from './styles';
@@ -105,6 +106,7 @@ export class PdfEditor {
   private readonly assetsUrl: string;
   private readonly readOnly: boolean;
   private readonly author: string | undefined;
+  private readonly importEnabled: boolean;
   private readonly visibleObserver: IntersectionObserver;
   private readonly resizeObserver: ResizeObserver;
   private readonly fontBytes: Promise<ArrayBuffer> | null;
@@ -150,6 +152,7 @@ export class PdfEditor {
     injectStyles(container.ownerDocument);
     this.readOnly = options.readOnly ?? false;
     this.author = options.author;
+    this.importEnabled = options.importAnnotations ?? true;
     this.zoomMode = options.initialZoom ?? 'fit-width';
     this.initialAnnotations = options.annotations ? structuredClone(options.annotations) : undefined;
     this.assetsUrl = withTrailingSlash(options.assetsUrl ?? defaultAssetsUrl());
@@ -226,7 +229,13 @@ export class PdfEditor {
     this.commitTextEditor();
     this.showMessage('Loading…');
     try {
-      const { bytes, name } = await readSource(source);
+      const file = await readSource(source);
+      if (token !== this.loadToken) return;
+      // Editable annotations come out of the file into the editor; the stripped
+      // file is what pdf.js renders and what export writes them back into.
+      const { bytes, annotations: imported } = this.importEnabled
+        ? await importAnnotations(file.bytes)
+        : { bytes: file.bytes, annotations: [] };
       if (token !== this.loadToken) return;
       const task = getDocument({
         data: bytes.slice(),
@@ -247,12 +256,12 @@ export class PdfEditor {
       this.loadingTask = task;
       this.pdf = pdf;
       this.bytes = bytes;
-      this.fileName = name;
+      this.fileName = file.name;
       this.views = pages.map((page, i) => new PageView(i, page, this.zoom));
       this.pagesEl.append(...this.views.map((view) => view.el));
       for (const view of this.views) this.visibleObserver.observe(view.el);
 
-      this.annotations = this.initialAnnotations ?? [];
+      this.annotations = this.initialAnnotations ?? imported;
       this.initialAnnotations = undefined;
       this.history.reset();
       this.selectedId = null;
@@ -289,13 +298,17 @@ export class PdfEditor {
     this.viewportEl.scrollTo({ top: view.el.offsetTop - PAGES_PADDING });
   }
 
-  /** Returns the PDF with annotations burned into the pages. */
-  async exportPdf(): Promise<Uint8Array> {
+  /**
+   * Returns the PDF with the current annotations saved as real PDF annotations
+   * (editable in Acrobat, Preview and here), or burned into the pages with
+   * `{ flatten: true }`.
+   */
+  async exportPdf(options: Pick<ExportOptions, 'flatten'> = {}): Promise<Uint8Array> {
     this.commitTextEditor();
     if (!this.bytes) throw new Error('No document is open.');
     const fontBytes = this.fontBytes ? await this.fontBytes : undefined;
     try {
-      return await exportPdf(this.bytes, this.annotations, { fontBytes });
+      return await exportPdf(this.bytes, this.annotations, { fontBytes, flatten: options.flatten });
     } catch (error) {
       this.events.emit('error', { error });
       throw error;
@@ -303,8 +316,8 @@ export class PdfEditor {
   }
 
   /** Exports and saves the PDF through the browser's download flow. */
-  async download(fileName = this.fileName): Promise<void> {
-    const bytes = await this.exportPdf();
+  async download(fileName = this.fileName, options: Pick<ExportOptions, 'flatten'> = {}): Promise<void> {
+    const bytes = await this.exportPdf(options);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
     const link = document.createElement('a');
     link.href = url;
@@ -561,7 +574,8 @@ export class PdfEditor {
       id: createId(),
       pageIndex,
       color: this.colors[tool],
-      createdAt: new Date().toISOString(),
+      // Whole seconds: PDF dates can't hold milliseconds, so a saved file reopens with the same value.
+      createdAt: new Date(Math.floor(Date.now() / 1000) * 1000).toISOString(),
       ...(this.author ? { author: this.author } : {}),
     };
   }
@@ -760,7 +774,9 @@ export class PdfEditor {
         this.root.focus({ preventScroll: true });
       }
     });
-    requestAnimationFrame(() => el.focus({ preventScroll: true }));
+    // Synchronous on purpose: pointerdown is prevented, so nothing steals focus
+    // afterwards, and rAF would not run at all in a background tab.
+    el.focus({ preventScroll: true });
   }
 
   private layoutTextEditor(): void {

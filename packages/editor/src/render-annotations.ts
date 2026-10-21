@@ -22,13 +22,12 @@ export function pathData(points: Point[]): string {
 export function annotationElement(annotation: Annotation): SVGElement {
   switch (annotation.type) {
     case 'highlight': {
-      const { x, y, width, height } = annotation.rect;
-      return svg('rect', {
-        class: 'pdfsdk-highlight',
-        x, y, width, height,
-        fill: annotation.color,
-        'fill-opacity': annotation.opacity,
-      });
+      // One group with group opacity, so overlapping line boxes don't darken where they touch.
+      const group = svg('g', { class: 'pdfsdk-highlight', fill: annotation.color, opacity: annotation.opacity });
+      for (const { x, y, width, height } of annotation.segments ?? [annotation.rect]) {
+        group.append(svg('rect', { x, y, width, height }));
+      }
+      return group;
     }
     case 'rectangle': {
       const { x, y, width, height } = annotation.rect;

@@ -1,5 +1,6 @@
 export { PdfEditor } from './editor';
 export { exportPdf, type ExportOptions } from './export';
+export { importAnnotations, type ImportResult } from './pdf/read-annotations';
 export type {
   Annotation,
   DocumentSource,

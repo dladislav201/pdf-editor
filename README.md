@@ -7,7 +7,7 @@ files are never uploaded anywhere.
 
 | Path | What it is |
 |---|---|
-| `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (pdf.js), annotation tools, undo/redo, export (pdf-lib) |
+| `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (pdf.js), annotation tools, undo/redo, PDF annotation read/write (pdf-lib) |
 | `packages/react` | `@pdfsdk/react` — `<PdfEditor />` component |
 | `apps/demo` | Demo site (Vite + React) with a generated sample contract |
 | `scripts/copy-pdfjs-assets.mjs` | Copies the pdf.js worker, cmaps, fonts and wasm next to the bundle |
@@ -19,6 +19,7 @@ npm install
 npm run dev        # demo at http://localhost:5180, hot-reloads SDK sources
 npm run build      # builds both packages and the demo
 npm run typecheck
+npm test           # annotation read/write round-trip tests (vitest)
 ```
 
 ## Deploy the demo
@@ -48,7 +49,8 @@ const editor = await PdfEditor.create({
 });
 
 editor.on('annotationsChange', ({ annotations }) => save(annotations));
-const pdfBytes = await editor.exportPdf();       // annotations burned into the pages
+const pdfBytes = await editor.exportPdf();       // annotations saved as real PDF annotations
+const flat = await editor.exportPdf({ flatten: true }); // or burned into the pages
 ```
 
 React:
@@ -70,6 +72,29 @@ Set `toolbar: false` to drive it from your own UI.
 Keyboard: V select, H highlight, R rectangle, D draw, T text, Del delete,
 Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z redo, arrows nudge the selection, Ctrl+wheel zoom.
 
+## PDF annotations
+
+Saving writes standard annotation objects with appearance streams, so other
+viewers show them and can edit them. Checked so far with Apple PDFKit (Preview,
+Quick Look) and pdf.js (Firefox); Acrobat and Chrome (PDFium) not yet tested.
+
+| Editor | PDF |
+|---|---|
+| highlight | `/Highlight` with `/QuadPoints` (one quad per line segment) |
+| rectangle | `/Square` with `/BS` |
+| ink | `/Ink` with `/InkList` |
+| text | `/FreeText` with `/DA`, text in the embedded `fontUrl` font |
+
+The annotation id is stored in `/NM`, author in `/T`, comments in `/Contents`.
+
+On open, those four types are read from the file (including ones made by
+other tools: `/RD` insets, legacy `/Border`, gray/CMYK colors, `/DA` text
+color), removed from the copy pdf.js renders, and become editable. Their
+popups go with them. Everything else (links, form fields, stamps, notes,
+hidden annotations) is left untouched and written back as is. Pass
+`importAnnotations: false` to keep all annotations as static page content, or
+`annotations` to start from your own saved state instead.
+
 ## Design notes
 
 - Annotations live in PDF user space (points, bottom-left origin), so they are
@@ -81,11 +106,14 @@ Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z redo, arrows nudge the selection, Ctrl+wheel z
 
 ## Known gaps (next steps)
 
-- Export flattens annotations into page content. Next: write real PDF
-  annotation objects (Highlight, Square, Ink, FreeText) so they stay editable
-  in Acrobat, and read existing ones on load.
+- Importing parses the file with pdf-lib on the main thread and re-saves it
+  when it held editable annotations; very large files will feel that. Move to
+  a worker, or skip the re-save by hiding annotations at render time.
+- Rich text (`/RC`) of FreeText annotations is read as plain `/Contents`;
+  other markup types (underline, strike-out, circle, line, polygon, sticky
+  notes) are shown but not editable yet.
 - Highlight is a free rectangle; text-aware highlighting needs the pdf.js text layer.
 - Text annotations on rotated pages are not counter-rotated.
 - No form filling, signatures, page operations, search, thumbnails or password
   prompt yet.
-- No license key check, no tests, no CI.
+- No license key check, no CI; tests cover only annotation read/write.

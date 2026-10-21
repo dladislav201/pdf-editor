@@ -113,6 +113,22 @@ export function App() {
           </section>
 
           <section className="panel">
+            <h2>Export</h2>
+            <p className="hint">
+              Download in the toolbar keeps annotations editable in Acrobat, Preview and here. A flattened copy burns them
+              into the pages.
+            </p>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!document}
+              onClick={() => void editorRef.current?.download('flattened.pdf', { flatten: true }).catch(() => undefined)}
+            >
+              Download flattened copy
+            </button>
+          </section>
+
+          <section className="panel">
             <h2>Saved state</h2>
             <p className="hint">Annotations are plain JSON in PDF coordinates. Store them in your backend and pass them back in.</p>
             <pre className="code code--json">{JSON.stringify(annotations, null, 2)}</pre>

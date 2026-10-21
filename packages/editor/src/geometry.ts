@@ -81,6 +81,7 @@ function distanceToSegment([px, py]: Point, [ax, ay]: Point, [bx, by]: Point): n
 export function hitTest(annotation: Annotation, point: Point, tolerance: number, measure: MeasureText): boolean {
   switch (annotation.type) {
     case 'highlight':
+      return (annotation.segments ?? [annotation.rect]).some((rect) => inRect(rect, point, tolerance));
     case 'text':
       return inRect(bounds(annotation, measure), point, tolerance);
     case 'rectangle': {
@@ -108,8 +109,13 @@ export function hitTest(annotation: Annotation, point: Point, tolerance: number,
 export function translate(annotation: Annotation, dx: number, dy: number): Annotation {
   switch (annotation.type) {
     case 'highlight':
-    case 'rectangle':
-      return { ...annotation, rect: { ...annotation.rect, x: round(annotation.rect.x + dx), y: round(annotation.rect.y + dy) } };
+    case 'rectangle': {
+      const move = (rect: Rect): Rect => ({ ...rect, x: round(rect.x + dx), y: round(rect.y + dy) });
+      if (annotation.type === 'highlight' && annotation.segments) {
+        return { ...annotation, rect: move(annotation.rect), segments: annotation.segments.map(move) };
+      }
+      return { ...annotation, rect: move(annotation.rect) };
+    }
     case 'ink':
       return { ...annotation, paths: annotation.paths.map((path) => path.map(([x, y]) => [round(x + dx), round(y + dy)] as Point)) };
     case 'text':
