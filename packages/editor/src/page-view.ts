@@ -2,8 +2,8 @@ import type { RenderHandle } from './engine/client';
 import type { PageGeometry } from './engine/page-geometry';
 import type { Point } from './types';
 
-/** Asks the engine for a bitmap of this page at a pixel size. */
-export type PageRenderer = (width: number, height: number) => RenderHandle;
+/** Asks the engine for a bitmap of this page at a pixel size, leaving out `hidden` page objects. */
+export type PageRenderer = (width: number, height: number, hidden: number[]) => RenderHandle;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Above this many canvas pixels mobile Safari silently refuses to draw. */
@@ -19,6 +19,8 @@ export class PageView {
   readonly overlay: SVGSVGElement;
   /** Annotation elements go here, in PDF user-space coordinates. */
   readonly content: SVGGElement;
+  /** Page text being edited, drawn from glyph outlines in user space, under the annotations. */
+  readonly textLayer: SVGGElement;
   /** Shapes that are being drawn right now. */
   readonly draft: SVGGElement;
   /** Selection outline; drawn in overlay pixels so it is not mirrored with the content. */
@@ -30,6 +32,8 @@ export class PageView {
   private canvas: HTMLCanvasElement | null = null;
   private renderTask: RenderHandle | null = null;
   private renderedScale = 0;
+  /** Page objects left out of the bitmap (their text is drawn by an edit session instead). */
+  private hidden: number[] = [];
 
   constructor(
     readonly index: number,
@@ -53,9 +57,10 @@ export class PageView {
 
     const userSpace = document.createElementNS(SVG_NS, 'g');
     userSpace.setAttribute('transform', `matrix(${base.transform.join(' ')})`);
+    this.textLayer = document.createElementNS(SVG_NS, 'g');
     this.content = document.createElementNS(SVG_NS, 'g');
     this.draft = document.createElementNS(SVG_NS, 'g');
-    userSpace.append(this.content, this.draft);
+    userSpace.append(this.textLayer, this.content, this.draft);
     this.chrome = document.createElementNS(SVG_NS, 'g');
     this.textChrome = document.createElementNS(SVG_NS, 'g');
     this.overlay.append(userSpace, this.chrome, this.textChrome);
@@ -78,6 +83,16 @@ export class PageView {
     return this.geometry.scale;
   }
 
+  /** Sets the page objects to leave out of the bitmap; the next `render()` redraws. */
+  setHidden(objects: number[]): void {
+    const next = [...new Set(objects)].sort((a, b) => a - b);
+    if (next.join() === this.hidden.join()) return;
+    this.hidden = next;
+    // A render in flight was asked for the old set; drop it so it can't mark the page as current.
+    this.cancelRender();
+    this.renderedScale = 0;
+  }
+
   /** Renders the canvas at the current zoom, unless it is already up to date. */
   async render(): Promise<void> {
     const scale = this.geometry.scale;
@@ -93,7 +108,7 @@ export class PageView {
 
     const width = Math.max(1, Math.floor(cssWidth * outputScale));
     const height = Math.max(1, Math.floor(cssHeight * outputScale));
-    const task = this.renderer(width, height);
+    const task = this.renderer(width, height, this.hidden);
     this.renderTask = task;
     let bitmap: ImageBitmap;
     try {

@@ -158,6 +158,13 @@ body {
   background: var(--code-bg);
 }
 
+.notice {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+}
+
 .hint {
   margin: 0 0 8px;
   color: var(--muted);

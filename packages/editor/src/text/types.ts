@@ -92,6 +92,8 @@ export interface PageText {
   pageIndex: number;
   fonts: Record<number, TextFont>;
   paragraphs: TextParagraph[];
+  /** Left and right edges of the page's main text block (where most lines start and end). */
+  block: { left: number; right: number };
 }
 
 /** What the engine extracts per page before layout analysis. */

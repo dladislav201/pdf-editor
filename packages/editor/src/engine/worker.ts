@@ -47,7 +47,7 @@ async function pump(): Promise<void> {
       }
       try {
         if (!current || current.id !== job.docId) throw new EngineError('EngineError', 'The document is no longer open.');
-        const pixels = current.doc.render(job.page, job.width, job.height);
+        const pixels = current.doc.render(job.page, job.width, job.height, job.hidden);
         const bitmap = await createImageBitmap(new ImageData(pixels, job.width, job.height));
         reply({ id: job.id, ok: true, result: bitmap }, [bitmap]);
       } catch (error) {
@@ -93,6 +93,14 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
     case 'render':
       queue.push(request);
       void pump();
+      return;
+    case 'glyphs':
+      try {
+        if (!current || current.id !== request.docId) throw new EngineError('EngineError', 'The document is no longer open.');
+        reply({ id: request.id, ok: true, result: current.doc.glyphs(request.page, request.object, request.chars) });
+      } catch (error) {
+        fail(request.id, error);
+      }
       return;
     case 'text':
       try {

@@ -1,6 +1,7 @@
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
 import type { RawPageText } from '../text/types';
 import type { Rotation } from './page-geometry';
+import { fontGlyphs, type FontGlyphs } from './pdfium-glyphs';
 import { extractPageText } from './pdfium-text';
 
 /** Plain data about one page, safe to post between threads. */
@@ -115,10 +116,15 @@ export class PdfiumDocument {
     }
   }
 
-  /** Renders the page (with its annotations' appearances) to RGBA pixels. */
-  render(index: number, width: number, height: number): Uint8ClampedArray<ArrayBuffer> {
+  /**
+   * Renders the page (with its annotations' appearances) to RGBA pixels.
+   * `hidden` page objects are left out, e.g. the text of a paragraph being edited.
+   */
+  render(index: number, width: number, height: number, hidden: number[] = []): Uint8ClampedArray<ArrayBuffer> {
     const page = this.page(index);
     const lib = this.lib;
+    const inactive = hidden.map((i) => lib.FPDFPage_GetObject(page, i)).filter(Boolean);
+    for (const object of inactive) lib.FPDFPageObj_SetIsActive(object, false);
     const bitmap = lib.FPDFBitmap_Create(width, height, 1);
     if (!bitmap) throw new EngineError('EngineError', 'Not enough memory to render the page.');
     try {
@@ -129,7 +135,16 @@ export class PdfiumDocument {
       return new Uint8ClampedArray(heapU8(lib).slice(ptr, ptr + width * height * 4).buffer);
     } finally {
       lib.FPDFBitmap_Destroy(bitmap);
+      for (const object of inactive) lib.FPDFPageObj_SetIsActive(object, true);
     }
+  }
+
+  /** Glyphs of the font used by a text object, for the given characters. */
+  glyphs(pageIndex: number, objectIndex: number, chars: string[]): FontGlyphs {
+    const object = this.lib.FPDFPage_GetObject(this.page(pageIndex), objectIndex);
+    const font = object ? this.lib.FPDFTextObj_GetFont(object) : 0;
+    if (!font) throw new EngineError('EngineError', `Page object ${objectIndex} has no font.`);
+    return fontGlyphs(this.lib, font, chars);
   }
 
   /** Every glyph of the page, for layout analysis. */

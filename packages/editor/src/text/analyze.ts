@@ -357,6 +357,18 @@ export function analyzePage(raw: RawPageText): PageText {
     if (c.unmapped) blocked.set(`${c.x},${c.y}`, 'The font has no Unicode mapping for some characters.');
   }
 
+  // Editing hides and rewrites whole page objects, so a paragraph that shares
+  // an object with another paragraph can't be edited on its own.
+  const owners = new Map<number, Set<Draft>>();
+  for (const draft of drafts) {
+    for (const char of draft.lines.flatMap((l) => l.chars)) {
+      if (char.object < 0) continue;
+      const set = owners.get(char.object) ?? new Set<Draft>();
+      set.add(draft);
+      owners.set(char.object, set);
+    }
+  }
+
   const paragraphs: TextParagraph[] = drafts
     .map((draft) => {
       const size = mostCommon(draft.lines.map((l) => l.size));
@@ -365,7 +377,9 @@ export function analyzePage(raw: RawPageText): PageText {
       const chars = draft.lines.flatMap((l) => l.chars);
       const reason = chars.some((c) => c.object < 0)
         ? 'Text inside a form XObject can not be edited yet.'
-        : chars.map((c) => blocked.get(`${c.x},${c.y}`)).find(Boolean);
+        : chars.some((c) => (owners.get(c.object)?.size ?? 0) > 1)
+          ? 'This text is drawn together with other text and can not be edited on its own yet.'
+          : chars.map((c) => blocked.get(`${c.x},${c.y}`)).find(Boolean);
       return {
         id: '',
         pageIndex: raw.pageIndex,
@@ -382,5 +396,5 @@ export function analyzePage(raw: RawPageText): PageText {
     .sort((a, b) => top(b.box) - top(a.box) || a.box.x - b.box.x)
     .map((paragraph, i) => ({ ...paragraph, id: `p${raw.pageIndex}-${i}` }));
 
-  return { pageIndex: raw.pageIndex, fonts: raw.fonts, paragraphs };
+  return { pageIndex: raw.pageIndex, fonts: raw.fonts, paragraphs, block: margins };
 }

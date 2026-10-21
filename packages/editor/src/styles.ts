@@ -166,6 +166,29 @@ const CSS = /* css */ `
 .pdfsdk-paragraph--hover { stroke-dasharray: 4 3; }
 .pdfsdk-paragraph--selected { stroke-width: 1.5px; fill: color-mix(in srgb, var(--pdfsdk-accent) 7%, transparent); }
 .pdfsdk-paragraph--readonly { stroke: var(--pdfsdk-muted); }
+.pdfsdk-root[data-editing="text"] .pdfsdk-page__overlay { cursor: text; }
+.pdfsdk-text-edit__selection rect { fill: var(--pdfsdk-accent); fill-opacity: 0.25; }
+.pdfsdk-caret {
+  stroke: var(--pdfsdk-accent);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+.pdfsdk-caret--blink { animation: pdfsdk-blink 1.1s steps(1) infinite; }
+@keyframes pdfsdk-blink { 50% { opacity: 0; } }
+.pdfsdk-text-input {
+  position: absolute;
+  z-index: 3;
+  width: 1px;
+  height: 1em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  pointer-events: none;
+}
 .pdfsdk-highlight { mix-blend-mode: multiply; }
 .pdfsdk-selection {
   fill: none;

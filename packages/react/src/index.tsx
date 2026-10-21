@@ -20,6 +20,8 @@ export interface PdfEditorProps extends Omit<EditorOptions, 'container'> {
   onAnnotationsChange?: (annotations: Annotation[]) => void;
   /** A paragraph was picked with the Edit text tool, or the pick was cleared. */
   onParagraphSelect?: (paragraph: TextParagraph | null) => void;
+  /** Page text was edited (fires when an edit session ends). */
+  onTextEditsChange?: (edits: { paragraphId: string; pageIndex: number; text: string }[]) => void;
   onError?: (error: unknown) => void;
 }
 
@@ -36,13 +38,14 @@ export function PdfEditor({
   onDocumentLoaded,
   onAnnotationsChange,
   onParagraphSelect,
+  onTextEditsChange,
   onError,
   ...options
 }: PdfEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const callbacks = useRef({ onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onError });
-  callbacks.current = { onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onError };
+  const callbacks = useRef({ onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onTextEditsChange, onError });
+  callbacks.current = { onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onTextEditsChange, onError };
   const initialOptions = useRef(options);
 
   useImperativeHandle<Editor | null, Editor | null>(ref, () => editor, [editor]);
@@ -56,6 +59,7 @@ export function PdfEditor({
       editor.on('documentLoaded', (info) => callbacks.current.onDocumentLoaded?.(info)),
       editor.on('annotationsChange', ({ annotations }) => callbacks.current.onAnnotationsChange?.(annotations)),
       editor.on('paragraphSelect', ({ paragraph }) => callbacks.current.onParagraphSelect?.(paragraph)),
+      editor.on('textEditsChange', ({ edits }) => callbacks.current.onTextEditsChange?.(edits)),
       editor.on('error', ({ error }) => callbacks.current.onError?.(error)),
     ];
     callbacks.current.onReady?.(editor);

@@ -125,5 +125,7 @@ export interface EditorEventMap {
   historyChange: { canUndo: boolean; canRedo: boolean };
   /** A paragraph of page text was selected with the Edit text tool (or the selection cleared). */
   paragraphSelect: { paragraph: TextParagraph | null };
+  /** Page text was edited (fires when an edit session ends). */
+  textEditsChange: { edits: { paragraphId: string; pageIndex: number; text: string }[] };
   error: { error: unknown };
 }

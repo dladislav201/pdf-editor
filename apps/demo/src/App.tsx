@@ -65,6 +65,7 @@ export function App() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [paragraph, setParagraph] = useState<TextParagraph | null>(null);
+  const [textEdits, setTextEdits] = useState(0);
   const [fonts, setFonts] = useState<PageText['fonts']>({});
   const editorRef = useRef<PdfEditorInstance | null>(null);
 
@@ -110,6 +111,7 @@ export function App() {
             author="Demo user"
             onAnnotationsChange={setAnnotations}
             onParagraphSelect={inspect}
+            onTextEditsChange={(edits) => setTextEdits(edits.length)}
             onError={(e) => setError(e instanceof Error ? e.message : String(e))}
           />
           {error && (
@@ -127,10 +129,19 @@ export function App() {
             <h2>
               Text {paragraph && <span className={paragraph.editable ? 'count' : 'count count--muted'}>{paragraph.editable ? 'editable' : 'read-only'}</span>}
             </h2>
+            {textEdits > 0 && (
+              <p className="notice">
+                {textEdits} edited {textEdits === 1 ? 'paragraph' : 'paragraphs'}. Text edits are a preview for now:
+                writing them into the downloaded PDF is the next step.
+              </p>
+            )}
             {paragraph ? (
               <TextInspector paragraph={paragraph} fonts={fonts} />
             ) : (
-              <p className="hint">Pick Edit text (E) and click a paragraph to see how the engine reads it: lines, alignment and styles.</p>
+              <p className="hint">
+                Pick Edit text (E) and click a paragraph to edit it in place, in the document's own fonts. Escape leaves
+                the paragraph.
+              </p>
             )}
           </section>
 

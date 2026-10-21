@@ -126,6 +126,22 @@ describe('layout analysis', () => {
     expect(result.paragraphs[1]).toMatchObject({ editable: false, reason: expect.stringContaining('form XObject') });
   });
 
+  it('marks paragraphs that share a page object with other text as read-only', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([500, 200]);
+    // One text-show operation spanning two "cells".
+    page.drawText(`Left cell${' '.repeat(30)}Right cell`, { x: 20, y: 150, size: 11, font });
+    page.drawText('On its own', { x: 20, y: 100, size: 11, font });
+
+    const result = analyze(await doc.save());
+    expect(result.paragraphs.map((p) => [p.text, p.editable])).toEqual([
+      ['Left cell', false],
+      ['Right cell', false],
+      ['On its own', true],
+    ]);
+  });
+
   it('keeps ragged-right paragraphs left aligned and joins hyphenated lines', async () => {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);

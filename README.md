@@ -102,7 +102,35 @@ hidden annotations) is left untouched and written back as is. Pass
 lines → glyphs, with runs (font, size, color), alignment (left, right, center,
 justify), leading and first-line indent, all in PDF points. The Edit text tool
 (E) outlines paragraphs on hover and selects them on click
-(`paragraphSelect` event); editing them in place is the next stage.
+(`paragraphSelect` event).
+
+## Editing page text in place
+
+With Edit text (E), clicking a paragraph opens it for editing right on the
+page. Writing the edits into the saved PDF is the next stage; until then they
+are a preview (`getTextEdits()`, `textEditsChange`).
+
+- Glyphs are drawn from the document's own font outlines (PDFium
+  `FPDFFont_GetGlyphPath`), so subset fonts without a usable cmap still look
+  exactly like the page. Characters a subset font lacks come from the
+  fallback font (`fontUrl`). The original text objects are switched off in the
+  page bitmap (`FPDFPageObj_SetIsActive`) while their paragraph is edited.
+- Missing glyphs are detected per character: PDFium returns the font's
+  ".notdef" box for them, so an outline equal to that box, a zero advance, or
+  a visible character without an outline counts as missing.
+- `text/layout.ts` sets the paragraph: greedy breaking with real advances
+  (after spaces and hyphens, hard breaks, over-long words split), first-line
+  indent, left/right/center/justify; single-line paragraphs may grow to the
+  page's text block. Styles (font, size, color, super/subscript rise) are kept
+  per character; typed text takes the style before the caret.
+- Input goes through a hidden textarea (`beforeinput`), so IME composition,
+  dead keys and the clipboard work. Keys: arrows with Alt/Ctrl (words) and
+  Cmd (line ends), Home/End, Backspace/Delete by word or line, Enter (line
+  break), Cmd+A, Cmd+Z / Shift+Cmd+Z; mouse click, drag, Shift+click, double
+  (word) and triple (all) click. Escape leaves the paragraph; edited
+  paragraphs stay drawn and reopen with their edits.
+- Paragraphs whose page objects also hold other text, or that sit in form
+  XObjects, are read-only for now.
 
 Built from PDFium's glyphs in the worker (~20 ms per page):
 
@@ -150,6 +178,10 @@ Fixtures from Chrome, macOS Quartz and pdf-lib live in
 - Text model: two plain text lines without spacing (e.g. from a .txt) read as one
   paragraph; bullets drawn as shapes are not part of the item's text; vertical
   and rotated text is skipped.
+- Text editing: edits are not written into the PDF yet; the fallback font is a
+  single file (`fontUrl`) rather than a metric-compatible match per family
+  (Liberation for Arial/Times/Courier); no bold/italic toggles; text edits are
+  outside the editor's undo history.
 - Text annotations on rotated pages are not counter-rotated.
 - No form filling, signatures, page operations, search, thumbnails or password
   prompt yet.

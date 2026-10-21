@@ -1,4 +1,5 @@
 import type { PageText } from '../text/types';
+import type { FontGlyphs } from './pdfium-glyphs';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
@@ -60,8 +61,8 @@ export class EngineClient {
     return (await this.send({ type: 'open', data: buffer }, [buffer]).promise) as OpenResult;
   }
 
-  render(docId: number, page: number, width: number, height: number): RenderHandle {
-    const { id, promise } = this.send({ type: 'render', docId, page, width, height });
+  render(docId: number, page: number, width: number, height: number, hidden?: number[]): RenderHandle {
+    const { id, promise } = this.send({ type: 'render', docId, page, width, height, ...(hidden?.length ? { hidden } : {}) });
     return {
       promise: promise as Promise<ImageBitmap>,
       cancel: () => {
@@ -77,6 +78,11 @@ export class EngineClient {
   /** Lines, paragraphs and styles of a page. */
   async text(docId: number, page: number): Promise<PageText> {
     return (await this.send({ type: 'text', docId, page }).promise) as PageText;
+  }
+
+  /** Outlines and advances of `chars` in the font of a page's text object. */
+  async glyphs(docId: number, page: number, object: number, chars: string[]): Promise<FontGlyphs> {
+    return (await this.send({ type: 'glyphs', docId, page, object, chars }).promise) as FontGlyphs;
   }
 
   async close(docId: number): Promise<void> {

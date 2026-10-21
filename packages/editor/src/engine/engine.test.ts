@@ -6,10 +6,12 @@ import { PDFDocument, degrees, rgb } from 'pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Point } from '../types';
 import { PageGeometry, type Rotation } from './page-geometry';
+import { analyzePage } from '../text/analyze';
 import { PdfiumDocument, initLibrary } from './pdfium-core';
 
 const require = createRequire(import.meta.url);
 const wasm = readFileSync(join(dirname(require.resolve('@embedpdf/pdfium')), 'pdfium.wasm'));
+const fixture = (name: string) => readFileSync(new URL(`../../test/fixtures/${name}`, import.meta.url));
 let lib: Awaited<ReturnType<typeof init>>;
 
 beforeAll(async () => {
@@ -91,6 +93,64 @@ describe('PDFium engine', () => {
     } finally {
       a.close();
       b.close();
+    }
+  });
+
+  it('tells which characters a subset font really has', () => {
+    const doc = new PdfiumDocument(lib, fixture('chrome-contract.pdf'));
+    try {
+      const page = analyzePage(doc.extractText(0));
+      const body = page.paragraphs.find((p) => p.text.startsWith('Customer shall pay'))!;
+      const glyph = body.lines[0]!.chars[0]!;
+      const { glyphs, ascent, descent } = doc.glyphs(0, glyph.object, ['C', 'u', '4', ' ', 'Q', 'Ж', 'z']);
+      // Characters the paragraph uses are in the subset; others fall back to the ".notdef" box.
+      expect(glyphs.C).toMatchObject({ advance: expect.closeTo(0.722, 2), path: expect.stringMatching(/^M/) });
+      expect(glyphs['4']).not.toBeNull();
+      expect(glyphs[' ']).toMatchObject({ path: '' });
+      expect([glyphs.Q, glyphs['Ж'], glyphs.z]).toEqual([null, null, null]);
+      expect(ascent).toBeCloseTo(0.905, 2);
+      expect(descent).toBeCloseTo(-0.212, 2);
+    } finally {
+      doc.close();
+    }
+  });
+
+  it('reports glyphs missing from a simple subset font by their zero width', () => {
+    const doc = new PdfiumDocument(lib, fixture('quartz-invoice.pdf'));
+    try {
+      const glyph = analyzePage(doc.extractText(0)).paragraphs[0]!.lines[0]!.chars[0]!;
+      const { glyphs } = doc.glyphs(0, glyph.object, ['4', '5', 'I']);
+      expect(glyphs['4']).not.toBeNull();
+      expect(glyphs['5']).toBeNull(); // the invoice never uses a "5"
+      expect(glyphs.I!.advance).toBeCloseTo(0.6, 2); // Monaco is monospaced
+    } finally {
+      doc.close();
+    }
+  });
+
+  it('renders a page without the objects of a paragraph being edited', () => {
+    const doc = new PdfiumDocument(lib, fixture('chrome-contract.pdf'));
+    try {
+      const geometry = new PageGeometry(doc.pageInfo(0).box, 0, 1);
+      const title = analyzePage(doc.extractText(0)).paragraphs[0]!;
+      const objects = [...new Set(title.lines.flatMap((l) => l.chars.map((c) => c.object)))];
+      const width = Math.round(geometry.width);
+      const height = Math.round(geometry.height);
+      const dark = (rgba: Uint8ClampedArray) => {
+        let count = 0;
+        const [x0, y0] = geometry.toViewport([title.box.x, title.box.y + title.box.height]);
+        const [x1, y1] = geometry.toViewport([title.box.x + title.box.width, title.box.y]);
+        for (let y = Math.floor(y0); y < y1; y++) {
+          for (let x = Math.floor(x0); x < x1; x++) if (rgba[(y * width + x) * 4]! < 128) count++;
+        }
+        return count;
+      };
+      expect(dark(doc.render(0, width, height))).toBeGreaterThan(500);
+      expect(dark(doc.render(0, width, height, objects))).toBe(0);
+      // Hiding is temporary: the next render draws the title again.
+      expect(dark(doc.render(0, width, height))).toBeGreaterThan(500);
+    } finally {
+      doc.close();
     }
   });
 });

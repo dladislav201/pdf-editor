@@ -4,8 +4,9 @@ import type { PageInfo } from './pdfium-core';
 export type EngineRequest =
   | { id: number; type: 'init'; wasmUrl: string }
   | { id: number; type: 'open'; data: ArrayBuffer }
-  | { id: number; type: 'render'; docId: number; page: number; width: number; height: number }
+  | { id: number; type: 'render'; docId: number; page: number; width: number; height: number; hidden?: number[] }
   | { id: number; type: 'text'; docId: number; page: number }
+  | { id: number; type: 'glyphs'; docId: number; page: number; object: number; chars: string[] }
   | { id: number; type: 'cancel'; target: number }
   | { id: number; type: 'close'; docId: number };
 

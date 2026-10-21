@@ -8,6 +8,9 @@ import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
 import { injectStyles } from './styles';
+import { TextEditSession, paragraphChars, paragraphFrame } from './text/edit-session';
+import { GlyphStore, type FontSource } from './text/glyph-store';
+import type { StyledChar } from './text/layout';
 import type { PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
 import type {
@@ -16,6 +19,7 @@ import type {
   EditorEventMap,
   EditorOptions,
   Point,
+  Rect,
   TextAnnotation,
   ToolName,
   ZoomValue,
@@ -56,8 +60,7 @@ interface TextEditorState {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** Outline of a paragraph in overlay pixels (rotation-aware), with the reason as a tooltip when read-only. */
-function paragraphOutline(view: PageView, paragraph: TextParagraph, selected: boolean): SVGElement {
-  const { box } = paragraph;
+function paragraphOutline(view: PageView, paragraph: TextParagraph, box: Rect, selected: boolean): SVGElement {
   const corners = [
     view.pdfToOverlay([box.x, box.y]),
     view.pdfToOverlay([box.x + box.width, box.y + box.height]),
@@ -158,6 +161,11 @@ export class PdfEditor {
   private hoveredParagraph: TextParagraph | null = null;
   private selectedParagraph: TextParagraph | null = null;
   private hoverToken = 0;
+  private glyphs!: GlyphStore;
+  private textSession: TextEditSession | null = null;
+  /** Paragraphs whose text was changed, drawn by their (frozen) sessions until saved. */
+  private textEdits = new Map<string, { paragraph: TextParagraph; session: TextEditSession }>();
+  private textDragging = false;
   private tool: ToolName = 'select';
   private colors = { ...DEFAULT_COLORS };
   private zoomMode: ZoomValue;
@@ -291,7 +299,7 @@ export class PdfEditor {
       this.fileName = file.name;
       this.views = pages.map(
         (info, i) =>
-          new PageView(i, new PageGeometry(info.box, info.rotation), (w, h) => this.engine.render(docId, i, w, h), this.zoom),
+          new PageView(i, new PageGeometry(info.box, info.rotation), (w, h, hidden) => this.engine.render(docId, i, w, h, hidden), this.zoom),
       );
       this.pagesEl.append(...this.views.map((view) => view.el));
       for (const view of this.views) this.visibleObserver.observe(view.el);
@@ -300,6 +308,7 @@ export class PdfEditor {
       this.initialAnnotations = undefined;
       this.history.reset();
       this.textModels.clear();
+      this.glyphs = this.createGlyphStore(docId);
       this.hoveredParagraph = null;
       if (this.selectedParagraph) {
         this.selectedParagraph = null;
@@ -313,6 +322,7 @@ export class PdfEditor {
       this.viewportEl.scrollTo(0, 0);
 
       this.events.emit('documentLoaded', { pageCount: pages.length });
+      this.events.emit('textEditsChange', { edits: [] });
       this.emitAnnotations();
       this.emitHistory();
       this.events.emit('selectionChange', { id: null });
@@ -437,6 +447,7 @@ export class PdfEditor {
     this.root.dataset.tool = tool;
     if (tool !== 'select') this.select(null);
     if (tool !== 'editText') {
+      this.endTextEdit();
       this.setHoveredParagraph(null);
       this.selectParagraph(null);
     }
@@ -520,6 +531,10 @@ export class PdfEditor {
   // ======================================================== internals
 
   private teardownDocument(): void {
+    this.textSession?.destroy();
+    this.textSession = null;
+    for (const edit of this.textEdits.values()) edit.session.destroy();
+    this.textEdits.clear();
     this.textEditor?.el.remove();
     this.textEditor = null;
     this.interaction = null;
@@ -593,6 +608,7 @@ export class PdfEditor {
     vp.scrollLeft = ratioX * vp.scrollWidth - vp.clientWidth / 2;
 
     for (const view of this.visible) this.renderView(view);
+    this.textSession?.refresh();
     this.events.emit('zoomChange', { zoom: target });
   }
 
@@ -648,6 +664,10 @@ export class PdfEditor {
   }
 
   private async paragraphAt(view: PageView, point: Point): Promise<TextParagraph | null> {
+    // Edited paragraphs may have grown or moved: their sessions know the current extent.
+    for (const session of [this.textSession, ...[...this.textEdits.values()].map((e) => e.session)]) {
+      if (session && session.view === view && session.contains(point, PARAGRAPH_HIT_PADDING)) return session.paragraph;
+    }
     const model = await this.getPageText(view.index);
     const pad = PARAGRAPH_HIT_PADDING;
     return (
@@ -688,9 +708,96 @@ export class PdfEditor {
       const outlines = [this.hoveredParagraph, this.selectedParagraph]
         .filter((p): p is TextParagraph => p?.pageIndex === pageIndex)
         .filter((p, i, list) => list.findIndex((q) => q.id === p.id) === i)
-        .map((p) => paragraphOutline(view, p, p.id === this.selectedParagraph?.id));
+        .map((p) => paragraphOutline(view, p, this.paragraphBox(p), p.id === this.selectedParagraph?.id));
       view.textChrome.replaceChildren(...outlines);
     }
+  }
+
+  private paragraphBox(paragraph: TextParagraph): Rect {
+    if (this.textSession?.paragraph.id === paragraph.id) return this.textSession.box;
+    return this.textEdits.get(paragraph.id)?.session.box ?? paragraph.box;
+  }
+
+  // ------------------------------------------------------ text editing
+
+  private createGlyphStore(docId: number): GlyphStore {
+    return new GlyphStore((source: FontSource, chars) => this.engine.glyphs(docId, source.page, source.object, chars), this.fontBytes);
+  }
+
+  /** Page objects to leave out of a page's bitmap: those of every paragraph being or having been edited. */
+  private hiddenObjects(pageIndex: number): number[] {
+    const sessions = [this.textSession, ...[...this.textEdits.values()].map((e) => e.session)];
+    return sessions
+      .filter((s): s is TextEditSession => s?.paragraph.pageIndex === pageIndex)
+      .flatMap((s) => s.paragraph.lines.flatMap((l) => l.chars.map((c) => c.object)));
+  }
+
+  private updateHidden(pageIndex: number): void {
+    const view = this.views[pageIndex];
+    if (!view) return;
+    view.setHidden(this.hiddenObjects(pageIndex));
+    if (this.visible.has(view)) this.renderView(view);
+  }
+
+  /** Opens a paragraph for editing in place, then puts the caret where the user clicked. */
+  private async startTextEdit(paragraph: TextParagraph, point: Point, event: PointerEvent): Promise<void> {
+    if (!paragraph.editable || this.readOnly) return;
+    const view = this.views[paragraph.pageIndex];
+    if (!view || this.textSession?.paragraph.id === paragraph.id) return;
+    this.endTextEdit();
+
+    // Load every glyph the paragraph uses (plus common characters) before showing it.
+    const fonts = new Map<number, { source: FontSource; chars: Set<string> }>();
+    for (const char of paragraph.lines.flatMap((l) => l.chars)) {
+      const entry = fonts.get(char.font) ?? { source: { page: paragraph.pageIndex, object: char.object }, chars: new Set() };
+      for (const c of char.text) entry.chars.add(c);
+      fonts.set(char.font, entry);
+    }
+    const store = this.glyphs;
+    await Promise.all([...fonts].map(([font, { source, chars }]) => store.ensure(font, source, chars)));
+    const page = await this.getPageText(paragraph.pageIndex);
+    if (this.selectedParagraph?.id !== paragraph.id || this.tool !== 'editText' || store !== this.glyphs) return;
+
+    const previous = this.textEdits.get(paragraph.id);
+    const initial: StyledChar[] = previous ? previous.session.styledChars : paragraphChars(paragraph);
+    previous?.session.destroy();
+    this.textEdits.delete(paragraph.id);
+    this.textSession = new TextEditSession(view, paragraph, paragraphFrame(paragraph, page.block), store, {
+      onChange: () => this.drawParagraphOutlines(paragraph),
+      onExit: () => this.endTextEdit(),
+    }, initial);
+    this.root.dataset.editing = 'text';
+    this.updateHidden(paragraph.pageIndex);
+    this.textSession.pointerDown(point, event);
+    this.textSession.pointerUp();
+  }
+
+  /** Leaves the paragraph being edited; changed text stays on the page (written into the PDF on save, next stage). */
+  private endTextEdit(): void {
+    const session = this.textSession;
+    if (!session) return;
+    this.textSession = null;
+    this.textDragging = false;
+    delete this.root.dataset.editing;
+    if (session.changed) {
+      session.freeze();
+      this.textEdits.set(session.paragraph.id, { paragraph: session.paragraph, session });
+    } else {
+      session.destroy();
+    }
+    this.updateHidden(session.paragraph.pageIndex);
+    this.drawParagraphOutlines(session.paragraph);
+    this.events.emit('textEditsChange', { edits: this.getTextEdits() });
+    this.root.focus({ preventScroll: true });
+  }
+
+  /** Paragraphs whose text was changed in this session of the editor. */
+  getTextEdits(): { paragraphId: string; pageIndex: number; text: string }[] {
+    return [...this.textEdits.values()].map(({ paragraph, session }) => ({
+      paragraphId: paragraph.id,
+      pageIndex: paragraph.pageIndex,
+      text: session.text,
+    }));
   }
 
   private viewFromEvent(event: Event): PageView | undefined {
@@ -731,8 +838,19 @@ export class PdfEditor {
     switch (this.tool) {
       case 'editText': {
         event.preventDefault();
+        const session = this.textSession;
+        if (session && session.view === view && session.contains(point)) {
+          session.pointerDown(point, event);
+          this.textDragging = true;
+          view.overlay.setPointerCapture(event.pointerId);
+          return;
+        }
+        this.endTextEdit();
         void this.paragraphAt(view, point).then(
-          (paragraph) => this.selectParagraph(paragraph),
+          (paragraph) => {
+            this.selectParagraph(paragraph);
+            if (paragraph?.editable) return this.startTextEdit(paragraph, point, event);
+          },
           (error: unknown) => this.events.emit('error', { error }),
         );
         return;
@@ -767,6 +885,11 @@ export class PdfEditor {
   private onPointerMove = (event: PointerEvent): void => {
     const interaction = this.interaction;
     if (!interaction) {
+      if (this.tool === 'editText' && this.textDragging && this.textSession) {
+        const { view } = this.textSession;
+        this.textSession.pointerMove(view.clientToPdf(event.clientX, event.clientY));
+        return;
+      }
       if (this.tool === 'editText') {
         const view = this.viewFromEvent(event);
         const token = ++this.hoverToken;
@@ -818,6 +941,13 @@ export class PdfEditor {
   };
 
   private onPointerUp = (event: PointerEvent): void => {
+    if (this.textDragging) {
+      this.textDragging = false;
+      this.textSession?.pointerUp();
+      const view = this.textSession?.view;
+      if (view?.overlay.hasPointerCapture(event.pointerId)) view.overlay.releasePointerCapture(event.pointerId);
+      return;
+    }
     const interaction = this.interaction;
     if (!interaction) return;
     this.interaction = null;
@@ -986,7 +1116,8 @@ export class PdfEditor {
       event.preventDefault();
       this.deleteSelected();
     } else if (key === 'escape') {
-      if (this.selectedParagraph) this.selectParagraph(null);
+      if (this.textSession) this.endTextEdit();
+      else if (this.selectedParagraph) this.selectParagraph(null);
       else if (this.selectedId) this.select(null);
       else this.setTool('select');
     } else if (key.startsWith('arrow') && this.selectedId && !this.readOnly) {
