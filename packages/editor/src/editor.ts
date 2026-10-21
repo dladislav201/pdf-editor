@@ -8,6 +8,7 @@ import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
 import { injectStyles } from './styles';
+import type { PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
 import type {
   Annotation,
@@ -20,7 +21,8 @@ import type {
   ZoomValue,
 } from './types';
 
-type DrawingTool = Exclude<ToolName, 'select'>;
+type DrawingTool = Exclude<ToolName, 'select' | 'editText'>;
+const isDrawingTool = (tool: ToolName): tool is DrawingTool => tool !== 'select' && tool !== 'editText';
 
 const DEFAULT_COLORS: Record<DrawingTool, string> = {
   highlight: '#facc15',
@@ -33,7 +35,9 @@ const MIN_ZOOM = ZOOM_STEPS[0]!;
 const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
 const PAGES_PADDING = 16;
 const DEFAULT_FONT_SIZE = 14;
-const SHORTCUTS: Record<string, ToolName> = { v: 'select', h: 'highlight', r: 'rectangle', d: 'ink', t: 'text' };
+const SHORTCUTS: Record<string, ToolName> = { v: 'select', e: 'editText', h: 'highlight', r: 'rectangle', d: 'ink', t: 'text' };
+/** Pointer slack around a paragraph's box when hovering it, in points. */
+const PARAGRAPH_HIT_PADDING = 2;
 
 type Interaction =
   | { kind: 'shape'; view: PageView; tool: 'highlight' | 'rectangle'; start: Point; current: Point }
@@ -47,6 +51,34 @@ interface TextEditorState {
   fontSize: number;
   color: string;
   existing: TextAnnotation | null;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Outline of a paragraph in overlay pixels (rotation-aware), with the reason as a tooltip when read-only. */
+function paragraphOutline(view: PageView, paragraph: TextParagraph, selected: boolean): SVGElement {
+  const { box } = paragraph;
+  const corners = [
+    view.pdfToOverlay([box.x, box.y]),
+    view.pdfToOverlay([box.x + box.width, box.y + box.height]),
+  ];
+  const pad = 3;
+  const x = Math.min(corners[0]![0], corners[1]![0]) - pad;
+  const y = Math.min(corners[0]![1], corners[1]![1]) - pad;
+  const rect = document.createElementNS(SVG_NS, 'rect');
+  rect.setAttribute('x', String(x));
+  rect.setAttribute('y', String(y));
+  rect.setAttribute('width', String(Math.abs(corners[0]![0] - corners[1]![0]) + pad * 2));
+  rect.setAttribute('height', String(Math.abs(corners[0]![1] - corners[1]![1]) + pad * 2));
+  rect.setAttribute('rx', '2');
+  rect.classList.add('pdfsdk-paragraph', selected ? 'pdfsdk-paragraph--selected' : 'pdfsdk-paragraph--hover');
+  if (!paragraph.editable) {
+    rect.classList.add('pdfsdk-paragraph--readonly');
+    const title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = paragraph.reason ?? 'This text can not be edited.';
+    rect.append(title);
+  }
+  return rect;
 }
 
 function clampZoom(zoom: number): number {
@@ -122,6 +154,10 @@ export class PdfEditor {
   private initialAnnotations: Annotation[] | undefined;
   private readonly history = new History<Annotation[]>();
   private selectedId: string | null = null;
+  private textModels = new Map<number, Promise<PageText>>();
+  private hoveredParagraph: TextParagraph | null = null;
+  private selectedParagraph: TextParagraph | null = null;
+  private hoverToken = 0;
   private tool: ToolName = 'select';
   private colors = { ...DEFAULT_COLORS };
   private zoomMode: ZoomValue;
@@ -263,6 +299,12 @@ export class PdfEditor {
       this.annotations = this.initialAnnotations ?? imported;
       this.initialAnnotations = undefined;
       this.history.reset();
+      this.textModels.clear();
+      this.hoveredParagraph = null;
+      if (this.selectedParagraph) {
+        this.selectedParagraph = null;
+        this.events.emit('paragraphSelect', { paragraph: null });
+      }
       this.selectedId = null;
       this.pageIndex = 0;
       this.hideMessage();
@@ -394,6 +436,10 @@ export class PdfEditor {
     this.tool = tool;
     this.root.dataset.tool = tool;
     if (tool !== 'select') this.select(null);
+    if (tool !== 'editText') {
+      this.setHoveredParagraph(null);
+      this.selectParagraph(null);
+    }
     this.events.emit('toolChange', { tool });
     this.events.emit('colorChange', { color: this.getColor() });
   }
@@ -402,16 +448,38 @@ export class PdfEditor {
   getColor(): string | null {
     const selected = this.annotations.find((a) => a.id === this.selectedId);
     if (selected) return selected.color;
-    return this.tool === 'select' ? null : this.colors[this.tool];
+    return isDrawingTool(this.tool) ? this.colors[this.tool] : null;
   }
 
   /** Recolors the selection, and sets the color for new annotations of the active tool. */
   setColor(color: string): void {
-    if (this.tool !== 'select') this.colors[this.tool] = color;
+    if (isDrawingTool(this.tool)) this.colors[this.tool] = color;
     if (this.selectedId) {
       this.commit(this.annotations.map((a) => (a.id === this.selectedId ? { ...a, color } : a)));
     }
     this.events.emit('colorChange', { color: this.getColor() });
+  }
+
+  // ------------------------------------------------------------------ text
+
+  /**
+   * Lines, paragraphs and styles of a page, as the engine reads them. Cached
+   * per page while the document is open.
+   */
+  getPageText(pageIndex: number): Promise<PageText> {
+    if (this.docId === null) return Promise.reject(new Error('No document is open.'));
+    let model = this.textModels.get(pageIndex);
+    if (!model) {
+      model = this.engine.text(this.docId, pageIndex);
+      this.textModels.set(pageIndex, model);
+      model.catch(() => this.textModels.delete(pageIndex));
+    }
+    return model;
+  }
+
+  /** The paragraph picked with the Edit text tool. */
+  getSelectedParagraph(): TextParagraph | null {
+    return this.selectedParagraph;
   }
 
   // ------------------------------------------------------------------ zoom
@@ -579,6 +647,52 @@ export class PdfEditor {
     };
   }
 
+  private async paragraphAt(view: PageView, point: Point): Promise<TextParagraph | null> {
+    const model = await this.getPageText(view.index);
+    const pad = PARAGRAPH_HIT_PADDING;
+    return (
+      model.paragraphs.find(
+        ({ box }) =>
+          point[0] >= box.x - pad &&
+          point[0] <= box.x + box.width + pad &&
+          point[1] >= box.y - pad &&
+          point[1] <= box.y + box.height + pad,
+      ) ?? null
+    );
+  }
+
+  private setHoveredParagraph(paragraph: TextParagraph | null): void {
+    if (paragraph?.id === this.hoveredParagraph?.id) return;
+    const previous = this.hoveredParagraph;
+    this.hoveredParagraph = paragraph;
+    this.root.dataset.hover = paragraph ? (paragraph.editable ? 'paragraph' : 'readonly') : '';
+    this.drawParagraphOutlines(previous, paragraph);
+  }
+
+  private selectParagraph(paragraph: TextParagraph | null): void {
+    if (paragraph?.id === this.selectedParagraph?.id) return;
+    const previous = this.selectedParagraph;
+    this.selectedParagraph = paragraph;
+    this.drawParagraphOutlines(previous, paragraph);
+    this.events.emit('paragraphSelect', { paragraph });
+  }
+
+  /** Redraws the outline layer of every page touched by the old or new hover/selection. */
+  private drawParagraphOutlines(...touched: (TextParagraph | null)[]): void {
+    const pages = new Set(
+      [...touched, this.hoveredParagraph, this.selectedParagraph].filter(Boolean).map((p) => p!.pageIndex),
+    );
+    for (const pageIndex of pages) {
+      const view = this.views[pageIndex];
+      if (!view) continue;
+      const outlines = [this.hoveredParagraph, this.selectedParagraph]
+        .filter((p): p is TextParagraph => p?.pageIndex === pageIndex)
+        .filter((p, i, list) => list.findIndex((q) => q.id === p.id) === i)
+        .map((p) => paragraphOutline(view, p, p.id === this.selectedParagraph?.id));
+      view.textChrome.replaceChildren(...outlines);
+    }
+  }
+
   private viewFromEvent(event: Event): PageView | undefined {
     const pageEl = (event.target as Element | null)?.closest?.('.pdfsdk-page') as HTMLElement | null;
     return pageEl ? this.views[Number(pageEl.dataset.pageIndex)] : undefined;
@@ -615,6 +729,14 @@ export class PdfEditor {
     const point = view.clientToPdf(event.clientX, event.clientY);
 
     switch (this.tool) {
+      case 'editText': {
+        event.preventDefault();
+        void this.paragraphAt(view, point).then(
+          (paragraph) => this.selectParagraph(paragraph),
+          (error: unknown) => this.events.emit('error', { error }),
+        );
+        return;
+      }
       case 'select': {
         const hit = this.annotationAt(view, point);
         this.select(hit?.id ?? null);
@@ -645,6 +767,22 @@ export class PdfEditor {
   private onPointerMove = (event: PointerEvent): void => {
     const interaction = this.interaction;
     if (!interaction) {
+      if (this.tool === 'editText') {
+        const view = this.viewFromEvent(event);
+        const token = ++this.hoverToken;
+        if (!view) {
+          this.setHoveredParagraph(null);
+          return;
+        }
+        void this.paragraphAt(view, view.clientToPdf(event.clientX, event.clientY)).then(
+          (paragraph) => {
+            if (token === this.hoverToken) this.setHoveredParagraph(paragraph);
+          },
+          // Hover is best effort; a real failure surfaces on click.
+          () => undefined,
+        );
+        return;
+      }
       if (this.tool === 'select' && !this.readOnly) {
         const view = this.viewFromEvent(event);
         const hit = view && this.annotationAt(view, view.clientToPdf(event.clientX, event.clientY));
@@ -848,7 +986,8 @@ export class PdfEditor {
       event.preventDefault();
       this.deleteSelected();
     } else if (key === 'escape') {
-      if (this.selectedId) this.select(null);
+      if (this.selectedParagraph) this.selectParagraph(null);
+      else if (this.selectedId) this.select(null);
       else this.setTool('select');
     } else if (key.startsWith('arrow') && this.selectedId && !this.readOnly) {
       event.preventDefault();

@@ -66,10 +66,11 @@ React:
 
 API surface: `load`, `exportPdf`, `download`, `getAnnotations` / `setAnnotations` /
 `addAnnotation` / `removeAnnotation`, `select`, `deleteSelected`, `undo` / `redo`,
-`setTool`, `setColor`, `setZoom` / `zoomIn` / `zoomOut`, `goToPage`, `on(event)`, `destroy`.
+`setTool`, `setColor`, `setZoom` / `zoomIn` / `zoomOut`, `goToPage`, `getPageText`,
+`getSelectedParagraph`, `on(event)`, `destroy`.
 Set `toolbar: false` to drive it from your own UI.
 
-Keyboard: V select, H highlight, R rectangle, D draw, T text, Del delete,
+Keyboard: V select, E edit text, H highlight, R rectangle, D draw, T text, Del delete,
 Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z redo, arrows nudge the selection, Ctrl+wheel zoom.
 
 ## PDF annotations
@@ -95,6 +96,32 @@ hidden annotations) is left untouched and written back as is. Pass
 `importAnnotations: false` to keep all annotations as static page content, or
 `annotations` to start from your own saved state instead.
 
+## Page text model
+
+`getPageText(pageIndex)` returns how the engine reads a page: paragraphs →
+lines → glyphs, with runs (font, size, color), alignment (left, right, center,
+justify), leading and first-line indent, all in PDF points. The Edit text tool
+(E) outlines paragraphs on hover and selects them on click
+(`paragraphSelect` event); editing them in place is the next stage.
+
+Built from PDFium's glyphs in the worker (~20 ms per page):
+
+- lines: glyphs sharing a baseline, split at wide gaps so columns and table
+  cells stay apart; sub/superscripts are folded back into their line;
+- paragraphs: same size, consistent leading, aligned edges; a new one starts at
+  an indented first line, after the short last line of justified text, or when
+  the next line's first word would have fit on the previous one (list items,
+  hard breaks);
+- justification is told from ragged text by stretched word gaps, not edges;
+- single lines are aligned against the page's text block (centered titles,
+  right-aligned page numbers);
+- invisible (OCR) and rotated text is skipped; text inside form XObjects is
+  read but marked `editable: false` with a `reason`.
+
+Fixtures from Chrome, macOS Quartz and pdf-lib live in
+`packages/editor/test/fixtures` (with their sources) and are checked by
+`src/text/analyze.test.ts`.
+
 ## Design notes
 
 - Rendering runs on PDFium (the engine in Chrome) compiled to WebAssembly
@@ -119,7 +146,10 @@ hidden annotations) is left untouched and written back as is. Pass
 - Rich text (`/RC`) of FreeText annotations is read as plain `/Contents`;
   other markup types (underline, strike-out, circle, line, polygon, sticky
   notes) are shown but not editable yet.
-- Highlight is a free rectangle; text-aware highlighting needs the text model (text editing, stage 2).
+- Highlight is a free rectangle; text-aware highlighting can now build on the page text model.
+- Text model: two plain text lines without spacing (e.g. from a .txt) read as one
+  paragraph; bullets drawn as shapes are not part of the item's text; vertical
+  and rotated text is skipped.
 - Text annotations on rotated pages are not counter-rotated.
 - No form filling, signatures, page operations, search, thumbnails or password
   prompt yet.

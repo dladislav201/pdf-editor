@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Layouts</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  body { font: 10.5pt/1.4 Arial, sans-serif; color: #111; }
+  h1 { text-align: center; font-size: 16pt; margin: 0 0 10pt; }
+  .right { text-align: right; margin: 0 0 12pt; }
+  .indented p { text-indent: 1.5em; margin: 0; text-align: justify; font-family: "Times New Roman", serif; font-size: 11.5pt; }
+  .cols { columns: 2; column-gap: 12mm; margin: 12pt 0; }
+  .cols p { margin: 0 0 6pt; }
+  table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
+  td, th { border: 0.5pt solid #999; padding: 3pt 5pt; text-align: left; }
+  ul { margin: 6pt 0; }
+</style></head><body>
+<h1>Centered Title of the Report</h1>
+<p class="right">Prepared for Contoso Logistics<br>Dublin, 21 October 2026</p>
+<div class="indented">
+<p>The first paragraph has an indented first line and no space after it, the way Word formats body text by default. It runs over several lines so that the layout analysis has to tell paragraphs apart only by the indentation of their first lines.</p>
+<p>The second paragraph starts right below the first one. Its first line is indented again, which is the only signal that a new paragraph begins here, because the line spacing stays exactly the same.</p>
+</div>
+<div class="cols">
+<p>Left column text that is long enough to wrap onto a few lines inside the left half of the page, next to the right column.</p>
+<p>Right column paragraph which sits at the same height as the left column, so lines on the same baseline must not be merged across the gutter.</p>
+</div>
+<table>
+<tr><th>Severity</th><th>First response</th><th>Resolution</th></tr>
+<tr><td>Critical</td><td>30 minutes</td><td>4 hours</td></tr>
+<tr><td>High</td><td>2 hours</td><td>1 business day</td></tr>
+</table>
+<ul>
+<li>First bullet point with a short sentence.</li>
+<li>Second bullet point that is somewhat longer and may wrap to the next line on narrower layouts.</li>
+</ul>
+<p>Water is H<sub>2</sub>O and the area is 25 m<sup>2</sup>, see note<sup>1</sup> below.</p>
+</body></html>

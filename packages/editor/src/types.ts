@@ -1,3 +1,5 @@
+import type { TextParagraph } from './text/types';
+
 /**
  * All annotation geometry is stored in PDF user space (points, origin at the
  * bottom-left of the page, y grows upwards). That keeps annotations stable
@@ -13,7 +15,7 @@ export interface Rect {
   height: number;
 }
 
-export type ToolName = 'select' | 'highlight' | 'rectangle' | 'ink' | 'text';
+export type ToolName = 'select' | 'editText' | 'highlight' | 'rectangle' | 'ink' | 'text';
 
 interface AnnotationBase {
   id: string;
@@ -121,5 +123,7 @@ export interface EditorEventMap {
   zoomChange: { zoom: number };
   pageChange: { pageIndex: number };
   historyChange: { canUndo: boolean; canRedo: boolean };
+  /** A paragraph of page text was selected with the Edit text tool (or the selection cleared). */
+  paragraphSelect: { paragraph: TextParagraph | null };
   error: { error: unknown };
 }

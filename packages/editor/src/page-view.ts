@@ -23,6 +23,8 @@ export class PageView {
   readonly draft: SVGGElement;
   /** Selection outline; drawn in overlay pixels so it is not mirrored with the content. */
   readonly chrome: SVGGElement;
+  /** Paragraph outlines of the Edit text tool, in overlay pixels. */
+  readonly textChrome: SVGGElement;
 
   private geometry: PageGeometry;
   private canvas: HTMLCanvasElement | null = null;
@@ -55,7 +57,8 @@ export class PageView {
     this.draft = document.createElementNS(SVG_NS, 'g');
     userSpace.append(this.content, this.draft);
     this.chrome = document.createElementNS(SVG_NS, 'g');
-    this.overlay.append(userSpace, this.chrome);
+    this.textChrome = document.createElementNS(SVG_NS, 'g');
+    this.overlay.append(userSpace, this.chrome, this.textChrome);
     this.el.append(this.overlay);
 
     this.setScale(scale);

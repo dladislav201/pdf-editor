@@ -154,6 +154,18 @@ const CSS = /* css */ `
 .pdfsdk-root[data-tool="rectangle"] .pdfsdk-page__overlay,
 .pdfsdk-root[data-tool="ink"] .pdfsdk-page__overlay { cursor: crosshair; }
 .pdfsdk-root[data-hover="annotation"] .pdfsdk-page__overlay { cursor: move; }
+.pdfsdk-root[data-tool="editText"] .pdfsdk-page__overlay { cursor: default; }
+.pdfsdk-root[data-tool="editText"][data-hover="paragraph"] .pdfsdk-page__overlay { cursor: text; }
+.pdfsdk-root[data-tool="editText"][data-hover="readonly"] .pdfsdk-page__overlay { cursor: not-allowed; }
+.pdfsdk-paragraph {
+  fill: transparent;
+  stroke: var(--pdfsdk-accent);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+.pdfsdk-paragraph--hover { stroke-dasharray: 4 3; }
+.pdfsdk-paragraph--selected { stroke-width: 1.5px; fill: color-mix(in srgb, var(--pdfsdk-accent) 7%, transparent); }
+.pdfsdk-paragraph--readonly { stroke: var(--pdfsdk-muted); }
 .pdfsdk-highlight { mix-blend-mode: multiply; }
 .pdfsdk-selection {
   fill: none;

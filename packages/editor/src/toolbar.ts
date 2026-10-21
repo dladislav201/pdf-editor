@@ -3,6 +3,7 @@ import type { ToolName } from './types';
 
 const ICONS = {
   select: '<path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/>',
+  editText: '<path d="M5 4h1a3 3 0 0 1 3 3 3 3 0 0 1 3-3h1"/><path d="M13 20h-1a3 3 0 0 1-3-3 3 3 0 0 1-3 3H5"/><path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1"/><path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7"/><path d="M9 7v10"/>',
   highlight: '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
   rectangle: '<rect x="3" y="5" width="18" height="14" rx="2"/>',
   ink: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
@@ -19,6 +20,7 @@ const ICONS = {
 
 const TOOLS: { tool: ToolName; label: string; shortcut: string }[] = [
   { tool: 'select', label: 'Select', shortcut: 'V' },
+  { tool: 'editText', label: 'Edit text', shortcut: 'E' },
   { tool: 'highlight', label: 'Highlight', shortcut: 'H' },
   { tool: 'rectangle', label: 'Rectangle', shortcut: 'R' },
   { tool: 'ink', label: 'Draw', shortcut: 'D' },

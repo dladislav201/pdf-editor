@@ -1,3 +1,4 @@
+import type { PageText } from '../text/types';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
@@ -71,6 +72,11 @@ export class EngineClient {
         if (!this.terminated) this.worker.postMessage({ type: 'cancel', target: id, id: this.nextId++ } satisfies EngineRequest);
       },
     };
+  }
+
+  /** Lines, paragraphs and styles of a page. */
+  async text(docId: number, page: number): Promise<PageText> {
+    return (await this.send({ type: 'text', docId, page }).promise) as PageText;
   }
 
   async close(docId: number): Promise<void> {

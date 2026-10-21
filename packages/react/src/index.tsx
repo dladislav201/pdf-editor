@@ -3,10 +3,11 @@ import {
   type Annotation,
   type DocumentSource,
   type EditorOptions,
+  type TextParagraph,
 } from '@pdfsdk/editor';
 import { useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type Ref } from 'react';
 
-export type { Annotation, DocumentSource, EditorOptions } from '@pdfsdk/editor';
+export type { Annotation, DocumentSource, EditorOptions, PageText, TextParagraph } from '@pdfsdk/editor';
 export type PdfEditorInstance = Editor;
 
 export interface PdfEditorProps extends Omit<EditorOptions, 'container'> {
@@ -17,6 +18,8 @@ export interface PdfEditorProps extends Omit<EditorOptions, 'container'> {
   onReady?: (editor: Editor) => void;
   onDocumentLoaded?: (info: { pageCount: number }) => void;
   onAnnotationsChange?: (annotations: Annotation[]) => void;
+  /** A paragraph was picked with the Edit text tool, or the pick was cleared. */
+  onParagraphSelect?: (paragraph: TextParagraph | null) => void;
   onError?: (error: unknown) => void;
 }
 
@@ -32,13 +35,14 @@ export function PdfEditor({
   onReady,
   onDocumentLoaded,
   onAnnotationsChange,
+  onParagraphSelect,
   onError,
   ...options
 }: PdfEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const callbacks = useRef({ onReady, onDocumentLoaded, onAnnotationsChange, onError });
-  callbacks.current = { onReady, onDocumentLoaded, onAnnotationsChange, onError };
+  const callbacks = useRef({ onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onError });
+  callbacks.current = { onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onError };
   const initialOptions = useRef(options);
 
   useImperativeHandle<Editor | null, Editor | null>(ref, () => editor, [editor]);
@@ -51,6 +55,7 @@ export function PdfEditor({
     const offs = [
       editor.on('documentLoaded', (info) => callbacks.current.onDocumentLoaded?.(info)),
       editor.on('annotationsChange', ({ annotations }) => callbacks.current.onAnnotationsChange?.(annotations)),
+      editor.on('paragraphSelect', ({ paragraph }) => callbacks.current.onParagraphSelect?.(paragraph)),
       editor.on('error', ({ error }) => callbacks.current.onError?.(error)),
     ];
     callbacks.current.onReady?.(editor);

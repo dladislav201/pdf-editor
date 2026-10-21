@@ -1,5 +1,7 @@
 import type { WrappedPdfiumModule } from '@embedpdf/pdfium';
+import type { RawPageText } from '../text/types';
 import type { Rotation } from './page-geometry';
+import { extractPageText } from './pdfium-text';
 
 /** Plain data about one page, safe to post between threads. */
 export interface PageInfo {
@@ -128,6 +130,11 @@ export class PdfiumDocument {
     } finally {
       lib.FPDFBitmap_Destroy(bitmap);
     }
+  }
+
+  /** Every glyph of the page, for layout analysis. */
+  extractText(index: number): RawPageText {
+    return extractPageText(this.lib, this.page(index), index);
   }
 
   close(): void {

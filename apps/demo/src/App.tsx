@@ -1,4 +1,4 @@
-import { PdfEditor, type Annotation, type PdfEditorInstance } from '@pdfsdk/react';
+import { PdfEditor, type Annotation, type PageText, type PdfEditorInstance, type TextParagraph } from '@pdfsdk/react';
 import { useEffect, useRef, useState } from 'react';
 import { createSamplePdf } from './sample-pdf';
 
@@ -24,11 +24,54 @@ function describe(annotation: Annotation): string {
   return `${Math.round(width)} × ${Math.round(height)} pt`;
 }
 
+const fontLabel = (fonts: PageText['fonts'], id: number) => {
+  const font = fonts[id];
+  return font ? font.name.replace(/^[A-Z]{6}\+/, '') : `font ${id}`;
+};
+
+function TextInspector({ paragraph, fonts }: { paragraph: TextParagraph; fonts: PageText['fonts'] }) {
+  const runs = paragraph.lines.flatMap((line) => line.runs);
+  const styles = [...new Map(runs.map((run) => [`${run.font}|${run.size.toFixed(1)}|${run.color}`, run])).values()];
+  return (
+    <div className="inspector">
+      <dl className="facts">
+        <dt>Align</dt>
+        <dd>{paragraph.align}</dd>
+        <dt>Lines</dt>
+        <dd>{paragraph.lines.length}</dd>
+        <dt>Leading</dt>
+        <dd>{paragraph.leading.toFixed(1)} pt</dd>
+        <dt>Indent</dt>
+        <dd>{paragraph.indent ? `${paragraph.indent.toFixed(1)} pt` : '—'}</dd>
+      </dl>
+      <ul className="styles">
+        {styles.map((run) => (
+          <li key={`${run.font}|${run.size}|${run.color}`}>
+            <span className="annotation__dot" style={{ background: run.color }} />
+            <span>
+              {fontLabel(fonts, run.font)} · {run.size.toFixed(1)} pt
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!paragraph.editable && <p className="hint">{paragraph.reason}</p>}
+      <blockquote className="quote">{paragraph.text}</blockquote>
+    </div>
+  );
+}
+
 export function App() {
   const [document, setDocument] = useState<Uint8Array | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [paragraph, setParagraph] = useState<TextParagraph | null>(null);
+  const [fonts, setFonts] = useState<PageText['fonts']>({});
   const editorRef = useRef<PdfEditorInstance | null>(null);
+
+  const inspect = (selected: TextParagraph | null) => {
+    setParagraph(selected);
+    if (selected) void editorRef.current?.getPageText(selected.pageIndex).then((page) => setFonts(page.fonts));
+  };
 
   useEffect(() => {
     createSamplePdf().then(setDocument, (e: unknown) => setError(String(e)));
@@ -66,6 +109,7 @@ export function App() {
             fontUrl="/fonts/DejaVuSans.ttf"
             author="Demo user"
             onAnnotationsChange={setAnnotations}
+            onParagraphSelect={inspect}
             onError={(e) => setError(e instanceof Error ? e.message : String(e))}
           />
           {error && (
@@ -79,6 +123,17 @@ export function App() {
         </section>
 
         <aside className="sidebar">
+          <section className="panel">
+            <h2>
+              Text {paragraph && <span className={paragraph.editable ? 'count' : 'count count--muted'}>{paragraph.editable ? 'editable' : 'read-only'}</span>}
+            </h2>
+            {paragraph ? (
+              <TextInspector paragraph={paragraph} fonts={fonts} />
+            ) : (
+              <p className="hint">Pick Edit text (E) and click a paragraph to see how the engine reads it: lines, alignment and styles.</p>
+            )}
+          </section>
+
           <section className="panel">
             <h2>
               Annotations <span className="count">{annotations.length}</span>

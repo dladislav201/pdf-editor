@@ -119,6 +119,45 @@ body {
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+.count--muted {
+  color: var(--muted);
+}
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 0 0 8px;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.styles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.styles li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.quote {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+
 .hint {
   margin: 0 0 8px;
   color: var(--muted);

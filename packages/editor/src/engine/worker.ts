@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium';
+import { analyzePage } from '../text/analyze';
 import { EngineError, PdfiumDocument, initLibrary } from './pdfium-core';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
 
@@ -92,6 +93,14 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
     case 'render':
       queue.push(request);
       void pump();
+      return;
+    case 'text':
+      try {
+        if (!current || current.id !== request.docId) throw new EngineError('EngineError', 'The document is no longer open.');
+        reply({ id: request.id, ok: true, result: analyzePage(current.doc.extractText(request.page)) });
+      } catch (error) {
+        fail(request.id, error);
+      }
       return;
     case 'cancel':
       if (queue.some((job) => job.id === request.target)) cancelled.add(request.target);
