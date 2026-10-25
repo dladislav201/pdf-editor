@@ -224,6 +224,8 @@ const CSS = /* css */ `
 }
 .pdfsdk-root[data-hover="resize"] .pdfsdk-page__overlay { cursor: nwse-resize; }
 .pdfsdk-root[data-tool="image"] .pdfsdk-page__overlay { cursor: copy; }
+.pdfsdk-search { fill: #ffd400; fill-opacity: 0.35; mix-blend-mode: multiply; }
+.pdfsdk-search--active { fill: #ff8a00; fill-opacity: 0.45; }
 .pdfsdk-text-editor {
   position: absolute;
   z-index: 2;

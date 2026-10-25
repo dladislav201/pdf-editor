@@ -31,6 +31,7 @@ import {
 } from './text/scan-type';
 import { recognizedChars, scanErase, type ScanErase } from './text/scan-edit';
 import { buildWritePlan, type TextWritePlan } from './text/write-plan';
+import { searchPage, type SearchMatch, type SearchOptions } from './text/search';
 import type { StyledChar } from './text/layout';
 import type { PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
@@ -249,6 +250,9 @@ export class PdfEditor {
   private openToken = 0;
   private tool: ToolName = 'select';
   private pendingImage: { src: string; width: number; height: number; kind: 'signature' | 'image' } | null = null;
+  private searchMatches: SearchMatch[] = [];
+  private searchActive = -1;
+  private searchToken = 0;
   private colors = { ...DEFAULT_COLORS };
   private zoomMode: ZoomValue;
   private zoom = 1;
@@ -698,6 +702,76 @@ export class PdfEditor {
     return { bytes, before: base.length, after: bytes.length };
   }
 
+  // ---------------------------------------------------------------- search
+
+  /**
+   * Finds text on every page (recognized text of scans included), marks
+   * every match and returns them in reading order. A newer search, or an
+   * empty query, replaces the marks.
+   */
+  async search(query: string, options: SearchOptions = {}): Promise<SearchMatch[]> {
+    const token = ++this.searchToken;
+    const matches: SearchMatch[] = [];
+    if (query.trim() && this.docId !== null) {
+      for (let page = 0; page < this.views.length; page++) {
+        const text = await this.getPageText(page);
+        if (token !== this.searchToken) return matches;
+        matches.push(...searchPage(text, query, options));
+      }
+    }
+    if (token !== this.searchToken) return matches;
+    this.searchMatches = matches;
+    this.searchActive = -1;
+    this.drawSearch();
+    return matches;
+  }
+
+  /** Marks match `index` as the current one and scrolls it into view. */
+  showSearchMatch(index: number): void {
+    const match = this.searchMatches[index];
+    const view = match && this.views[match.pageIndex];
+    if (!match || !view) return;
+    this.searchActive = index;
+    this.drawSearch();
+    const box = match.rects[0]!;
+    const [x, y] = view.pdfToOverlay([box.x, box.y + box.height]);
+    const scale = view.scale;
+    const viewport = this.viewportEl;
+    viewport.scrollTo({
+      top: view.el.offsetTop + y * scale - viewport.clientHeight / 3,
+      left: Math.max(0, view.el.offsetLeft + x * scale - viewport.clientWidth / 2),
+      behavior: 'smooth',
+    });
+  }
+
+  clearSearch(): void {
+    this.searchToken++;
+    this.searchMatches = [];
+    this.searchActive = -1;
+    this.drawSearch();
+  }
+
+  private drawSearch(): void {
+    const SVG = 'http://www.w3.org/2000/svg';
+    this.views.forEach((view) => {
+      const marks = this.searchMatches.flatMap((match, i) =>
+        match.pageIndex !== view.index
+          ? []
+          : match.rects.map(({ x, y, width, height }) => {
+              const rect = document.createElementNS(SVG, 'rect');
+              rect.setAttribute('x', String(x - 0.5));
+              rect.setAttribute('y', String(y - 0.5));
+              rect.setAttribute('width', String(width + 1));
+              rect.setAttribute('height', String(height + 1));
+              rect.setAttribute('rx', '1.5');
+              rect.setAttribute('class', i === this.searchActive ? 'pdfsdk-search pdfsdk-search--active' : 'pdfsdk-search');
+              return rect;
+            }),
+      );
+      view.marks.replaceChildren(...marks);
+    });
+  }
+
   /** Switches the colour theme (`'auto'` follows the OS). */
   setTheme(theme: 'light' | 'dark' | 'auto'): void {
     this.root.dataset.theme = theme;
@@ -899,6 +973,9 @@ export class PdfEditor {
     for (const edit of this.scanEdits.values()) if (edit.href) URL.revokeObjectURL(edit.href);
     this.scanEdits.clear();
     this.scanFonts.clear();
+    this.searchToken++;
+    this.searchMatches = [];
+    this.searchActive = -1;
     this.textEditor?.el.remove();
     this.textEditor = null;
     this.interaction = null;

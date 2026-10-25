@@ -871,3 +871,29 @@ button {
 .row__label {
   color: var(--text-2);
 }
+
+/* --------------------------------------------------------------- search */
+
+.searchbar input {
+  width: 220px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.searchbar .label {
+  min-width: 64px;
+}
+/* Not enough room for both: the open search bar wins over the Edit/Pages switch. */
+@media (max-width: 1100px) {
+  .workspace[data-search='open'] .top-center {
+    display: none;
+  }
+}
+@media (max-width: 720px) {
+  .searchbar input {
+    width: 120px;
+  }
+}

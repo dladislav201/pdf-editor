@@ -295,6 +295,16 @@ moving fast), type it in one of three script fonts, or upload a photo of it
 (the paper turns transparent); black or blue ink; the last three signatures
 are kept in this browser only.
 
+## Search
+
+`editor.search(query)` finds text on every page, recognized text of scans
+included, paragraph by paragraph (so a phrase that wraps onto the next line
+is found), ignoring case and extra spaces by default; it marks every match
+under the page content and returns them (page, a box per line, the text).
+`showSearchMatch(i)` marks one as current and scrolls to it;
+`clearSearch()` removes the marks. The site opens its search bar with
+⌘F / Ctrl+F: Enter and Shift+Enter step through the matches, Esc closes.
+
 ## Compress and convert
 
 `editor.compress(level)` makes the document (with its edits) smaller: in

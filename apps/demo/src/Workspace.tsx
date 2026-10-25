@@ -64,6 +64,13 @@ export function Workspace({
   const [signing, setSigning] = useState(false);
   const [dialog, setDialog] = useState<'compress' | 'images' | null>(null);
   const [menu, setMenu] = useState(false);
+  const [search, setSearch] = useState<{ open: boolean; query: string; count: number; active: number }>({
+    open: false,
+    query: '',
+    count: 0,
+    active: -1,
+  });
+  const searchInput = useRef<HTMLInputElement>(null);
   const wantDialog = useRef(startDialog);
 
   // Keep the editor in step with the site's theme.
@@ -131,10 +138,48 @@ export function Workspace({
     return () => clearTimeout(timer);
   }, [message]);
 
+  const openSearch = useCallback(() => {
+    setSearch((s) => ({ ...s, open: true }));
+    requestAnimationFrame(() => searchInput.current?.select());
+  }, []);
+  const closeSearch = () => {
+    editor?.clearSearch();
+    setSearch({ open: false, query: '', count: 0, active: -1 });
+  };
+  const step = (by: number) => {
+    if (!search.count) return;
+    const active = (search.active + by + search.count) % search.count;
+    editor?.showSearchMatch(active);
+    setSearch((s) => ({ ...s, active }));
+  };
+
+  // Search as the query changes (a moment after typing stops), then show the first match.
+  useEffect(() => {
+    if (!editor || !search.open) return;
+    const timer = setTimeout(async () => {
+      const matches = await editor.search(search.query);
+      if (matches.length) editor.showSearchMatch(0);
+      setSearch((s) => (s.query === search.query ? { ...s, count: matches.length, active: matches.length ? 0 : -1 } : s));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [editor, search.open, search.query]);
+
+  // ⌘F / Ctrl+F opens the document's own search instead of the browser's.
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f' && mode === 'edit') {
+        event.preventDefault();
+        openSearch();
+      }
+    };
+    addEventListener('keydown', key);
+    return () => removeEventListener('keydown', key);
+  }, [mode, openSearch]);
+
   const drawing = tool === 'highlight' || tool === 'ink' || tool === 'rectangle' || tool === 'text';
 
   return (
-    <div className="workspace">
+    <div className="workspace" data-search={search.open ? 'open' : undefined}>
       <div className="workspace__editor">
         <PdfEditor
           ref={editorRef}
@@ -152,14 +197,49 @@ export function Workspace({
         <button type="button" className="float" onClick={onClose} aria-label="Back to start">
           <Icon name="back" />
         </button>
-        <div className="bar">
-          <span className="pill pill--icon" aria-hidden="true">
-            <Icon name="file" />
-          </span>
-          <span className="file-name" title={file.name}>
-            {file.name}
-          </span>
-        </div>
+        {search.open ? (
+          <div className="bar searchbar" role="search">
+            <span className="pill pill--icon" aria-hidden="true">
+              <Icon name="search" />
+            </span>
+            <input
+              ref={searchInput}
+              autoFocus
+              value={search.query}
+              placeholder="Find in document"
+              aria-label="Find in document"
+              onChange={(e) => setSearch((s) => ({ ...s, query: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') step(e.shiftKey ? -1 : 1);
+                if (e.key === 'Escape') closeSearch();
+              }}
+            />
+            <span className="label">{search.query.trim() ? (search.count ? `${search.active + 1} of ${search.count}` : 'No results') : ''}</span>
+            <div className="group">
+              <button type="button" className="pill pill--icon" aria-label="Previous match" disabled={!search.count} onClick={() => step(-1)}>
+                <Icon name="up" />
+              </button>
+              <button type="button" className="pill pill--icon" aria-label="Next match" disabled={!search.count} onClick={() => step(1)}>
+                <Icon name="chevronDown" />
+              </button>
+            </div>
+            <button type="button" className="pill pill--icon" aria-label="Close search" onClick={closeSearch}>
+              <Icon name="close" />
+            </button>
+          </div>
+        ) : (
+          <div className="bar">
+            <span className="pill pill--icon" aria-hidden="true">
+              <Icon name="file" />
+            </span>
+            <span className="file-name" title={file.name}>
+              {file.name}
+            </span>
+            <button type="button" className="pill pill--icon" aria-label="Find in document (⌘F)" title="Find (⌘F)" onClick={openSearch}>
+              <Icon name="search" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="top-center">

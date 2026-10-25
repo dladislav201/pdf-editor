@@ -19,6 +19,8 @@ export class PageView {
   readonly overlay: SVGSVGElement;
   /** Annotation elements go here, in PDF user-space coordinates. */
   readonly content: SVGGElement;
+  /** Search results, under everything else, in user space. */
+  readonly marks: SVGGElement;
   /** Page text being edited, drawn from glyph outlines in user space, under the annotations. */
   readonly textLayer: SVGGElement;
   /** Shapes that are being drawn right now. */
@@ -57,10 +59,11 @@ export class PageView {
 
     const userSpace = document.createElementNS(SVG_NS, 'g');
     userSpace.setAttribute('transform', `matrix(${base.transform.join(' ')})`);
+    this.marks = document.createElementNS(SVG_NS, 'g');
     this.textLayer = document.createElementNS(SVG_NS, 'g');
     this.content = document.createElementNS(SVG_NS, 'g');
     this.draft = document.createElementNS(SVG_NS, 'g');
-    userSpace.append(this.textLayer, this.content, this.draft);
+    userSpace.append(this.marks, this.textLayer, this.content, this.draft);
     this.chrome = document.createElementNS(SVG_NS, 'g');
     this.textChrome = document.createElementNS(SVG_NS, 'g');
     this.overlay.append(userSpace, this.chrome, this.textChrome);
