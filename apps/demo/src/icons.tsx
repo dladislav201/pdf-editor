@@ -36,6 +36,7 @@ const PATHS = {
   image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
+  form: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h4"/><path d="M7 14h10"/><rect x="14" y="7.5" width="3" height="3" rx="0.5"/>',
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
 } as const;
 

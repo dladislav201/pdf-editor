@@ -22,6 +22,7 @@ const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequ
   { icon: 'editText', title: 'Edit text', text: 'Change words and numbers in place, in the document’s own fonts.', open: { tool: 'editText' } },
   { icon: 'scan', title: 'Edit a scan', text: 'Recognize scanned pages, then edit them in the scan’s own letters.', open: { tool: 'editText', recognize: true } },
   { icon: 'highlight', title: 'Annotate', text: 'Highlight, draw, add shapes and notes.', open: { tool: 'highlight' } },
+  { icon: 'form', title: 'Fill a form', text: 'Type into the fields, tick the boxes, pick from lists.', open: { tool: 'select' } },
   { icon: 'sign', title: 'Sign', text: 'Draw, type or upload your signature and place it.', open: { sign: true } },
   { icon: 'pages', title: 'Organize pages', text: 'Merge, split, rotate, delete and reorder.', open: { pages: true } },
   { icon: 'compress', title: 'Compress', text: 'Make a PDF smaller for email: scans and photos shrink, text stays sharp.', open: { dialog: 'compress' } },
@@ -38,7 +39,7 @@ export function Home({
   onOpen: (request: OpenRequest) => void;
   /** Pictures (JPG, PNG, WebP) to turn into a PDF. */
   onPictures: (files: File[]) => void;
-  onSample: (kind: 'contract' | 'scan') => void;
+  onSample: (kind: 'contract' | 'scan' | 'form') => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
 }) {
@@ -137,6 +138,9 @@ export function Home({
           </button>
           <button type="button" className="pill" onClick={() => onSample('scan')}>
             A scanned invoice
+          </button>
+          <button type="button" className="pill" onClick={() => onSample('form')}>
+            A form
           </button>
         </div>
       </div>

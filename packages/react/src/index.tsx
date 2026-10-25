@@ -3,6 +3,7 @@ import {
   type Annotation,
   type DocumentSource,
   type EditorOptions,
+  type FormValue,
   type OcrPage,
   type TextParagraph,
 } from '@pdfsdk/editor';
@@ -27,6 +28,8 @@ export interface PdfEditorProps extends Omit<EditorOptions, 'container'> {
   onOcrProgress?: (progress: { pageIndex: number; done: number; total: number }) => void;
   /** Recognized text was added to scanned pages. */
   onTextRecognized?: (pages: OcrPage[]) => void;
+  /** A form field was filled in. */
+  onFormChange?: (change: { name: string; value: FormValue }) => void;
   onError?: (error: unknown) => void;
 }
 
@@ -46,12 +49,13 @@ export function PdfEditor({
   onTextEditsChange,
   onOcrProgress,
   onTextRecognized,
+  onFormChange,
   onError,
   ...options
 }: PdfEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const handlers = { onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onTextEditsChange, onOcrProgress, onTextRecognized, onError };
+  const handlers = { onReady, onDocumentLoaded, onAnnotationsChange, onParagraphSelect, onTextEditsChange, onOcrProgress, onTextRecognized, onFormChange, onError };
   const callbacks = useRef(handlers);
   callbacks.current = handlers;
   const initialOptions = useRef(options);
@@ -70,6 +74,7 @@ export function PdfEditor({
       editor.on('textEditsChange', ({ edits }) => callbacks.current.onTextEditsChange?.(edits)),
       editor.on('ocrProgress', (progress) => callbacks.current.onOcrProgress?.(progress)),
       editor.on('textRecognized', ({ pages }) => callbacks.current.onTextRecognized?.(pages)),
+      editor.on('formChange', (change) => callbacks.current.onFormChange?.(change)),
       editor.on('error', ({ error }) => callbacks.current.onError?.(error)),
     ];
     callbacks.current.onReady?.(editor);

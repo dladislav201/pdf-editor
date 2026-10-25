@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url';
 import { Home, type OpenRequest } from './Home';
 import { imagesToPdf, type PageImage } from '@pdfsdk/editor';
+import { createSampleForm } from './sample-form';
 import { createSamplePdf } from './sample-pdf';
 import { Workspace } from './Workspace';
 
@@ -41,8 +42,11 @@ export function App() {
     setOpen(request);
   };
 
-  const sample = async (kind: 'contract' | 'scan') => {
-    if (kind === 'contract') {
+  const sample = async (kind: 'contract' | 'scan' | 'form') => {
+    if (kind === 'form') {
+      const bytes = await createSampleForm();
+      show({ file: new File([bytes as BlobPart], 'Membership application.pdf', { type: 'application/pdf' }) });
+    } else if (kind === 'contract') {
       const bytes = await createSamplePdf();
       show({ file: new File([bytes as BlobPart], 'Services agreement.pdf', { type: 'application/pdf' }), tool: 'editText' });
     } else {

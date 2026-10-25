@@ -226,6 +226,39 @@ const CSS = /* css */ `
 .pdfsdk-root[data-tool="image"] .pdfsdk-page__overlay { cursor: copy; }
 .pdfsdk-search { fill: #ffd400; fill-opacity: 0.35; mix-blend-mode: multiply; }
 .pdfsdk-search--active { fill: #ff8a00; fill-opacity: 0.45; }
+.pdfsdk-fields { position: absolute; inset: 0; pointer-events: none; }
+/* Fields only take clicks with the Select tool; drawing tools draw over them. */
+.pdfsdk-root[data-tool="select"] .pdfsdk-fields > * { pointer-events: auto; }
+.pdfsdk-field {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 0.25em;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  /* Opaque, like Acrobat's field highlight, so the field's printed value doesn't show twice. */
+  background: #e8efff;
+  color: #000;
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.15;
+  outline: none;
+  resize: none;
+}
+.pdfsdk-field:hover { border-color: color-mix(in srgb, var(--pdfsdk-accent) 50%, transparent); }
+.pdfsdk-field:focus, .pdfsdk-field:focus-visible { border-color: var(--pdfsdk-accent); background: #fff; }
+.pdfsdk-field:disabled { background: #f1f1f1; color: #555; }
+textarea.pdfsdk-field { padding-top: 0.15em; }
+.pdfsdk-field--checkbox, .pdfsdk-field--radio { padding: 0; cursor: pointer; }
+.pdfsdk-field--radio { border-radius: 50%; }
+.pdfsdk-field[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  background: #111;
+  /* A tick for check boxes, a dot for radio buttons. */
+  clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 18%, 86% 4%, 38% 72%);
+}
+.pdfsdk-field--radio[aria-checked="true"]::after { clip-path: circle(42%); }
 .pdfsdk-text-editor {
   position: absolute;
   z-index: 2;

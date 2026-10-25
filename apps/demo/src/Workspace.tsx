@@ -57,6 +57,7 @@ export function Workspace({
   const [scan, setScan] = useState<Scan>({ kind: 'none' });
   const [message, setMessage] = useState<string | null>(null);
   const [edits, setEdits] = useState(0);
+  const [fields, setFields] = useState(0);
   const [mode, setMode] = useState<'edit' | 'pages'>('edit');
   const [loaded, setLoaded] = useState(false);
   const wantPages = useRef(startInPages);
@@ -104,6 +105,10 @@ export function Workspace({
       editor.on('documentLoaded', async ({ pageCount }) => {
         setPage({ index: 0, count: pageCount });
         setLoaded(true);
+        // A form: fields take typing with the Select tool, so start there.
+        const formFields = editor.getFormFields().length;
+        setFields(formFields);
+        if (formFields) editor.setTool('select');
         if (wantPages.current) {
           wantPages.current = false;
           setMode('pages');
@@ -282,6 +287,11 @@ export function Workspace({
         {scan.kind === 'done' && (
           <div className="notice notice--plain">
             <strong>{scan.words} words recognized.</strong>&nbsp;Pick Edit text and click a line to change it.
+          </div>
+        )}
+        {mode === 'edit' && fields > 0 && tool === 'select' && scan.kind === 'none' && (
+          <div className="notice notice--plain">
+            <strong>{fields} fields to fill.</strong>&nbsp;Click one and type; Tab moves to the next.
           </div>
         )}
         {message && <div className="notice notice--plain">{message}</div>}

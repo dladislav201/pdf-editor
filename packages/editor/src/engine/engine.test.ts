@@ -153,4 +153,22 @@ describe('PDFium engine', () => {
       doc.close();
     }
   });
+
+  it('draws form fields, which PDFium leaves out of a plain render', async () => {
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([200, 100]);
+    const field = pdf.getForm().createTextField('name');
+    field.addToPage(page, { x: 20, y: 20, width: 160, height: 60, backgroundColor: rgb(0, 0.8, 0), borderWidth: 0 });
+    const doc = new PdfiumDocument(lib, await pdf.save());
+    try {
+      const geometry = new PageGeometry(doc.pageInfo(0).box, 0);
+      const rgba = doc.render(0, geometry.width, geometry.height);
+      expect(pixel(rgba, geometry.width, geometry.toViewport([100, 50]))).toEqual([0, 204, 0]);
+      // Not where the scan reader looks: its text comes from the page alone.
+      const plain = doc.render(0, geometry.width, geometry.height, [], false);
+      expect(pixel(plain, geometry.width, geometry.toViewport([100, 50]))).toEqual([255, 255, 255]);
+    } finally {
+      doc.close();
+    }
+  });
 });

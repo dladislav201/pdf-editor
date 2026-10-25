@@ -1,4 +1,5 @@
 import type { OcrPage } from './ocr/types';
+import type { FormValue } from './pdf/forms';
 import type { TextParagraph } from './text/types';
 
 /**
@@ -160,6 +161,8 @@ export interface EditorEventMap {
   textEditsChange: { edits: { paragraphId: string; pageIndex: number; text: string }[] };
   /** Text recognition is reading `pageIndex` (after `done` of `total` pages); `pageIndex` is -1 once it has stopped. */
   ocrProgress: { pageIndex: number; done: number; total: number };
+  /** A form field was filled in. */
+  formChange: { name: string; value: FormValue };
   /** Recognized text was added to scanned pages. */
   textRecognized: { pages: OcrPage[] };
   error: { error: unknown };

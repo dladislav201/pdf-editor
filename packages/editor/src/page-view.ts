@@ -29,6 +29,8 @@ export class PageView {
   readonly chrome: SVGGElement;
   /** Paragraph outlines of the Edit text tool, in overlay pixels. */
   readonly textChrome: SVGGElement;
+  /** Form fields as HTML inputs, positioned in percentages of the page so zoom only scales them. */
+  readonly fields: HTMLDivElement;
 
   private geometry: PageGeometry;
   private canvas: HTMLCanvasElement | null = null;
@@ -67,7 +69,9 @@ export class PageView {
     this.chrome = document.createElementNS(SVG_NS, 'g');
     this.textChrome = document.createElementNS(SVG_NS, 'g');
     this.overlay.append(userSpace, this.chrome, this.textChrome);
-    this.el.append(this.overlay);
+    this.fields = document.createElement('div');
+    this.fields.className = 'pdfsdk-fields';
+    this.el.append(this.overlay, this.fields);
 
     this.setScale(scale);
   }
@@ -78,6 +82,8 @@ export class PageView {
 
   setScale(scale: number): void {
     this.geometry = this.base.scaled(scale);
+    // Field text sizes follow the zoom through this.
+    this.el.style.setProperty('--pdfsdk-scale', String(scale));
     this.el.style.width = `${Math.floor(this.geometry.width)}px`;
     this.el.style.height = `${Math.floor(this.geometry.height)}px`;
   }

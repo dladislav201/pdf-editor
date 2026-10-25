@@ -305,6 +305,25 @@ under the page content and returns them (page, a box per line, the text).
 `clearSearch()` removes the marks. The site opens its search bar with
 ⌘F / Ctrl+F: Enter and Shift+Enter step through the matches, Esc closes.
 
+## Forms
+
+`readFormFields(doc)` (`src/pdf/forms.ts`, pdf-lib) lists the fields a user
+can fill (text, multi-line text, check boxes, radio groups, dropdowns,
+lists) with their value, options and widgets (page and box). The editor
+reads them on open and puts an HTML input over each widget, sized with the
+page (`--pdfsdk-scale`) and active with the Select tool; Tab moves between
+them. `getFormFields()`, `setFormValue(name, value)` and the `formChange`
+event (`onFormChange` in React) give apps the same access. On save the
+values go into the form and every field's appearance is redrawn, with the
+document font for text outside Latin-1; `flatten: true` burns the fields
+into the pages.
+
+PDFium draws form fields only through a form-fill environment, so
+documents with a form get one (empty callbacks, no JavaScript) and each
+render adds `FPDF_FFLDraw` on top; buttons and signature fields show up
+too. The site's "A form" sample is a membership application with a field of
+each kind.
+
 ## Compress and convert
 
 `editor.compress(level)` makes the document (with its edits) smaller: in
@@ -382,8 +401,9 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
   opened reads the page again (a few seconds); the image work (ink, skew, cells) runs on the main thread between
   Tesseract calls; handwriting and photographed (perspective) pages are
   not handled; only Ukrainian and English models ship.
-- No form filling, signatures, page operations, search, thumbnails or password
-  prompt yet.
+- Forms: no JavaScript (calculated fields, formatting, validation), no
+  XFA-only forms, comb fields and rich text are filled as plain text;
+  signature fields are left to Sign. No password prompt yet.
 - Licence keys are issued by hand with `scripts/license.mjs`; the customer
   dashboard (WorkOS sign-in, self-serve keys, billing) doesn't exist yet. Like
   any client-side check, the watermark can be removed by someone patching the

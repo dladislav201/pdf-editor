@@ -12,6 +12,7 @@ import { TesseractEngine } from './ocr/tesseract';
 import type { OcrPage, Raster } from './ocr/types';
 import { checkLicense, type LicenseInfo } from './license';
 import { arrangePages, type ArrangedPage } from './pdf/arrange';
+import { loadFormFields, type FormField, type FormValue } from './pdf/forms';
 import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations, resizeHandle } from './render-annotations';
@@ -250,6 +251,9 @@ export class PdfEditor {
   private openToken = 0;
   private tool: ToolName = 'select';
   private pendingImage: { src: string; width: number; height: number; kind: 'signature' | 'image' } | null = null;
+  private formFields: FormField[] = [];
+  /** Values the user filled in, by field name; only these are written on save. */
+  private formValues: Record<string, FormValue> = {};
   private searchMatches: SearchMatch[] = [];
   private searchActive = -1;
   private searchToken = 0;
@@ -384,6 +388,8 @@ export class PdfEditor {
         ? await importAnnotations(file.bytes)
         : { bytes: file.bytes, annotations: [] };
       if (token !== this.loadToken) return;
+      const fields = await loadFormFields(bytes);
+      if (token !== this.loadToken) return;
       const { docId, pages } = await this.engine.open(bytes.slice());
       if (token !== this.loadToken || this.destroyed) {
         void this.engine.close(docId);
@@ -402,6 +408,9 @@ export class PdfEditor {
       for (const view of this.views) this.visibleObserver.observe(view.el);
 
       this.annotations = this.initialAnnotations ?? imported;
+      this.formFields = fields;
+      this.formValues = {};
+      this.drawFields();
       this.initialAnnotations = undefined;
       this.history.reset();
       this.textModels.clear();
@@ -490,6 +499,7 @@ export class PdfEditor {
       return await exportPdf(base, this.annotations, {
         fontBytes,
         flatten: options.flatten,
+        formValues: this.formValues,
         ...(license.status === 'valid' ? {} : { watermark: 'PDF SDK trial' }),
       });
     } catch (error) {
@@ -700,6 +710,101 @@ export class PdfEditor {
     // Never hand back a bigger file.
     const bytes = compressed.length < base.length ? compressed : base;
     return { bytes, before: base.length, after: bytes.length };
+  }
+
+  // ----------------------------------------------------------------- forms
+
+  /** The PDF's fillable fields with their current values. */
+  getFormFields(): FormField[] {
+    return this.formFields.map((field) => ({ ...field, value: this.formValues[field.name] ?? field.value }));
+  }
+
+  /** Fills in a field (as typing in it would); written into the PDF on save. */
+  setFormValue(name: string, value: FormValue): void {
+    if (!this.formFields.some((f) => f.name === name)) return;
+    this.formValues = { ...this.formValues, [name]: value };
+    this.drawFields();
+    this.events.emit('formChange', { name, value });
+  }
+
+  /** Puts an input over every widget of every field. */
+  private drawFields(): void {
+    for (const view of this.views) view.fields.replaceChildren();
+    for (const field of this.formFields) {
+      const value = this.formValues[field.name] ?? field.value;
+      field.widgets.forEach((widget) => {
+        const view = this.views[widget.pageIndex];
+        if (!view) return;
+        const a = view.base.toViewport([widget.rect.x, widget.rect.y]);
+        const b = view.base.toViewport([widget.rect.x + widget.rect.width, widget.rect.y + widget.rect.height]);
+        const box = {
+          left: (Math.min(a[0], b[0]) / view.base.width) * 100,
+          top: (Math.min(a[1], b[1]) / view.base.height) * 100,
+          width: (Math.abs(a[0] - b[0]) / view.base.width) * 100,
+          height: (Math.abs(a[1] - b[1]) / view.base.height) * 100,
+        };
+        const el = this.fieldElement(field, value, widget.option);
+        el.classList.add('pdfsdk-field', `pdfsdk-field--${field.type}`);
+        el.dataset.field = field.name;
+        Object.assign(el.style, {
+          left: `${box.left}%`,
+          top: `${box.top}%`,
+          width: `${box.width}%`,
+          height: `${box.height}%`,
+        });
+        // Auto-sized text fits the box; otherwise the field's own size, scaled with the zoom.
+        const size = field.fontSize || Math.min(12, widget.rect.height * 0.65);
+        el.style.fontSize = `calc(var(--pdfsdk-scale) * ${size}px)`;
+        if (field.readOnly && 'disabled' in el) (el as HTMLInputElement).disabled = true;
+        view.fields.append(el);
+      });
+    }
+  }
+
+  private fieldElement(field: FormField, value: FormValue, option: string | undefined): HTMLElement {
+    const label = field.name;
+    switch (field.type) {
+      case 'text': {
+        const input = document.createElement(field.multiline ? 'textarea' : 'input');
+        input.value = typeof value === 'string' ? value : '';
+        if (field.maxLength) input.maxLength = field.maxLength;
+        input.setAttribute('aria-label', label);
+        input.addEventListener('input', () => {
+          this.formValues = { ...this.formValues, [field.name]: input.value };
+          this.events.emit('formChange', { name: field.name, value: input.value });
+        });
+        return input;
+      }
+      case 'checkbox':
+      case 'radio': {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute('role', field.type);
+        const checked = field.type === 'checkbox' ? value === true : value === option;
+        button.setAttribute('aria-checked', String(checked));
+        button.setAttribute('aria-label', field.type === 'radio' ? `${label}: ${option}` : label);
+        button.addEventListener('click', () => {
+          if (field.readOnly) return;
+          this.setFormValue(field.name, field.type === 'checkbox' ? !checked : checked ? '' : (option ?? ''));
+        });
+        return button;
+      }
+      case 'dropdown':
+      case 'list': {
+        const select = document.createElement('select');
+        select.multiple = field.type === 'list';
+        select.setAttribute('aria-label', label);
+        const chosen = new Set(Array.isArray(value) ? value : [value]);
+        if (field.type === 'dropdown') select.append(new Option('', '', false, !value));
+        for (const choice of field.options ?? []) select.append(new Option(choice, choice, false, chosen.has(choice)));
+        select.addEventListener('change', () => {
+          const next = field.type === 'list' ? [...select.selectedOptions].map((o) => o.value) : select.value;
+          this.formValues = { ...this.formValues, [field.name]: next };
+          this.events.emit('formChange', { name: field.name, value: next });
+        });
+        return select;
+      }
+    }
   }
 
   // ---------------------------------------------------------------- search

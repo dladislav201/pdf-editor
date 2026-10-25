@@ -2,6 +2,7 @@ import fontkit from '@pdf-lib/fontkit';
 import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage } from 'pdf-lib';
 import { textBaselines, textLines } from './geometry';
 import { hexToRgb } from './pdf/objects';
+import { fillForm, type FormValue } from './pdf/forms';
 import { embedImages, writeAnnotations } from './pdf/write-annotations';
 import { pathData } from './render-annotations';
 import type { Annotation } from './types';
@@ -16,6 +17,8 @@ export interface ExportOptions {
   flatten?: boolean;
   /** Stamped faintly across every page (the trial watermark). */
   watermark?: string;
+  /** Values filled into the PDF's form fields, by field name. */
+  formValues?: Record<string, FormValue>;
 }
 
 /** Characters Helvetica can encode (WinAnsi), so we can fail with a clear message instead of a cryptic one. */
@@ -113,9 +116,22 @@ export async function exportPdf(
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(base, { updateMetadata: false });
   const font = await textFont(doc, annotations, options);
+  const values = options.formValues ?? {};
+  if (Object.keys(values).length || options.flatten) {
+    // Field appearances need a font that has the letters typed in: the given one, else Helvetica.
+    const typed = Object.values(values).flatMap((v) => (typeof v === 'string' ? [v] : Array.isArray(v) ? v : []));
+    let formFont = font;
+    if (!formFont && options.fontBytes && typed.some((t) => !WIN_ANSI.test(t))) {
+      doc.registerFontkit(fontkit);
+      formFont = await doc.embedFont(options.fontBytes, { subset: true });
+    }
+    formFont ??= await doc.embedFont(StandardFonts.Helvetica);
+    fillForm(doc, values, formFont, options.flatten);
+  }
   const images = await embedImages(doc, annotations);
   if (options.flatten) flattenAnnotations(doc, annotations, font, images);
   else writeAnnotations(doc, annotations, font, images);
   if (options.watermark) await stampWatermark(doc, options.watermark);
-  return doc.save();
+  // Appearances are already drawn above, in the right font.
+  return doc.save({ updateFieldAppearances: false });
 }

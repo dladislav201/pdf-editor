@@ -65,6 +65,9 @@ const FPDF_ERR_PASSWORD = 4;
 const FPDF_ERR_SECURITY = 5;
 const FPDF_ANNOT = 0x01;
 const FPDF_REVERSE_BYTE_ORDER = 0x10;
+// fpdf_formfill.h: FPDF_FORMFILLINFO version 1 is an int and 16 callback pointers; all left empty.
+const FORM_INFO_SIZE = 4 + 16 * 4;
+const FORMTYPE_NONE = 0;
 // fpdf_edit.h
 const FPDF_PAGEOBJ_IMAGE = 3;
 const FPDF_FONT_TRUETYPE = 2;
@@ -112,6 +115,9 @@ export class PdfiumDocument {
   readonly pageCount: number;
   private readonly handle: number;
   private readonly dataPtr: number;
+  /** Form-fill environment, only for documents with a form: PDFium draws form fields (widgets) through it alone. */
+  private readonly form: number = 0;
+  private readonly formInfo: number = 0;
   private readonly pages = new Map<number, number>();
   private closed = false;
 
@@ -130,6 +136,12 @@ export class PdfiumDocument {
       throw error;
     }
     this.pageCount = lib.FPDF_GetPageCount(this.handle);
+    if (lib.FPDF_GetFormType(this.handle) !== FORMTYPE_NONE) {
+      this.formInfo = wasmExports.malloc(FORM_INFO_SIZE);
+      heapU8(lib).fill(0, this.formInfo, this.formInfo + FORM_INFO_SIZE);
+      heapU8(lib).set([1, 0, 0, 0], this.formInfo); // version 1, little-endian
+      this.form = lib.FPDFDOC_InitFormFillEnvironment(this.handle, this.formInfo);
+    }
   }
 
   private page(index: number): number {
@@ -143,13 +155,19 @@ export class PdfiumDocument {
     }
     const page = this.lib.FPDF_LoadPage(this.handle, index);
     if (!page) throw new EngineError('EngineError', `Could not load page ${index + 1}.`);
+    if (this.form) this.lib.FORM_OnAfterLoadPage(page, this.form);
     this.pages.set(index, page);
     if (this.pages.size > PAGE_CACHE_SIZE) {
       const [oldestIndex, oldest] = this.pages.entries().next().value as [number, number];
-      this.lib.FPDF_ClosePage(oldest);
+      this.closePage(oldest);
       this.pages.delete(oldestIndex);
     }
     return page;
+  }
+
+  private closePage(page: number): void {
+    if (this.form) this.lib.FORM_OnBeforeClosePage(page, this.form);
+    this.lib.FPDF_ClosePage(page);
   }
 
   pageInfo(index: number): PageInfo {
@@ -184,6 +202,10 @@ export class PdfiumDocument {
     try {
       lib.FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
       lib.FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, (annotations ? FPDF_ANNOT : 0) | FPDF_REVERSE_BYTE_ORDER);
+      // Form fields aren't part of that render; they go on top like in any viewer.
+      if (annotations && this.form) {
+        lib.FPDF_FFLDraw(this.form, bitmap, page, 0, 0, width, height, 0, FPDF_ANNOT | FPDF_REVERSE_BYTE_ORDER);
+      }
       const ptr = lib.FPDFBitmap_GetBuffer(bitmap);
       // Copy out of the WASM heap: the heap may grow (and move) on the next call.
       return new Uint8ClampedArray(heapU8(lib).slice(ptr, ptr + width * height * 4).buffer);
@@ -796,8 +818,12 @@ export class PdfiumDocument {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    for (const page of this.pages.values()) this.lib.FPDF_ClosePage(page);
+    for (const page of this.pages.values()) this.closePage(page);
     this.pages.clear();
+    if (this.form) {
+      this.lib.FPDFDOC_ExitFormFillEnvironment(this.form);
+      this.lib.pdfium.wasmExports.free(this.formInfo);
+    }
     this.lib.FPDF_CloseDocument(this.handle);
     this.lib.pdfium.wasmExports.free(this.dataPtr);
   }
