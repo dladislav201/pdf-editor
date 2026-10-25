@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url';
+import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice-en.pdf?url';
 import { Home, type OpenRequest } from './Home';
 import { imagesToPdf, type PageImage } from '@pdfsdk/editor';
 import { createSampleForm } from './sample-form';

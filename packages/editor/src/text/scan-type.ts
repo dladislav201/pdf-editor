@@ -1,3 +1,4 @@
+import { isColoredInk } from '../ocr/ink';
 import type { ScanPatch } from '../engine/pdfium-core';
 import type { PageGeometry } from '../engine/page-geometry';
 import type { InvisibleWord } from '../ocr/place';
@@ -310,13 +311,16 @@ export function composeScanParagraph(input: ComposeInput): Raster {
         for (let y = y0; y < y1; y++) {
           for (let x = x0; x < x1; x++) {
             const o = (y * W + x) * 4;
-            const v = Math.min(base.original.rgba[o]!, base.original.rgba[o + 1]!, base.original.rgba[o + 2]!);
+            const [r, g, b] = [base.original.rgba[o]!, base.original.rgba[o + 1]!, base.original.rgba[o + 2]!];
             if (dx === 0 && dy === 0) {
               // Not moved: put the original pixels back exactly.
               image.rgba[o] = base.original.rgba[o]!;
               image.rgba[o + 1] = base.original.rgba[o + 1]!;
               image.rgba[o + 2] = base.original.rgba[o + 2]!;
-            } else darken(x + dx, y + dy, v);
+            } else if (!isColoredInk(r, g, b)) {
+              // Moved: only the word's own ink goes along. A stamp or signature over it stays where it is.
+              darken(x + dx, y + dy, 0.299 * r + 0.587 * g + 0.114 * b);
+            }
           }
         }
         continue;

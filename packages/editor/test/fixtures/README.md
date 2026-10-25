@@ -7,3 +7,4 @@ Real PDFs from different producers, used by the text-model tests.
 | `chrome-contract.pdf` | Chrome (Skia/PDF), subset CIDFontType2 fonts, one object per glyph | `chrome --headless --print-to-pdf` of `contract.html` |
 | `quartz-invoice.pdf` | macOS Quartz, subset TrueType (MacRoman, no ToUnicode), one object per line | `cupsfilter -m application/pdf invoice.txt` |
 | `scan-invoice.pdf` | A made-up Ukrainian invoice "scanned" at 200 dpi: one JPEG per page, rotated 0.6°, speckles, a blue stamp and signature | `node test/fixtures/make-scan.mjs` |
+| `scan-invoice-en.pdf` | The same invoice in English, with a blue stamp over "For the supplier"; the site's scanned sample | `node test/fixtures/make-scan.mjs en` |

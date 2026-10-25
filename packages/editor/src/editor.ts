@@ -437,6 +437,7 @@ export class PdfEditor {
       this.emitHistory();
       this.events.emit('selectionChange', { id: null });
       this.events.emit('pageChange', { pageIndex: 0 });
+      this.prefetchScanLetters();
     } catch (error) {
       if (token !== this.loadToken) return;
       this.showMessage(describeLoadError(error));
@@ -597,6 +598,7 @@ export class PdfEditor {
     }
     this.events.emit('toolChange', { tool });
     this.events.emit('colorChange', { color: this.getColor() });
+    this.prefetchScanLetters();
   }
 
   /**
@@ -1033,6 +1035,23 @@ export class PdfEditor {
     return letters;
   }
 
+  /**
+   * With Edit text on, reads the letters of the recognized scan in view ahead
+   * of the first click (a page recognized before the file was opened), so the
+   * paragraph opens at once instead of after a page read.
+   */
+  private prefetchScanLetters(): void {
+    const page = this.pageIndex;
+    if (this.tool !== 'editText' || this.docId === null || this.scanFonts.has(page) || !this.views[page]) return;
+    const token = this.loadToken;
+    this.getScanInfo(page).then(
+      (info) => {
+        if (info.scanned && info.recognized && token === this.loadToken && this.tool === 'editText') void this.scanFontFor(page);
+      },
+      () => undefined,
+    );
+  }
+
   private async readScanLetters(pageIndex: number): Promise<PageScanFont | null> {
     const docId = this.docId;
     if (docId === null) return null;
@@ -1042,7 +1061,10 @@ export class PdfEditor {
     const width = Math.round(geometry.width);
     const height = Math.round(geometry.height);
     const rgba = await this.engine.raster(docId, pageIndex, width, height);
-    const result = await recognizeRaster({ width, height, rgba }, this.ocrEngine(this.ocr?.languages.split('+') ?? ['ukr', 'eng']));
+    // Only the letters are wanted: the page's text is already there, so table cells aren't re-read.
+    const result = await recognizeRaster({ width, height, rgba }, this.ocrEngine(this.ocr?.languages.split('+') ?? ['ukr', 'eng']), {
+      cells: false,
+    });
     return { font: ScanFont.fromPage(result.straight.image, result.straight.words), geometry, angle: result.angle };
   }
 
@@ -1958,6 +1980,7 @@ export class PdfEditor {
       if (pageIndex !== this.pageIndex && pageIndex >= 0) {
         this.pageIndex = pageIndex;
         this.events.emit('pageChange', { pageIndex });
+        this.prefetchScanLetters();
       }
     });
   };

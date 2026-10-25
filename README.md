@@ -289,9 +289,19 @@ Acrobat), but it stays a scan: the result is a piece of the scan, not a font.
   grid, under an invisible text layer for the new text, so the paragraph can
   still be searched, copied and edited again.
 
+- **Stamps stay** (`src/ocr/erase.ts`). Under a stamp or signature only
+  the letters are erased (black ink, and black blended into the stamp's
+  colour); the stamp's own strokes and tints stay, and a letter's place is
+  filled with the stamp and paper around it instead of a white hole. Words
+  moved along a reflowed line take only their own ink, not the stamp over
+  them, and letters cut from under a stamp are used only when the page has
+  no clean sample of that letter.
+
 Pages recognized by `recognizeText` keep their letters in memory; a page
-recognized earlier (or by another tool) is read again the first time one of
-its paragraphs is opened. If that fails, the paragraph is set in Arimo of
+recognized earlier (or by another tool) is read again for its letters (a
+page pass, no table cells) as soon as the Edit text tool is on with that
+page in view, so the first click opens the paragraph at once (2 s → 0.1 s
+on the sample). If that fails, the paragraph is set in Arimo of
 its weight over the scan with its words erased (`src/text/scan-edit.ts`).
 `src/text/scan-type.test.ts` checks it on the synthetic scan: an untouched
 paragraph comes back as it was, a new amount and a new word are drawn and
@@ -417,12 +427,11 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
   Acrobat and Chrome.
 - Text annotations on rotated pages are not counter-rotated.
 - OCR: a letter the page doesn't contain at all is drawn in Arimo; a viewer
-  may draw the edited piece a fraction of a pixel off the page image; a stamp
-  crossing an edited word loses the part over it, and words under a stamp
-  edit poorly; the first edit on a page recognized before the file was
-  opened reads the page again (a few seconds); the image work (ink, skew, cells) runs on the main thread between
-  Tesseract calls; handwriting and photographed (perspective) pages are
-  not handled; only Ukrainian and English models ship.
+  may draw the edited piece a fraction of a pixel off the page image; the
+  image work (ink, skew, cells) runs on the main thread between Tesseract
+  calls (about 0.1 s a page on the sample); handwriting and photographed
+  (perspective) pages are not handled; only Ukrainian and English models
+  ship.
 - Phones: reordering pages relies on HTML drag and drop (iOS 15+ after a
   long press; not yet checked on a real device); the theme switch and zoom
   buttons are hidden (pinch to zoom).

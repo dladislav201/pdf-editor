@@ -129,8 +129,7 @@ test('recognizes the text of a scan', async ({ page }) => {
   await page.getByRole('button', { name: 'Recognize text' }).click();
   await expect(page.getByText(/words recognized/)).toBeVisible({ timeout: 90_000 });
   await page.getByRole('button', { name: /^Find in document/ }).click();
-  // The sample is a Ukrainian delivery note with an English line item.
-  await page.getByRole('textbox', { name: 'Find in document' }).fill('Постачальник');
+  await page.getByRole('textbox', { name: 'Find in document' }).fill('Supplier');
   await expect(page.getByText(/^1 of \d+$/)).toBeVisible();
   await page.getByRole('textbox', { name: 'Find in document' }).fill('Toner cartridge');
   await expect(page.getByText('1 of 1')).toBeVisible();

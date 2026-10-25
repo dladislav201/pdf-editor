@@ -1,7 +1,8 @@
 // Generates scan-invoice.pdf: a made-up Ukrainian invoice "scanned" at 200 dpi —
 // slightly rotated, grey speckles, a blue stamp over the totals and a blue
-// signature, saved as one JPEG per page. Run from packages/editor:
-//   node test/fixtures/make-scan.mjs
+// signature, saved as one JPEG per page. With `en`, the same invoice in English
+// (scan-invoice-en.pdf, the site's sample). Run from packages/editor:
+//   node test/fixtures/make-scan.mjs [en]
 import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -12,6 +13,52 @@ const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 const arimo = dirname(require.resolve('@expo-google-fonts/arimo/package.json'));
 GlobalFonts.registerFromPath(join(arimo, '400Regular', 'Arimo_400Regular.ttf'), 'Arimo');
 GlobalFonts.registerFromPath(join(arimo, '700Bold', 'Arimo_700Bold.ttf'), 'Arimo Bold');
+
+const english = process.argv[2] === 'en';
+const T = english
+  ? {
+      title: 'Invoice No. INV-2026-0042 dated 21 October 2026',
+      supplier: 'Supplier: Northwind Supplies Ltd, 12 Test Street, London',
+      customer: 'Customer: Contoso Logistics GmbH, Berlin',
+      contract: 'Contract: No. 17 of 1 September 2026',
+      cells: [
+        ['No.', 'Item', 'Unit', 'Qty', 'Price', 'Amount'],
+        ['1', 'Office paper A4, 500 sheets', 'pack', '12', '4.50', '54.00'],
+        ['2', 'Toner cartridge HP 85A', 'pcs', '3', '89.50', '268.50'],
+        ['3', 'Stapler staples No. 24', 'box', '20', '1.80', '36.00'],
+      ],
+      total: 'Total excl. VAT: GBP 358.50',
+      words: 'Amount in words: three hundred and fifty-eight pounds, fifty pence.',
+      from: 'For the supplier ____________',
+      to: 'Received by ____________',
+      // Centred in the stamp.
+      stamp: [
+        ['NORTHWIND', 170 - 27],
+        ['REG. 00000000', 170 - 32],
+      ],
+      file: './scan-invoice-en.pdf',
+    }
+  : {
+      title: 'Видаткова накладна № ТЕСТ-0042 від 21 жовтня 2026 р.',
+      supplier: 'Постачальник: ТОВ "Приклад Постач", м. Київ, вул. Тестова, 12',
+      customer: 'Покупець: ФОП Тестовий Іван Петрович, м. Львів',
+      contract: 'Договір: № 17 від 01.09.2026',
+      cells: [
+        ['№', 'Товар', 'Од.', 'Кількість', 'Ціна', 'Сума'],
+        ['1', 'Папір офісний A4, 500 арк.', 'пач', '12', '145,00', '1740,00'],
+        ['2', 'Toner cartridge HP 85A', 'шт', '3', '890,50', '2671,50'],
+        ['3', 'Скоби для степлера №24', 'уп', '20', '18,40', '368,00'],
+      ],
+      total: 'Разом без ПДВ: 4779,50 грн',
+      words: "Всього на суму: чотири тисячі сімсот сімдесят дев'ять гривень 50 копійок.",
+      from: 'Від постачальника ____________',
+      to: 'Отримав(ла) ____________',
+      stamp: [
+        ['ПРИКЛАД ПОСТАЧ', 132],
+        ['ЄДРПОУ 00000000', 131],
+      ],
+      file: './scan-invoice.pdf',
+    };
 
 const DPI = 200;
 const W = Math.round(8.27 * DPI);
@@ -30,10 +77,10 @@ const text = (s, x, y, size = 10, bold = false) => {
   ctx.fillText(s, pt(x), pt(y));
 };
 
-text('Видаткова накладна № ТЕСТ-0042 від 21 жовтня 2026 р.', 60, 80, 14, true);
-text('Постачальник: ТОВ "Приклад Постач", м. Київ, вул. Тестова, 12', 60, 115);
-text('Покупець: ФОП Тестовий Іван Петрович, м. Львів', 60, 133);
-text('Договір: № 17 від 01.09.2026', 60, 151);
+text(T.title, 60, 80, 14, true);
+text(T.supplier, 60, 115);
+text(T.customer, 60, 133);
+text(T.contract, 60, 151);
 
 // Table: column edges and rows in points.
 const cols = [60, 85, 300, 335, 395, 460, 535];
@@ -51,13 +98,7 @@ for (const x of cols) {
   ctx.lineTo(pt(x), pt(rows.at(-1)));
   ctx.stroke();
 }
-const cells = [
-  ['№', 'Товар', 'Од.', 'Кількість', 'Ціна', 'Сума'],
-  ['1', 'Папір офісний A4, 500 арк.', 'пач', '12', '145,00', '1740,00'],
-  ['2', 'Toner cartridge HP 85A', 'шт', '3', '890,50', '2671,50'],
-  ['3', 'Скоби для степлера №24', 'уп', '20', '18,40', '368,00'],
-];
-cells.forEach((row, r) =>
+T.cells.forEach((row, r) =>
   row.forEach((cell, c) => {
     const numeric = c >= 3 || c === 0;
     ctx.font = `${pt(9)}px "${r === 0 ? 'Arimo Bold' : 'Arimo'}"`;
@@ -67,10 +108,10 @@ cells.forEach((row, r) =>
   }),
 );
 
-text('Разом без ПДВ: 4779,50 грн', 360, 285, 10, true);
-text('Всього на суму: чотири тисячі сімсот сімдесят дев\'ять гривень 50 копійок.', 60, 315);
-text('Від постачальника ____________', 60, 380);
-text('Отримав(ла) ____________', 330, 380);
+text(T.total, 360, 285, 10, true);
+text(T.words, 60, 315);
+text(T.from, 60, 380);
+text(T.to, 330, 380);
 
 // Blue stamp and signature: coloured ink over the text, as on real scans.
 ctx.strokeStyle = '#2b4db8';
@@ -83,8 +124,8 @@ ctx.beginPath();
 ctx.arc(pt(170), pt(370), pt(36), 0, Math.PI * 2);
 ctx.stroke();
 ctx.font = `${pt(8)}px "Arimo Bold"`;
-ctx.fillText('ПРИКЛАД ПОСТАЧ', pt(132), pt(366));
-ctx.fillText('ЄДРПОУ 00000000', pt(131), pt(380));
+ctx.fillText(T.stamp[0][0], pt(T.stamp[0][1]), pt(366));
+ctx.fillText(T.stamp[1][0], pt(T.stamp[1][1]), pt(380));
 ctx.lineWidth = pt(1.2);
 ctx.beginPath();
 ctx.moveTo(pt(350), pt(385));
@@ -113,4 +154,4 @@ doc.setModificationDate(new Date('2026-10-21T00:00:00Z'));
 const image = await doc.embedJpg(scan.toBuffer('image/jpeg', 80));
 const pdfPage = doc.addPage([595.28, 841.89]);
 pdfPage.drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 });
-writeFileSync(new URL('./scan-invoice.pdf', import.meta.url), await doc.save());
+writeFileSync(new URL(T.file, import.meta.url), await doc.save());

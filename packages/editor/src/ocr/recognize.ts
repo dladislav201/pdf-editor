@@ -2,6 +2,7 @@ import { estimateSkew, rotate, unrotateBox, unrotatePoint } from './deskew';
 import { detectTableCells } from './grid';
 import { removeColoredInk } from './ink';
 import { fixLine, isNoise } from './post';
+import type { ScanWord } from './scan-font';
 import { inkColor, lineColor, lineSize, strokeWidth } from './style';
 import type { PixelBox, PlacedWord, Raster, RecognizedWord } from './types';
 
@@ -21,7 +22,7 @@ export interface RasterResult {
    * words (fixed text, letters included) in its pixels. What a scan's own
    * letters are cut from.
    */
-  straight: { image: Raster; words: (RecognizedWord & { size: number; bold: boolean })[] };
+  straight: { image: Raster; words: ScanWord[] };
   /** Skew that was corrected, in radians. */
   angle: number;
   cells: number;
@@ -38,6 +39,20 @@ const BORDER_REACH = 8;
 const CELL_LINES = 100_000;
 /** Stroke-to-height ratio above the page's median by this factor reads as bold. */
 const BOLD_RATIO = 1.3;
+/** A word whose box is this much coloured ink lies under a stamp or signature. */
+const STAMPED_SHARE = 0.05;
+
+/** Share of a box's pixels set in a byte-per-pixel mask `width` wide. */
+function share(mask: Uint8Array, width: number, box: PixelBox): number {
+  const height = mask.length / width;
+  const x0 = Math.max(0, Math.floor(box.x0));
+  const y0 = Math.max(0, Math.floor(box.y0));
+  const x1 = Math.min(width, Math.ceil(box.x1));
+  const y1 = Math.min(height, Math.ceil(box.y1));
+  let set = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) set += mask[y * width + x]!;
+  return set / Math.max(1, (x1 - x0) * (y1 - y0));
+}
 
 /** Whitens rows and columns near the crop's edges that are mostly dark: the cell's own borders. */
 function eraseBorders(image: Raster): void {
@@ -127,16 +142,18 @@ function hasInk(image: Raster): boolean {
  * the page, recognizes it, re-reads every table cell on its own (borders
  * otherwise eat digits next to them; numeric cells with a digits-only
  * alphabet), removes noise and fixes Latin look-alikes in Cyrillic text.
- * Boxes come back in the original raster's pixels.
+ * Boxes come back in the original raster's pixels. `cells: false` skips
+ * the cell pass, for when only the page's letters are wanted.
  */
-export async function recognizeRaster(source: Raster, engine: OcrEngine): Promise<RasterResult> {
+export async function recognizeRaster(source: Raster, engine: OcrEngine, options: { cells?: boolean } = {}): Promise<RasterResult> {
   const clean: Raster = { width: source.width, height: source.height, rgba: new Uint8ClampedArray(source.rgba) };
-  removeColoredInk(clean);
+  const colored = new Uint8Array(source.width * source.height);
+  removeColoredInk(clean, undefined, colored);
   const angle = estimateSkew(clean);
   const straight = Math.abs(angle) > 0.0005 ? rotate(clean, angle) : clean;
 
   let words = await engine.recognize(straight, { layout: 'page' });
-  const cells = detectTableCells(straight);
+  const cells = options.cells === false ? [] : detectTableCells(straight);
   let reread = 0;
   for (const cell of cells) {
     const original = words.filter((w) => inside(w.box, cell));
@@ -194,9 +211,10 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine): Promis
       // Fixed look-alikes apply to the letters too, when they still line up one to one.
       const letters = [...texts[i]!];
       const symbols = w.symbols?.length === letters.length ? w.symbols.map((s, k) => ({ ...s, text: letters[k]! })) : w.symbols;
-      straightWords.push({ ...w, text: texts[i]!, symbols, box: own, size: sizes.get(w.line)!, bold });
       w = { ...w, box: own };
       const box = straight === clean ? own : unrotateBox(own, angle, source.width, source.height);
+      const stamped = share(colored, source.width, box) >= STAMPED_SHARE;
+      straightWords.push({ ...w, text: texts[i]!, symbols, size: sizes.get(w.line)!, bold, ...(stamped ? { stamped } : {}) });
       const start = back([w.box.x0, w.baseline]);
       const end = back([w.box.x1, w.baseline]);
       fixed.push({

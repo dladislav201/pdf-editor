@@ -1,7 +1,8 @@
 import type { PixelBox, Raster, RecognizedWord } from './types';
 
 /** A word as read from the straightened page, with its line's size (pixels) and weight. */
-export type ScanWord = RecognizedWord & { size: number; bold: boolean };
+/** `stamped`: a stamp or signature crosses the word, so its letters carry bits of it. */
+export type ScanWord = RecognizedWord & { size: number; bold: boolean; stamped?: boolean };
 
 /** One letter cut from the scan: grey pixels (255 is paper), placed relative to the pen and the baseline. */
 export interface ScanGlyph {
@@ -22,6 +23,8 @@ export interface ScanGlyph {
   line: number;
   /** Where on the straightened page it was cut from. */
   at: PixelBox;
+  /** Cut from under a stamp: used only when the letter isn't found anywhere else. */
+  stamped?: boolean;
 }
 
 export interface ScanStyle {
@@ -250,6 +253,7 @@ export class ScanFont {
             ink,
             line: word.line,
             at: box,
+            ...(word.stamped ? { stamped: true } : {}),
           };
           font.glyphs.set(symbol.text, [...(font.glyphs.get(symbol.text) ?? []), glyph]);
         });
@@ -341,7 +345,10 @@ export class ScanFont {
    * twice, and the same text always gets the same letters.
    */
   glyph(char: string, style: ScanStyle, occurrence = 0): ScanGlyph | null {
-    const all = this.glyphs.get(char) ?? [];
+    const samples = this.glyphs.get(char) ?? [];
+    // Letters from under a stamp bring bits of it along; clean ones from anywhere on the page do better.
+    const clean = samples.filter((g) => !g.stamped);
+    const all = clean.length ? clean : samples;
     const own = all.filter((g) => (style.line !== undefined ? g.line === style.line : style.near ? centreIn(g.at, style.near) : false));
     const ratio = (g: ScanGlyph) => g.size / style.size;
     const fits = (g: ScanGlyph) => Math.abs(ratio(g) - 1) <= SAME_SIZE;
