@@ -33,6 +33,8 @@ export interface ScanInfo {
  */
 export interface ScanPatch {
   image: Raster;
+  /** The same piece before erasing: what untouched words of an edited paragraph are copied back from. */
+  original: Raster;
   origin: Point;
   xAxis: Point;
   yAxis: Point;
@@ -60,6 +62,9 @@ const RENDER_INVISIBLE = 3;
 /** A picture covering this much of the page, with fewer visible characters than below, makes a scan. */
 const SCAN_COVER = 0.5;
 const SCAN_MAX_CHARS = 20;
+/** Fallback font ids of Arimo regular and bold (see text/glyph-store.ts). */
+const FALLBACK_REGULAR = -1;
+const FALLBACK_BOLD = -2;
 /** Pages kept parsed; parsing is the expensive part of re-rendering at a new zoom. */
 const PAGE_CACHE_SIZE = 8;
 
@@ -280,6 +285,7 @@ export class PdfiumDocument {
         }
       }
       const pixelsPerPoint = W / Math.hypot(a, b);
+      const original = { width, height, rgba: new Uint8ClampedArray(rgba) };
       const image = eraseInk(
         { width, height, rgba },
         erase.words.map((word) => {
@@ -293,6 +299,7 @@ export class PdfiumDocument {
       const top = toUser(px0, py0);
       return {
         image,
+        original,
         origin,
         xAxis: [right[0] - origin[0], right[1] - origin[1]],
         yAxis: [top[0] - origin[0], top[1] - origin[1]],
@@ -344,6 +351,7 @@ export class PdfiumDocument {
       wasmExports.free(clip);
       lib.FPDFBitmap_Destroy(bitmap);
     }
+    const original = { width, height, rgba: new Uint8ClampedArray(rgba) };
     const image = eraseInk(
       { width, height, rgba },
       erase.words.map((word) => {
@@ -357,6 +365,7 @@ export class PdfiumDocument {
     const top = geometry.toPdf([px0, py0]);
     return {
       image,
+      original,
       origin,
       xAxis: [right[0] - origin[0], right[1] - origin[1]],
       yAxis: [top[0] - origin[0], top[1] - origin[1]],
@@ -364,7 +373,7 @@ export class PdfiumDocument {
   }
 
   /** Puts a cleaned piece of a scan onto the page, above what is there. */
-  private insertPatch(pageIndex: number, patch: ScanPatch): void {
+  private insertPatch(pageIndex: number, patch: Omit<ScanPatch, 'original'>): void {
     const lib = this.lib;
     const { width, height, rgba } = patch.image;
     const bitmap = lib.FPDFBitmap_Create(width, height, 0);
@@ -444,8 +453,9 @@ export class PdfiumDocument {
           ...plan.words.map((word) => ({ ...word, font: lib.FPDFTextObj_GetFont(handle(word.fontObject)) })),
           ...plan.fallback.map((word) => ({ ...word, font: fallbackFont(word.font) })),
         ],
-        // Cleaned from the page as it is before any plan changes it.
-        patch: plan.erase ? this.scanPatch(plan.page, plan.erase) : null,
+        // Cleaned from the page as it is before any plan changes it (unless the
+        // editor already composed the piece, with the new text set in the scan's letters).
+        patch: plan.patch ?? (plan.erase ? this.scanPatch(plan.page, plan.erase) : null),
       };
     });
     for (const { plan, page, removed, moved, words, patch } of resolved) {
@@ -479,6 +489,17 @@ export class PdfiumDocument {
       if (!lib.FPDFPage_GenerateContent(this.page(index))) {
         throw new EngineError('EngineError', `Could not write page ${index + 1}.`);
       }
+    }
+    // Text drawn into a scan stays searchable: an invisible layer, as recognition writes it.
+    const invisible = plans.filter((plan) => plan.invisible?.length);
+    if (invisible.length) {
+      const regular = fallbackFonts[FALLBACK_REGULAR];
+      if (!regular) throw new EngineError('EngineError', 'The font for recognized text is missing.');
+      const bold = fallbackFonts[FALLBACK_BOLD];
+      this.addInvisibleText(
+        invisible.map((plan) => ({ page: plan.page, words: plan.invisible! })),
+        bold ? { regular, bold } : { regular },
+      );
     }
     // The text objects keep their own references to the fonts.
     for (const font of loadedFallbacks.values()) lib.FPDFFont_Close(font);

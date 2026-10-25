@@ -14,6 +14,7 @@ interface TesseractWord {
   text: string;
   confidence: number;
   bbox: { x0: number; y0: number; x1: number; y1: number };
+  symbols?: { text: string; confidence: number; bbox: { x0: number; y0: number; x1: number; y1: number } }[];
 }
 interface TesseractLine {
   words: TesseractWord[];
@@ -73,7 +74,8 @@ export class TesseractEngine implements OcrEngine {
           const baseline = (textLine.baseline.y0 + textLine.baseline.y1) / 2;
           for (const word of textLine.words) {
             if (!word.text.trim()) continue;
-            words.push({ text: word.text, confidence: word.confidence, box: { ...word.bbox }, baseline, lineHeight, line });
+            const symbols = (word.symbols ?? []).map((s) => ({ text: s.text, confidence: s.confidence, box: { ...s.bbox } }));
+            words.push({ text: word.text, confidence: word.confidence, box: { ...word.bbox }, baseline, lineHeight, line, symbols });
           }
           line++;
         }

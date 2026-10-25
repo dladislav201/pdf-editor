@@ -18,7 +18,10 @@ const FALLBACKS = (Object.keys(FAMILIES) as FallbackFamily[]).flatMap((family) =
 
 /** Fallback ids are -1, -2, … in the order above; -1 is the regular sans. */
 export const FALLBACK_FONT = -1;
-export const isFallback = (font: number) => font < 0;
+/** Ids at or below this are fonts the editor provides itself (see `registerCustomFont`). */
+export const CUSTOM_FONT_BASE = -1000;
+export const isFallback = (font: number) => font < 0 && font > CUSTOM_FONT_BASE;
+export const isCustomFont = (font: number) => font <= CUSTOM_FONT_BASE;
 export const fallbackFile = (font: number): string => FALLBACKS[-font - 1]!.file;
 /** Id of the fallback font of a family and style. */
 export const fallbackId = (family: FallbackFamily, style: (typeof STYLES)[number]): number =>
@@ -47,6 +50,15 @@ export interface FontSource {
 type LoadGlyphs = (source: FontSource, chars: string[]) => Promise<FontGlyphs>;
 /** Fetches a fallback font file by name (e.g. `Tinos-Regular.ttf`). */
 export type LoadFallback = (file: string) => Promise<ArrayBuffer>;
+
+/**
+ * A font the editor makes up, e.g. the letters of a scanned page: advances
+ * and metrics for layout. Characters it lacks come from `fallback`.
+ */
+export interface CustomFont extends FontMetrics {
+  glyph(char: string): Glyph | null;
+  fallback: number;
+}
 
 interface DocFont extends FontMetrics {
   source: FontSource;
@@ -103,11 +115,18 @@ export class GlyphStore {
   private readonly fallbacks = new Map<number, FallbackFont>();
   private readonly fallbackLoads = new Map<number, Promise<FallbackFont | null>>();
   private readonly listeners = new Set<() => void>();
+  private readonly custom = new Map<number, CustomFont>();
 
   constructor(
     private readonly load: LoadGlyphs,
     private readonly loadFallback: LoadFallback | null,
   ) {}
+
+  /** Adds (or replaces) a custom font under an id at or below `CUSTOM_FONT_BASE`. */
+  registerCustomFont(id: number, font: CustomFont): void {
+    if (!isCustomFont(id)) throw new Error(`Custom font ids start at ${CUSTOM_FONT_BASE}.`);
+    this.custom.set(id, font);
+  }
 
   /** Font descriptions from the page text model, used to pick fallbacks. */
   registerFonts(fonts: Record<number, TextFont>): void {
@@ -139,6 +158,8 @@ export class GlyphStore {
   /** The fallback that best matches a document font: same family class, weight and slant. */
   fallbackFor(font: number): number {
     if (isFallback(font)) return font;
+    const custom = this.custom.get(font);
+    if (custom) return custom.fallback;
     const info = this.infos.get(font);
     const family: FallbackFamily = info?.monospace ? 'mono' : info?.serif ? 'serif' : 'sans';
     const bold = (info?.weight ?? 400) >= 600;
@@ -149,7 +170,11 @@ export class GlyphStore {
 
   /** The glyph to draw `char` with: the document font if it has one, else its fallback. */
   resolve(font: number, char: string): { font: number; glyph: Glyph | null } {
-    if (!isFallback(font)) {
+    const custom = this.custom.get(font);
+    if (custom) {
+      const glyph = custom.glyph(char);
+      if (glyph) return { font, glyph };
+    } else if (!isFallback(font)) {
       const glyph = this.fonts.get(font)?.glyphs.get(char);
       if (glyph) return { font, glyph };
     }
@@ -163,7 +188,7 @@ export class GlyphStore {
   }
 
   metrics(font: number): FontMetrics {
-    const loaded = isFallback(font) ? this.fallbackFont(font) : this.fonts.get(font);
+    const loaded = this.custom.get(font) ?? (isFallback(font) ? this.fallbackFont(font) : this.fonts.get(font));
     return loaded ?? { ascent: 0.8, descent: -0.2 };
   }
 

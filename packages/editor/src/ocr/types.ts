@@ -28,6 +28,14 @@ export interface RecognizedWord {
   line: number;
   /** Came from re-reading a table cell on its own. */
   fromCell?: boolean;
+  /** The word's letters, each with its own ink box, when the engine reports them. */
+  symbols?: RecognizedSymbol[];
+}
+
+export interface RecognizedSymbol {
+  text: string;
+  confidence: number;
+  box: PixelBox;
 }
 
 /**

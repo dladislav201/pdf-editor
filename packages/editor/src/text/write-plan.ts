@@ -1,5 +1,7 @@
 import { isFallback, type GlyphStore } from './glyph-store';
 import type { ParagraphLayout, PlacedGlyph, StyledChar } from './layout';
+import type { ScanPatch } from '../engine/pdfium-core';
+import type { InvisibleWord } from '../ocr/place';
 import type { ScanErase } from './scan-edit';
 import type { TextParagraph } from './types';
 
@@ -37,6 +39,13 @@ export interface TextWritePlan {
   fallback: PlannedFallbackWord[];
   /** For recognized text: its words are erased from the scan underneath first. */
   erase?: ScanErase;
+  /**
+   * For recognized text set in the scan's own letters: the piece of the scan
+   * with the new text already drawn in, put over the old one as it is.
+   */
+  patch?: Omit<ScanPatch, 'original'>;
+  /** Invisible words over `patch`, so its text stays searchable (Arimo, ids -1 and -2). */
+  invisible?: InvisibleWord[];
 }
 
 const isBlank = (char: string) => char === ' ' || char === ' ' || char === '\t' || char === '\n';

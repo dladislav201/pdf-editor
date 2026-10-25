@@ -436,10 +436,13 @@ function recognizedParagraphs(raw: RawPageText): { paragraphs: TextParagraph[]; 
   const angle = median(invisible.map((c) => normalAngle(c.angle)));
   // PDFium measures char angles clockwise; user space turns counterclockwise.
   const skew = -angle;
+  const turnRect = (r: Rect, by: number): Rect => {
+    const [cx, cy] = rotatePoint(r.x + r.width / 2, r.y + r.height / 2, by);
+    return { ...r, x: cx - r.width / 2, y: cy - r.height / 2 };
+  };
   const turn = <T extends TextChar>(c: T, by: number): T => {
     const [x, y] = rotatePoint(c.x, c.y, by);
-    const [cx, cy] = rotatePoint(c.box.x + c.box.width / 2, c.box.y + c.box.height / 2, by);
-    return { ...c, x, y, box: { ...c.box, x: cx - c.box.width / 2, y: cy - c.box.height / 2 } };
+    return { ...c, x, y, box: turnRect(c.box, by), ...(c.ink ? { ink: turnRect(c.ink, by) } : {}) };
   };
   const straight = invisible
     .filter((c) => Math.abs(normalAngle(c.angle) - angle) < MAX_SKEW)

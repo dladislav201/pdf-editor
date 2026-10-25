@@ -42,6 +42,11 @@ export interface TextChar {
   isSpace: boolean;
   /** A hyphen at the end of a line, possibly inserted by hyphenation. */
   lineEndHyphen: boolean;
+  /**
+   * The glyph's ink, for invisible (recognized) text only: there the glyph is
+   * stretched over a word of the scan, so its ink box is where the scan's ink is.
+   */
+  ink?: Rect;
 }
 
 /** Consecutive glyphs of a line that share font, size and color. */

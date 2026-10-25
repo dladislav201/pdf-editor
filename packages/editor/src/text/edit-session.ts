@@ -34,6 +34,11 @@ export interface TextEditCallbacks {
   onChange(session: TextEditSession): void;
   /** The user left the session (Escape). */
   onExit(): void;
+  /**
+   * Draws the text instead of the session (for a scan, as a piece of image
+   * under the caret and selection). Called after every change of layout.
+   */
+  paint?(session: TextEditSession): void;
 }
 
 /**
@@ -136,6 +141,7 @@ export class TextEditSession {
   private anchor: number;
   private composing: string | null = null;
   private layoutCache: ParagraphLayout | null = null;
+  private layoutChars: StyledChar[] = [];
   private undoStack: Snapshot[] = [];
   private redoStack: Snapshot[] = [];
   private lastTyping = 0;
@@ -209,10 +215,17 @@ export class TextEditSession {
   }
 
   get layout(): ParagraphLayout {
-    this.layoutCache ??= layoutParagraph(withWordFallback(this.displayChars(), this.store), this.frame, (style, char) =>
-      this.advance(style, char),
-    );
+    if (!this.layoutCache) {
+      this.layoutChars = withWordFallback(this.displayChars(), this.store);
+      this.layoutCache = layoutParagraph(this.layoutChars, this.frame, (style, char) => this.advance(style, char));
+    }
     return this.layoutCache;
+  }
+
+  /** The characters `layout` was set from (with any text being composed by an IME); its glyph indices point here. */
+  get laidOutChars(): StyledChar[] {
+    void this.layout;
+    return this.layoutChars;
   }
 
   /** Extent of the laid out text (its ink, not the whole column) in PDF user space. */
@@ -435,14 +448,13 @@ export class TextEditSession {
   }
 
   private selectWord(offset: number): void {
-    const char = this.chars[offset]?.char ?? this.chars[offset - 1]?.char ?? '';
-    if (!WORD_CHAR.test(char)) {
-      this.anchor = this.caretOffset = offset;
-      return;
-    }
     // A separator between digits is part of the number: "4 779,50", "01.09.2026".
     const at = (i: number) => this.chars[i]?.char ?? '';
     const inWord = (i: number) => WORD_CHAR.test(at(i)) || (/^[.,]$/.test(at(i)) && /\p{N}/u.test(at(i - 1)) && /\p{N}/u.test(at(i + 1)));
+    if (!inWord(offset) && !inWord(offset - 1)) {
+      this.anchor = this.caretOffset = offset;
+      return;
+    }
     let start = offset;
     let end = offset;
     while (start > 0 && inWord(start - 1)) start--;
@@ -625,7 +637,8 @@ export class TextEditSession {
     if (this.destroyed) return;
     const layout = this.layout;
     const glyphs: SVGElement[] = [];
-    for (const line of layout.lines) {
+    if (this.callbacks.paint) this.callbacks.paint(this);
+    else for (const line of layout.lines) {
       for (const placed of line.glyphs) {
         if (placed.char === '\n' || placed.char === ' ') continue;
         const { glyph } = this.store.resolve(placed.style.font, placed.char);

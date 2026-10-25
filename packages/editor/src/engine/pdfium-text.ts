@@ -71,8 +71,8 @@ export function extractPageText(lib: WrappedPdfiumModule, page: number, pageInde
   }
 
   const textPage = lib.FPDFText_LoadPage(page);
-  // 64 bytes of scratch: doubles at 0/8, a FS_RECTF at 16, a FS_MATRIX at 32, RGBA at 56.
-  const scratch = wasmExports.malloc(80);
+  // Scratch: doubles at 0/8, a FS_RECTF at 16, a FS_MATRIX at 32, RGBA at 56, four doubles at 80.
+  const scratch = wasmExports.malloc(112);
   const fonts: RawPageText['fonts'] = {};
   const chars: RawPageText['chars'] = [];
   const renderModes = new Map<number, number>();
@@ -109,7 +109,13 @@ export function extractPageText(lib: WrappedPdfiumModule, page: number, pageInde
       // PDFium reports a hyphen that ends a line as U+0002; the page draws a plain hyphen.
       const hyphen = lib.FPDFText_IsHyphen(textPage, i) === 1;
       const text = hyphen ? '-' : String.fromCodePoint(code);
+      let ink: RawPageText['chars'][number]['ink'];
+      if (mode === RENDER_INVISIBLE && lib.FPDFText_GetCharBox(textPage, i, scratch + 80, scratch + 88, scratch + 96, scratch + 104)) {
+        const [l, r, bottom, t] = heaps(lib).HEAPF64.subarray((scratch + 80) >> 3, ((scratch + 80) >> 3) + 4) as unknown as number[];
+        ink = { x: l!, y: bottom!, width: r! - l!, height: t! - bottom! };
+      }
       chars.push({
+        ...(ink ? { ink } : {}),
         text,
         x,
         y,

@@ -129,7 +129,8 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         copy = new PdfiumDocument(await library, new Uint8Array(request.data));
         // Fallback fonts go in subset to the characters their words use.
         const needed = new Map<number, Set<string>>();
-        for (const word of request.plans.flatMap((plan) => plan.fallback)) {
+        const invisible = request.plans.flatMap((plan) => plan.invisible ?? []);
+        for (const word of [...request.plans.flatMap((plan) => plan.fallback), ...invisible.map((w) => ({ ...w, font: w.bold ? -2 : -1 }))]) {
           const chars = needed.get(word.font) ?? new Set<string>();
           for (const char of word.text) chars.add(char);
           needed.set(word.font, chars);
@@ -179,7 +180,7 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
     case 'scanPatch':
       try {
         const patch = openDoc(request.docId).scanPatch(request.page, request.erase);
-        reply({ id: request.id, ok: true, result: patch }, [patch.image.rgba.buffer]);
+        reply({ id: request.id, ok: true, result: patch }, [patch.image.rgba.buffer, patch.original.rgba.buffer]);
       } catch (error) {
         fail(request.id, error);
       }

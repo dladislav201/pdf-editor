@@ -7,6 +7,7 @@ import { History } from './history';
 import type { ScanInfo, ScanPatch } from './engine/pdfium-core';
 import { placeWords, type InvisibleWord } from './ocr/place';
 import { recognizeRaster } from './ocr/recognize';
+import { ScanFont, type ScanGlyph, type ScanStyle } from './ocr/scan-font';
 import { TesseractEngine } from './ocr/tesseract';
 import type { OcrPage, Raster } from './ocr/types';
 import { checkLicense, type LicenseInfo } from './license';
@@ -15,7 +16,18 @@ import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
 import { injectStyles } from './styles';
 import { TextEditSession, paragraphChars, paragraphFrame } from './text/edit-session';
-import { FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontSource } from './text/glyph-store';
+import { CUSTOM_FONT_BASE, FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontSource } from './text/glyph-store';
+import type { ParagraphLayout } from './text/layout';
+import {
+  composeScanParagraph,
+  growErase,
+  scanChars,
+  scanCustomFont,
+  scanStyle,
+  scanTracking,
+  scanWritePlan,
+  type PageScanFont,
+} from './text/scan-type';
 import { recognizedChars, scanErase, type ScanErase } from './text/scan-edit';
 import { buildWritePlan, type TextWritePlan } from './text/write-plan';
 import type { StyledChar } from './text/layout';
@@ -140,6 +152,24 @@ function rasterCanvas({ width, height, rgba }: Raster): OffscreenCanvas {
   return canvas;
 }
 
+/**
+ * A recognized paragraph being edited in its scan's own letters: the page's
+ * letters and their style for it, the piece of scan under it (erased and as
+ * it was), and the image last drawn from them.
+ */
+interface ScanEdit {
+  page: PageScanFont;
+  style: ScanStyle;
+  bold: boolean;
+  /** Custom font id of the scan's letters for this paragraph; `fallback` draws what they lack. */
+  font: number;
+  fallback: number;
+  base: ScanPatch;
+  href: string | null;
+  painted: ParagraphLayout | null;
+  outlines: Map<string, ScanGlyph | null>;
+}
+
 const abortError = (message: string) => Object.assign(new Error(message), { name: 'AbortError' });
 
 function describeLoadError(error: unknown): string {
@@ -168,6 +198,10 @@ export class PdfEditor {
   private recognizing = false;
   private geometries: PageGeometry[] = [];
   private scanInfos = new Map<number, Promise<ScanInfo>>();
+  /** Letters of each scanned page, cut from the scan when it is read, for editing its text in them. */
+  private scanFonts = new Map<number, Promise<PageScanFont | null>>();
+  private scanEdits = new Map<string, ScanEdit>();
+  private nextScanFont = CUSTOM_FONT_BASE;
   /** Cleaned scan under each recognized paragraph opened for editing, as an object URL. */
   private scanPatches = new Map<string, Promise<{ href: string; patch: Omit<ScanPatch, 'image'> & { width: number; height: number } }>>();
   private readonly readOnly: boolean;
@@ -412,13 +446,25 @@ export class PdfEditor {
       // Page text first: the engine rewrites edited paragraphs in a copy of the file.
       const plans: TextWritePlan[] = await Promise.all(
         [...this.textEdits.values()].map(async ({ paragraph, session }) => {
+          // Recognized text set in the scan's letters: its piece of scan, redrawn, with invisible text over it.
+          const scan = this.scanEdits.get(paragraph.id);
+          if (scan) {
+            const { origin, xAxis, yAxis } = scan.base;
+            const image = this.composeScan(session, scan);
+            return scanWritePlan(paragraph, session.laidOutChars, session.layout, { image, origin, xAxis, yAxis }, scan.bold);
+          }
           const plan = buildWritePlan(paragraph, session.styledChars, session.layout, this.glyphs);
           // Recognized text of a scan: its words come off the scan underneath.
           return paragraph.recognized ? { ...plan, erase: await this.scanEraseFor(paragraph) } : plan;
         }),
       );
       const fallbackFonts: Record<number, ArrayBuffer> = {};
-      for (const font of new Set(plans.flatMap((plan) => plan.fallback.map((word) => word.font)))) {
+      const invisible = plans.flatMap((plan) => plan.invisible ?? []);
+      const fallbackIds = [
+        ...plans.flatMap((plan) => plan.fallback.map((word) => word.font)),
+        ...(invisible.length ? [FALLBACK_FONT, fallbackId('sans', 'Bold')] : []),
+      ];
+      for (const font of new Set(fallbackIds)) {
         const bytes = await this.glyphs.fallbackBytes(font);
         if (!bytes) throw new Error(`Could not load the fallback font for edited text (${fallbackFile(font)}).`);
         fallbackFonts[font] = bytes;
@@ -612,14 +658,7 @@ export class PdfEditor {
       }
       check();
 
-      const languages = options.languages ?? ['ukr', 'eng'];
-      if (this.ocr?.languages !== languages.join('+')) {
-        void this.ocr?.engine.terminate();
-        const paths = { workerPath: `${this.ocrUrl}worker.min.js`, corePath: this.ocrUrl, langPath: `${this.ocrUrl}lang` };
-        const engine = new TesseractEngine(() => import('tesseract.js'), async (raster) => rasterCanvas(raster), paths, languages);
-        this.ocr = { engine, languages: languages.join('+') };
-      }
-      const { engine } = this.ocr;
+      const engine = this.ocrEngine(options.languages ?? ['ukr', 'eng']);
 
       const results: OcrPage[] = [];
       const layers: { page: number; words: InvisibleWord[] }[] = [];
@@ -635,6 +674,9 @@ export class PdfEditor {
         check();
         const result = await recognizeRaster({ width, height, rgba }, engine);
         check();
+        // Keep the page's letters (not the raster): editing its text later sets it in them.
+        const letters = { font: ScanFont.fromPage(result.straight.image, result.straight.words), geometry, angle: result.angle };
+        this.scanFonts.set(pageIndex, Promise.resolve(letters));
         const { words, layer } = placeWords(result.words, geometry);
         results.push({
           pageIndex,
@@ -671,6 +713,44 @@ export class PdfEditor {
       this.recognizing = false;
       this.events.emit('ocrProgress', { pageIndex: -1, done: 0, total: 0 });
     }
+  }
+
+  /** One Tesseract engine for the languages asked for, made on first use. */
+  private ocrEngine(languages: string[]): TesseractEngine {
+    if (this.ocr?.languages !== languages.join('+')) {
+      void this.ocr?.engine.terminate();
+      const paths = { workerPath: `${this.ocrUrl}worker.min.js`, corePath: this.ocrUrl, langPath: `${this.ocrUrl}lang` };
+      const engine = new TesseractEngine(() => import('tesseract.js'), async (raster) => rasterCanvas(raster), paths, languages);
+      this.ocr = { engine, languages: languages.join('+') };
+    }
+    return this.ocr.engine;
+  }
+
+  /**
+   * The letters of a scanned page: kept from `recognizeText`, or read now
+   * (a page recognized before the file was opened, by us or another tool).
+   * Null when the page can't be read; editing then falls back to Arimo.
+   */
+  private scanFontFor(pageIndex: number): Promise<PageScanFont | null> {
+    let letters = this.scanFonts.get(pageIndex);
+    if (!letters) {
+      letters = this.readScanLetters(pageIndex).catch(() => null);
+      this.scanFonts.set(pageIndex, letters);
+    }
+    return letters;
+  }
+
+  private async readScanLetters(pageIndex: number): Promise<PageScanFont | null> {
+    const docId = this.docId;
+    if (docId === null) return null;
+    let geometry = this.geometries[pageIndex]!.scaled(OCR_DPI / 72);
+    const area = geometry.width * geometry.height;
+    if (area > OCR_MAX_PIXELS) geometry = geometry.scaled(geometry.scale * Math.sqrt(OCR_MAX_PIXELS / area));
+    const width = Math.round(geometry.width);
+    const height = Math.round(geometry.height);
+    const rgba = await this.engine.raster(docId, pageIndex, width, height);
+    const result = await recognizeRaster({ width, height, rgba }, this.ocrEngine(this.ocr?.languages.split('+') ?? ['ukr', 'eng']));
+    return { font: ScanFont.fromPage(result.straight.image, result.straight.words), geometry, angle: result.angle };
   }
 
   /** The paragraph picked with the Edit text tool. */
@@ -723,6 +803,9 @@ export class PdfEditor {
     this.textEdits.clear();
     for (const patch of this.scanPatches.values()) void patch.then(({ href }) => URL.revokeObjectURL(href), () => undefined);
     this.scanPatches.clear();
+    for (const edit of this.scanEdits.values()) if (edit.href) URL.revokeObjectURL(edit.href);
+    this.scanEdits.clear();
+    this.scanFonts.clear();
     this.textEditor?.el.remove();
     this.textEditor = null;
     this.interaction = null;
@@ -982,10 +1065,13 @@ export class PdfEditor {
     const page = await this.getPageText(paragraph.pageIndex);
     store.registerFonts(page.fonts);
     await Promise.all([...fonts].map(([font, { source, chars }]) => store.ensure(font, source, chars)));
-    // Recognized text is set anew in a fallback font, over the scan with its words
-    // erased: have both ready, so the old words never show through the new ones.
-    const background = paragraph.recognized ? this.scanPatch(paragraph).catch(() => null) : null;
-    if (paragraph.recognized) await Promise.all([...fonts.keys()].map((font) => store.fallbackBytes(store.fallbackFor(font))));
+    // Recognized text is set in the scan's own letters. Without them (the page can't be
+    // read) it is set anew in a fallback font over the scan with its words erased.
+    const scan = paragraph.recognized
+      ? (this.scanEdits.get(paragraph.id) ?? (await this.prepareScanEdit(paragraph, page.block, page.fonts).catch(() => null)))
+      : null;
+    const background = paragraph.recognized && !scan ? this.scanPatch(paragraph).catch(() => null) : null;
+    if (paragraph.recognized && !scan) await Promise.all([...fonts.keys()].map((font) => store.fallbackBytes(store.fallbackFor(font))));
     const ready = await background;
     const opening = this.opening;
     if (opening?.token !== token) return;
@@ -995,20 +1081,135 @@ export class PdfEditor {
     const previous = this.textEdits.get(paragraph.id);
     const initial: StyledChar[] = previous
       ? previous.session.styledChars
-      : paragraph.recognized
-        ? recognizedChars(paragraph, (font) => store.fallbackFor(font))
-        : paragraphChars(paragraph, (style, char) => store.advance(style, char));
+      : scan
+        ? scanChars(paragraph, scan.font)
+        : paragraph.recognized
+          ? recognizedChars(paragraph, (font) => store.fallbackFor(font))
+          : paragraphChars(paragraph, (style, char) => store.advance(style, char));
     previous?.session.destroy();
     this.textEdits.delete(paragraph.id);
+    if (scan) scan.painted = null;
     this.textSession = new TextEditSession(view, paragraph, paragraphFrame(paragraph, page.block), store, {
       onChange: () => this.drawParagraphOutlines(paragraph),
       onExit: () => this.endTextEdit(),
+      ...(scan ? { paint: (session: TextEditSession) => this.paintScan(session, scan) } : {}),
     }, initial);
     this.root.dataset.editing = 'text';
     if (ready) this.textSession.setBackground({ href: ready.href, ...ready.patch });
     this.updateHidden(paragraph.pageIndex);
     this.textSession.pointerDown(opening.point, opening.event, opening.clicks);
     this.textSession.pointerUp();
+  }
+
+  /** Gets a recognized paragraph ready to edit in its scan's letters (null without them). */
+  private async prepareScanEdit(
+    paragraph: TextParagraph,
+    block: PageText['block'],
+    fonts: PageText['fonts'],
+  ): Promise<ScanEdit | null> {
+    const docId = this.docId;
+    const letters = await this.scanFontFor(paragraph.pageIndex);
+    if (!letters || docId === null) return null;
+    const chars = paragraph.lines.flatMap((l) => l.chars);
+    const bold = chars.filter((c) => (fonts[c.font]?.weight ?? 400) >= 600).length > chars.length / 2;
+    const style = scanStyle(letters, paragraph, bold);
+    const fallback = fallbackId('sans', bold ? 'Bold' : 'Regular');
+    await this.glyphs.fallbackBytes(fallback);
+    const font = this.nextScanFont--;
+    this.glyphs.registerCustomFont(font, scanCustomFont(letters, style, fallback, scanTracking(letters, style, paragraph)));
+    // Room for the text to grow: the column and two lines below.
+    const erase = growErase(await this.scanEraseFor(paragraph), paragraphFrame(paragraph, block));
+    const base = await this.engine.scanPatch(docId, paragraph.pageIndex, erase);
+    const edit: ScanEdit = { page: letters, style, bold, font, fallback, base, href: null, painted: null, outlines: new Map() };
+    this.scanEdits.set(paragraph.id, edit);
+    return edit;
+  }
+
+  /** The paragraph's piece of scan with its current text drawn in. */
+  private composeScan(session: TextEditSession, edit: ScanEdit): Raster {
+    return composeScanParagraph({
+      page: edit.page,
+      style: edit.style,
+      base: edit.base,
+      paragraph: session.paragraph,
+      chars: session.laidOutChars,
+      layout: session.layout,
+      fallback: (char) => this.outlineGlyph(edit, char),
+    });
+  }
+
+  /** Redraws a scan paragraph after its text changed (once per change), under the session's caret. */
+  private paintScan(session: TextEditSession, edit: ScanEdit): void {
+    const layout = session.layout;
+    if (edit.painted === layout) return;
+    edit.painted = layout;
+    // After the current event, so a burst of renders draws once.
+    queueMicrotask(() => {
+      if (edit.painted !== layout) return;
+      const image = this.composeScan(session, edit);
+      const canvas = new OffscreenCanvas(image.width, image.height);
+      canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(image.rgba), image.width, image.height), 0, 0);
+      void canvas.convertToBlob({ type: 'image/png' }).then((blob) => {
+        const href = URL.createObjectURL(blob);
+        // A newer layout was drawn meanwhile, or the edit is gone.
+        if (edit.painted !== layout || !this.scanEdits.has(session.paragraph.id)) {
+          URL.revokeObjectURL(href);
+          return;
+        }
+        if (edit.href) URL.revokeObjectURL(edit.href);
+        edit.href = href;
+        const { origin, xAxis, yAxis } = edit.base;
+        session.setBackground({ href, width: image.width, height: image.height, origin, xAxis, yAxis });
+      });
+    });
+  }
+
+  /**
+   * A letter the scan lacks, drawn from the fallback font's outline at the
+   * scan's size, as a grey image like the scan's own letters.
+   */
+  private outlineGlyph(edit: ScanEdit, char: string): ScanGlyph | null {
+    if (edit.outlines.has(char)) return edit.outlines.get(char)!;
+    const { glyph } = this.glyphs.resolve(edit.fallback, char);
+    let result: ScanGlyph | null = null;
+    if (glyph?.path) {
+      const size = edit.style.size;
+      const scale = size / glyph.unitsPerEm;
+      const width = Math.ceil(glyph.advance * size) + 6;
+      const height = Math.ceil(size * 1.6);
+      const baseline = Math.round(size * 1.2);
+      const canvas = new OffscreenCanvas(width, height);
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.setTransform(scale, 0, 0, -scale, 3, baseline);
+      ctx.fillStyle = '#000';
+      ctx.fill(new Path2D(glyph.path));
+      const data = ctx.getImageData(0, 0, width, height).data;
+      let x0 = width;
+      let y0 = height;
+      let x1 = -1;
+      let y1 = -1;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (data[(y * width + x) * 4]! >= 250) continue;
+          x0 = Math.min(x0, x);
+          y0 = Math.min(y0, y);
+          x1 = Math.max(x1, x);
+          y1 = Math.max(y1, y);
+        }
+      }
+      if (x1 >= 0) {
+        const w = x1 - x0 + 1;
+        const h = y1 - y0 + 1;
+        const pixels = new Uint8ClampedArray(w * h);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) pixels[y * w + x] = data[((y0 + y) * width + x0 + x) * 4]!;
+        const box = { x0: 0, y0: 0, x1: 0, y1: 0 };
+        result = { char, width: w, height: h, pixels, top: y0 - baseline, size, bold: edit.bold, confidence: 0, ink: 0, line: -1, at: box };
+      }
+    }
+    edit.outlines.set(char, result);
+    return result;
   }
 
   private scanEraseFor(paragraph: TextParagraph): Promise<ScanErase> {

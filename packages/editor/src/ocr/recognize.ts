@@ -16,6 +16,12 @@ export interface OcrEngine {
 
 export interface RasterResult {
   words: PlacedWord[];
+  /**
+   * The page as it was read: straightened, coloured ink removed, with the
+   * words (fixed text, letters included) in its pixels. What a scan's own
+   * letters are cut from.
+   */
+  straight: { image: Raster; words: (RecognizedWord & { size: number; bold: boolean })[] };
   /** Skew that was corrected, in radians. */
   angle: number;
   cells: number;
@@ -79,9 +85,11 @@ function crop(raster: Raster, box: PixelBox): Raster {
 function fromCell(word: RecognizedWord, cell: PixelBox): RecognizedWord {
   const x = (v: number) => cell.x0 + CELL_INSET + (v - CELL_MARGIN) / CELL_SCALE;
   const y = (v: number) => cell.y0 + CELL_INSET + (v - CELL_MARGIN) / CELL_SCALE;
+  const box = (b: PixelBox) => ({ x0: x(b.x0), y0: y(b.y0), x1: x(b.x1), y1: y(b.y1) });
   return {
     ...word,
-    box: { x0: x(word.box.x0), y0: y(word.box.y0), x1: x(word.box.x1), y1: y(word.box.y1) },
+    box: box(word.box),
+    symbols: word.symbols?.map((s) => ({ ...s, box: box(s.box) })),
     baseline: y(word.baseline),
     lineHeight: word.lineHeight / CELL_SCALE,
     fromCell: true,
@@ -91,7 +99,12 @@ function fromCell(word: RecognizedWord, cell: PixelBox): RecognizedWord {
 /** Remnants of a border read as "|" or "[" are trimmed off cell words; words that are nothing else go. */
 function cellWords(words: RecognizedWord[], cell: PixelBox): RecognizedWord[] {
   return words
-    .map((w) => fromCell({ ...w, text: w.text.replace(/^[|[\]]+|[|[\]]+$/g, '') }, cell))
+    .map((w) =>
+      fromCell(
+        { ...w, text: w.text.replace(/^[|[\]]+|[|[\]]+$/g, ''), symbols: w.symbols?.filter((s) => !/^[|[\]]$/.test(s.text)) },
+        cell,
+      ),
+    )
     .filter((w) => w.text.length > 0);
 }
 
@@ -161,6 +174,7 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine): Promis
   const isBold = (w: RecognizedWord) => weights.length >= 10 && weight.get(w)! > typical * BOLD_RATIO;
 
   const fixed: PlacedWord[] = [];
+  const straightWords: RasterResult['straight']['words'] = [];
   const back = (point: [number, number]) => (straight === clean ? point : unrotatePoint(point, angle, source.width, source.height));
   // Words go back onto the skewed original, along their (now tilted) baselines.
   const up: [number, number] = [Math.sin(angle), -Math.cos(angle)];
@@ -177,6 +191,10 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine): Promis
       // Short words ("№", "1") measure poorly: a line that is mostly bold is all bold, and vice versa.
       const boldShare = lineWords.filter(isBold).length / lineWords.length;
       const bold = boldShare >= 0.6 || (boldShare > 0.4 && isBold(w));
+      // Fixed look-alikes apply to the letters too, when they still line up one to one.
+      const letters = [...texts[i]!];
+      const symbols = w.symbols?.length === letters.length ? w.symbols.map((s, k) => ({ ...s, text: letters[k]! })) : w.symbols;
+      straightWords.push({ ...w, text: texts[i]!, symbols, box: own, size: sizes.get(w.line)!, bold });
       w = { ...w, box: own };
       const box = straight === clean ? own : unrotateBox(own, angle, source.width, source.height);
       const start = back([w.box.x0, w.baseline]);
@@ -195,5 +213,5 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine): Promis
       });
     });
   }
-  return { words: fixed, angle, cells: reread };
+  return { words: fixed, straight: { image: straight, words: straightWords }, angle, cells: reread };
 }

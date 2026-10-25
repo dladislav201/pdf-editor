@@ -91,8 +91,8 @@ function ScanPanel({ state, onRecognize, onSample }: { state: ScanState; onRecog
           Recognized {words} words on {state.pages.length} {state.pages.length === 1 ? 'page' : 'pages'} (
           {state.pages.map((p) => `${(p.durationMs / 1000).toFixed(1)} s, ${Math.round(p.confidence)}% confidence`).join('; ')}).
           The text now sits invisibly under the scan: select it, search it, copy it, and it's in the downloaded PDF.
-          Pick Edit text (E) and click a line to change it: its words come off the scan and are written anew in a
-          matching size, weight and colour.
+          Pick Edit text (E) and click a line to change it: new words are set in letters cut from the scan itself, the
+          rest of the line keeps its own pixels.
         </p>
         <blockquote className="quote">
           {state.pages[0]?.words.slice(0, 40).map((w) => w.text).join(' ')}…
