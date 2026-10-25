@@ -58,6 +58,7 @@ export function App() {
       file={open.file}
       tool={open.tool}
       recognize={open.recognize}
+      pages={open.pages}
       theme={theme}
       onToggleTheme={toggleTheme}
       onClose={() => history.back()}

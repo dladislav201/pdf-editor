@@ -3,6 +3,7 @@ export { exportPdf, type ExportOptions } from './export';
 export type { ScanInfo } from './engine/pdfium-core';
 export type { OcrPage, OcrWord } from './ocr/types';
 export { checkLicense, type LicenseInfo, type LicensePayload, type LicenseStatus } from './license';
+export { arrangePages, type ArrangedPage } from './pdf/arrange';
 export { importAnnotations, type ImportResult } from './pdf/read-annotations';
 export type {
   PageText,
@@ -22,6 +23,7 @@ export type {
   InkAnnotation,
   Point,
   Rect,
+  PageSource,
   RecognizeOptions,
   RectangleAnnotation,
   TextAnnotation,

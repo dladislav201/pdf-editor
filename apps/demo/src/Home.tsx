@@ -7,6 +7,8 @@ export interface OpenRequest {
   /** Tool to start with, and whether to recognize scanned pages right away. */
   tool?: ToolName;
   recognize?: boolean;
+  /** Open in the page view (organize pages). */
+  pages?: boolean;
 }
 
 const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequest, 'file'> }[] = [
@@ -14,7 +16,7 @@ const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequ
   { icon: 'scan', title: 'Edit a scan', text: 'Recognize scanned pages, then edit them in the scan’s own letters.', open: { tool: 'editText', recognize: true } },
   { icon: 'highlight', title: 'Annotate', text: 'Highlight, draw, add shapes and notes.', open: { tool: 'highlight' } },
   { icon: 'sign', title: 'Sign', text: 'Draw or upload your signature.' },
-  { icon: 'pages', title: 'Organize pages', text: 'Merge, split, rotate and reorder.' },
+  { icon: 'pages', title: 'Organize pages', text: 'Merge, split, rotate, delete and reorder.', open: { pages: true } },
 ];
 
 export function Home({

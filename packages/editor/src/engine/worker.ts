@@ -12,7 +12,10 @@ type RenderRequest = Extract<EngineRequest, { type: 'render' }>;
 let library: Promise<WrappedPdfiumModule> | null = null;
 let subsetWasmUrl = '';
 let subsetter: Promise<Subsetter> | null = null;
-let current: { id: number; doc: PdfiumDocument } | null = null;
+/** Open documents by id: the one being edited, and any opened alongside it (pages to merge in). */
+const docs = new Map<number, PdfiumDocument>();
+/** The document being edited; opening another without `keep` replaces it. */
+let mainId: number | null = null;
 let nextDocId = 1;
 const queue: RenderRequest[] = [];
 const cancelled = new Set<number>();
@@ -46,8 +49,9 @@ function loadSubsetter(): Promise<Subsetter> {
 }
 
 function openDoc(docId: number): PdfiumDocument {
-  if (!current || current.id !== docId) throw new EngineError('EngineError', 'The document is no longer open.');
-  return current.doc;
+  const doc = docs.get(docId);
+  if (!doc) throw new EngineError('EngineError', 'The document is no longer open.');
+  return doc;
 }
 
 /**
@@ -65,8 +69,7 @@ async function pump(): Promise<void> {
         continue;
       }
       try {
-        if (!current || current.id !== job.docId) throw new EngineError('EngineError', 'The document is no longer open.');
-        const pixels = current.doc.render(job.page, job.width, job.height, job.hidden);
+        const pixels = openDoc(job.docId).render(job.page, job.width, job.height, job.hidden);
         const bitmap = await createImageBitmap(new ImageData(pixels, job.width, job.height));
         reply({ id: job.id, ok: true, result: bitmap }, [bitmap]);
       } catch (error) {
@@ -99,10 +102,15 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         const lib = await library;
         // Open first: if the new file fails, the current document stays usable.
         const doc = new PdfiumDocument(lib, new Uint8Array(request.data));
-        current?.doc.close();
-        current = { id: nextDocId++, doc };
+        const id = nextDocId++;
+        if (!request.keep) {
+          if (mainId !== null) docs.get(mainId)?.close();
+          if (mainId !== null) docs.delete(mainId);
+          mainId = id;
+        }
+        docs.set(id, doc);
         const result: OpenResult = {
-          docId: current.id,
+          docId: id,
           pages: Array.from({ length: doc.pageCount }, (_, i) => doc.pageInfo(i)),
         };
         reply({ id: request.id, ok: true, result });
@@ -116,8 +124,7 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
       return;
     case 'glyphs':
       try {
-        if (!current || current.id !== request.docId) throw new EngineError('EngineError', 'The document is no longer open.');
-        reply({ id: request.id, ok: true, result: current.doc.glyphs(request.page, request.object, request.chars) });
+        reply({ id: request.id, ok: true, result: openDoc(request.docId).glyphs(request.page, request.object, request.chars) });
       } catch (error) {
         fail(request.id, error);
       }
@@ -155,8 +162,7 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
     }
     case 'text':
       try {
-        if (!current || current.id !== request.docId) throw new EngineError('EngineError', 'The document is no longer open.');
-        reply({ id: request.id, ok: true, result: analyzePage(current.doc.extractText(request.page)) });
+        reply({ id: request.id, ok: true, result: analyzePage(openDoc(request.docId).extractText(request.page)) });
       } catch (error) {
         fail(request.id, error);
       }
@@ -206,10 +212,9 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
       if (queue.some((job) => job.id === request.target)) cancelled.add(request.target);
       return;
     case 'close':
-      if (current?.id === request.docId) {
-        current.doc.close();
-        current = null;
-      }
+      docs.get(request.docId)?.close();
+      docs.delete(request.docId);
+      if (mainId === request.docId) mainId = null;
       reply({ id: request.id, ok: true });
       return;
   }

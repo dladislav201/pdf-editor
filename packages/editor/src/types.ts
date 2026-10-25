@@ -153,6 +153,15 @@ export interface EditorEventMap {
   error: { error: unknown };
 }
 
+/** Pages of a PDF for thumbnails: their displayed sizes (points, rotation applied) and a renderer. */
+export interface PageSource {
+  pageCount: number;
+  sizes: { width: number; height: number }[];
+  /** The page as a bitmap `width` pixels wide. */
+  render(pageIndex: number, width: number): Promise<ImageBitmap>;
+  close(): void;
+}
+
 export interface RecognizeOptions {
   /** Pages to read (0-based). Default: every scanned page without recognized text. */
   pages?: number[];

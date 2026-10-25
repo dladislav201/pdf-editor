@@ -279,6 +279,24 @@ its weight over the scan with its words erased (`src/text/scan-edit.ts`).
 paragraph comes back as it was, a new amount and a new word are drawn and
 stay searchable, nothing outside the piece changes.
 
+## Pages
+
+`editor.pages()` gives the open document's pages for thumbnails (sizes and a
+renderer); `editor.openPages(file)` opens another PDF alongside it (the
+engine worker now keeps several documents) to merge it in.
+`arrangePages(sources, pages)` (`src/pdf/arrange.ts`, pdf-lib) builds a PDF
+from pages of one or more PDFs in any order and rotation, so it covers
+reorder, rotate, delete, merge and split (extract some pages); annotations
+and links travel with their pages. `editor.arrangePages()` runs it on the
+current document with its edits, and `editor.applyPageArrangement()` goes
+on editing the result.
+
+The site's Pages view (Edit / Pages at the top) shows the thumbnails:
+click, ⌘/Ctrl-click and Shift-click to select, drag to reorder (the
+selection moves together), rotate and delete per page or for the selection,
+Extract downloads the selected pages as a new PDF, Add PDF appends the pages
+of other PDFs; Apply changes rebuilds the document and keeps editing it.
+
 ## Design notes
 
 - Rendering runs on PDFium (the engine in Chrome) compiled to WebAssembly

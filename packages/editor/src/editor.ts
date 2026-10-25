@@ -11,6 +11,7 @@ import { ScanFont, type ScanGlyph, type ScanStyle } from './ocr/scan-font';
 import { TesseractEngine } from './ocr/tesseract';
 import type { OcrPage, Raster } from './ocr/types';
 import { checkLicense, type LicenseInfo } from './license';
+import { arrangePages, type ArrangedPage } from './pdf/arrange';
 import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
@@ -38,6 +39,7 @@ import type {
   DocumentSource,
   EditorEventMap,
   EditorOptions,
+  PageSource,
   Point,
   RecognizeOptions,
   Rect,
@@ -608,6 +610,56 @@ export class PdfEditor {
       model.catch(() => this.textModels.delete(pageIndex));
     }
     return model;
+  }
+
+  // ----------------------------------------------------------------- pages
+
+  /** The open document's pages, for thumbnails. */
+  pages(): PageSource {
+    const docId = this.docId;
+    if (docId === null) throw new Error('No document is open.');
+    return this.pageSource(docId, this.geometries, () => undefined);
+  }
+
+  /**
+   * Opens another PDF next to the one being edited, for its thumbnails (to
+   * merge its pages in). Close it when done.
+   */
+  async openPages(source: DocumentSource): Promise<PageSource & { bytes: Uint8Array; name: string }> {
+    const file = await readSource(source);
+    const { docId, pages } = await this.engine.open(file.bytes.slice(), true);
+    const geometries = pages.map((info) => new PageGeometry(info.box, info.rotation));
+    return { ...this.pageSource(docId, geometries, () => void this.engine.close(docId)), bytes: file.bytes, name: file.name };
+  }
+
+  /**
+   * The document with its pages rearranged: in a new order, turned, left out,
+   * or joined with pages of other PDFs (`others`, source 1, 2, …; source 0 is
+   * this document, with its current edits and annotations).
+   */
+  async arrangePages(pages: ArrangedPage[], others: Uint8Array[] = []): Promise<Uint8Array> {
+    const base = await this.exportPdf();
+    return arrangePages([base, ...others], pages);
+  }
+
+  /** Rearranges the pages (see `arrangePages`) and goes on editing the result. Annotations stay editable. */
+  async applyPageArrangement(pages: ArrangedPage[], others: Uint8Array[] = []): Promise<void> {
+    const bytes = await this.arrangePages(pages, others);
+    await this.load(new File([bytes as BlobPart], this.fileName, { type: 'application/pdf' }));
+  }
+
+  private pageSource(docId: number, geometries: PageGeometry[], close: () => void): PageSource {
+    return {
+      pageCount: geometries.length,
+      sizes: geometries.map((g) => ({ width: g.width, height: g.height })),
+      render: (pageIndex, width) => {
+        const geometry = geometries[pageIndex];
+        if (!geometry) return Promise.reject(new Error(`There is no page ${pageIndex + 1}.`));
+        const height = Math.max(1, Math.round((width * geometry.height) / geometry.width));
+        return this.engine.render(docId, pageIndex, Math.round(width), height).promise;
+      },
+      close,
+    };
   }
 
   /** Switches the colour theme (`'auto'` follows the OS). */

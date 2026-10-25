@@ -6,7 +6,8 @@ import type { PageInfo } from './pdfium-core';
 /** Messages from the editor to the engine worker. Every request except `cancel` gets exactly one response. */
 export type EngineRequest =
   | { id: number; type: 'init'; wasmUrl: string; subsetWasmUrl: string }
-  | { id: number; type: 'open'; data: ArrayBuffer }
+  /** Opens a document; it replaces the one being edited unless `keep` (one opened alongside it). */
+  | { id: number; type: 'open'; data: ArrayBuffer; keep?: boolean }
   | { id: number; type: 'render'; docId: number; page: number; width: number; height: number; hidden?: number[] }
   | { id: number; type: 'text'; docId: number; page: number }
   | { id: number; type: 'glyphs'; docId: number; page: number; object: number; chars: string[] }

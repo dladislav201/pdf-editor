@@ -3,6 +3,7 @@ import type { ToolName } from '@pdfsdk/editor';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './icons';
 import { DEMO_LICENSE_KEY } from './license';
+import { Pages } from './Pages';
 
 const TOOLS: { tool: ToolName; icon: IconName; label: string; key: string }[] = [
   { tool: 'select', icon: 'cursor', label: 'Select', key: 'V' },
@@ -25,6 +26,7 @@ export function Workspace({
   file,
   tool: initialTool,
   recognize,
+  pages: startInPages,
   theme,
   onToggleTheme,
   onClose,
@@ -32,6 +34,7 @@ export function Workspace({
   file: File;
   tool?: ToolName;
   recognize?: boolean;
+  pages?: boolean;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onClose: () => void;
@@ -47,6 +50,9 @@ export function Workspace({
   const [scan, setScan] = useState<Scan>({ kind: 'none' });
   const [message, setMessage] = useState<string | null>(null);
   const [edits, setEdits] = useState(0);
+  const [mode, setMode] = useState<'edit' | 'pages'>('edit');
+  const [loaded, setLoaded] = useState(false);
+  const wantPages = useRef(startInPages);
 
   // Keep the editor in step with the site's theme.
   useEffect(() => editor?.setTheme(theme), [editor, theme]);
@@ -78,6 +84,11 @@ export function Workspace({
       }),
       editor.on('documentLoaded', async ({ pageCount }) => {
         setPage({ index: 0, count: pageCount });
+        setLoaded(true);
+        if (wantPages.current) {
+          wantPages.current = false;
+          setMode('pages');
+        }
         // Fit the width, but don't blow a page up on a wide screen.
         if (editor.getZoom() > MAX_FIT_ZOOM) editor.setZoom(MAX_FIT_ZOOM);
         if (initialTool) editor.setTool(initialTool);
@@ -131,8 +142,25 @@ export function Workspace({
         </div>
       </div>
 
-      <div className="top-center" aria-live="polite">
-        {scan.kind === 'scanned' && (
+      <div className="top-center">
+        <div className="bar">
+          <div className="group">
+            <button type="button" className="pill" aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>
+              <Icon name="edit" /> Edit
+            </button>
+            <button type="button" className="pill" aria-pressed={mode === 'pages'} disabled={!loaded} onClick={() => setMode('pages')}>
+              <Icon name="grid" /> Pages
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {mode === 'pages' && editor && (
+        <Pages editor={editor} fileName={file.name} onClose={() => setMode('edit')} onMessage={setMessage} />
+      )}
+
+      <div className="status" aria-live="polite">
+        {mode === 'edit' && scan.kind === 'scanned' && (
           <div className="notice">
             <span>
               {scan.pages.length === 1 ? `Page ${scan.pages[0]! + 1} is` : `${scan.pages.length} pages are`} a scan
@@ -155,7 +183,7 @@ export function Workspace({
         {message && <div className="notice notice--plain">{message}</div>}
       </div>
 
-      <div className="top-right">
+      <div className="top-right" hidden={mode === 'pages'}>
         <button type="button" className="float" onClick={onToggleTheme} aria-label="Switch theme">
           <Icon name={theme === 'dark' ? 'moon' : 'sun'} />
         </button>
@@ -182,7 +210,7 @@ export function Workspace({
         </div>
       </div>
 
-      <div className="bottom-center">
+      <div className="bottom-center" hidden={mode === 'pages'}>
         {/* The tool's own options, above the tools. */}
         {(drawing || tool === 'select') && (
           <div className="bar">

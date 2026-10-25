@@ -58,11 +58,14 @@ export class EngineClient {
     return { id, promise };
   }
 
-  /** Opens a document, replacing any open one. The bytes are transferred, so pass a copy you don't need. */
-  async open(bytes: Uint8Array): Promise<OpenResult> {
+  /**
+   * Opens a document, replacing the one being edited, or alongside it with
+   * `keep` (close it yourself). The bytes are transferred, so pass a copy you don't need.
+   */
+  async open(bytes: Uint8Array, keep = false): Promise<OpenResult> {
     await this.ready;
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    return (await this.send({ type: 'open', data: buffer }, [buffer]).promise) as OpenResult;
+    return (await this.send({ type: 'open', data: buffer, ...(keep ? { keep } : {}) }, [buffer]).promise) as OpenResult;
   }
 
   render(docId: number, page: number, width: number, height: number, hidden?: number[]): RenderHandle {
