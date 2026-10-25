@@ -19,7 +19,7 @@ npm install
 npm run dev        # demo at http://localhost:5180, hot-reloads SDK sources
 npm run build      # builds both packages and the demo
 npm run typecheck
-npm test           # engine + annotation round-trip tests (vitest)
+npm test           # engine, text, OCR, scan editing, annotation and licence tests (vitest)
 ```
 
 ## Deploy the demo
@@ -34,6 +34,40 @@ response headers: `apps/demo/public/_headers`.
 npx wrangler login     # once per machine
 npm run deploy:demo    # builds the demo and uploads it
 ```
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull
+request: `npm ci`, typecheck, all tests (PDFium, HarfBuzz and Tesseract run
+in Node) and the build. On `main`, once the checks pass, it deploys the demo
+too, provided the repository has a `CLOUDFLARE_API_TOKEN` secret (a
+Cloudflare API token with the "Edit Cloudflare Workers" template); without it
+that job only leaves a notice.
+
+## Licence keys
+
+The editor takes `licenseKey`. Without a valid key for the page's domain it
+runs as a trial: a "PDF SDK · trial" watermark over every page and stamped
+into every exported PDF, and a console warning saying why. Nothing else is
+limited, and nothing is sent anywhere: the key is checked offline.
+
+A key is `pdfsdk1.<payload>.<signature>`: JSON with the customer, the domains
+(`app.acme.com`, `*.acme.com`), the plan and the last valid day, signed with
+Ed25519 (`src/license.ts`, verified with `@noble/ed25519`, so it works in
+browsers without Ed25519 in WebCrypto). Any valid key also works on
+localhost, so customers develop with their production key. An expired key
+falls back to the trial. `editor.getLicense()` tells the host app the status.
+
+```bash
+node scripts/license.mjs keygen      # once: ~/.pdfsdk/license-signing-key.pem + public key for src/license.ts
+node scripts/license.mjs issue --customer "Acme Ltd" --domains "app.acme.com,*.acme.com" \
+  --plan business --expires 2027-10-31
+```
+
+The signing key lives only in `~/.pdfsdk/` on the vendor's machine; keep a
+backup (a password manager). Losing it means shipping a new public key and
+reissuing every key. The demo's key (`apps/demo/src/license.ts`) covers only
+the demo's domain.
 
 ## Usage
 
@@ -285,4 +319,7 @@ reads back as whole lines.
   not handled; only Ukrainian and English models ship.
 - No form filling, signatures, page operations, search, thumbnails or password
   prompt yet.
-- No license key check, no CI; tests cover only annotation read/write.
+- Licence keys are issued by hand with `scripts/license.mjs`; the customer
+  dashboard (WorkOS sign-in, self-serve keys, billing) doesn't exist yet. Like
+  any client-side check, the watermark can be removed by someone patching the
+  bundle; it is there to make paying the easy path.

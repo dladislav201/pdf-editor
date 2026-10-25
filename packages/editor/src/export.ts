@@ -1,5 +1,5 @@
 import fontkit from '@pdf-lib/fontkit';
-import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, type PDFFont } from 'pdf-lib';
+import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont } from 'pdf-lib';
 import { textBaselines, textLines } from './geometry';
 import { hexToRgb } from './pdf/objects';
 import { writeAnnotations } from './pdf/write-annotations';
@@ -14,6 +14,8 @@ export interface ExportOptions {
    * annotations. The result can't be edited further; use it for print or archive.
    */
   flatten?: boolean;
+  /** Stamped faintly across every page (the trial watermark). */
+  watermark?: string;
 }
 
 /** Characters Helvetica can encode (WinAnsi), so we can fail with a clear message instead of a cryptic one. */
@@ -75,6 +77,26 @@ function flattenAnnotations(doc: PDFDocument, annotations: Annotation[], font: P
   }
 }
 
+/** A large, faint diagonal line of text across the middle of every page. */
+async function stampWatermark(doc: PDFDocument, text: string): Promise<void> {
+  const font = await doc.embedFont(StandardFonts.HelveticaBold);
+  for (const page of doc.getPages()) {
+    const { x, y, width, height } = page.getCropBox();
+    const size = Math.min(width, height) / 9;
+    const textWidth = font.widthOfTextAtSize(text, size);
+    const angle = (35 * Math.PI) / 180;
+    page.drawText(text, {
+      x: x + width / 2 - (Math.cos(angle) * textWidth) / 2,
+      y: y + height / 2 - (Math.sin(angle) * textWidth) / 2,
+      size,
+      font,
+      color: rgb(0.86, 0.15, 0.15),
+      opacity: 0.16,
+      rotate: degrees(35),
+    });
+  }
+}
+
 /**
  * Writes the annotations into a copy of `base`, as real PDF annotations by
  * default or burned into the pages with `flatten`. `base` is not modified.
@@ -88,5 +110,6 @@ export async function exportPdf(
   const font = await textFont(doc, annotations, options);
   if (options.flatten) flattenAnnotations(doc, annotations, font);
   else writeAnnotations(doc, annotations, font);
+  if (options.watermark) await stampWatermark(doc, options.watermark);
   return doc.save();
 }

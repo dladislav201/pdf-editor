@@ -1,0 +1,57 @@
+# Checks every push and pull request; deploys the demo from main.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # PDFium, HarfBuzz and Tesseract (OCR) run in Node here, as in the browser.
+      - run: npm test
+      - run: npm run build
+
+  deploy-demo:
+    name: Deploy demo
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Without the token secret the job is skipped instead of failing (see README, "Deploy the demo").
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 358490bc8a359b77b68b62d2eccf490f
+    steps:
+      - name: Skip without a Cloudflare token
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::notice::CLOUDFLARE_API_TOKEN is not set; the demo was not deployed."
+      - uses: actions/checkout@v5
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - uses: actions/setup-node@v5
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 22
+          cache: npm
+      - if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npm ci
+      - if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npm run deploy:demo

@@ -8,6 +8,7 @@ import {
 } from '@pdfsdk/react';
 import { useEffect, useRef, useState } from 'react';
 import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url';
+import { DEMO_LICENSE_KEY } from './license';
 import { createSamplePdf } from './sample-pdf';
 
 const TYPE_LABELS: Record<Annotation['type'], string> = {
@@ -195,6 +196,7 @@ export function App() {
             ref={editorRef}
             document={document ?? undefined}
             assetsUrl="/engine/"
+            licenseKey={DEMO_LICENSE_KEY}
             fontUrl="/fonts/DejaVuSans.ttf"
             author="Demo user"
             onAnnotationsChange={setAnnotations}

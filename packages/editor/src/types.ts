@@ -125,6 +125,12 @@ export interface EditorOptions {
   theme?: 'light' | 'dark' | 'auto';
   /** Disables all editing tools. */
   readOnly?: boolean;
+  /**
+   * Your licence key. Without a valid key for the page's domain the editor
+   * runs as a trial: a watermark on the pages and in exported files. Any valid
+   * key also works on localhost.
+   */
+  licenseKey?: string;
 }
 
 export interface EditorEventMap {

@@ -134,6 +134,22 @@ const CSS = /* css */ `
   background: #fff;
   box-shadow: var(--pdfsdk-page-shadow);
 }
+/* Trial (no valid licence key): a watermark over every page. */
+.pdfsdk-root[data-license="trial"] .pdfsdk-page { container-type: inline-size; }
+.pdfsdk-root[data-license="trial"] .pdfsdk-page::after {
+  content: "PDF SDK · trial";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-35deg);
+  font: 700 11cqw/1 system-ui, sans-serif;
+  color: rgba(220, 38, 38, 0.16);
+  pointer-events: none;
+  z-index: 5;
+  white-space: nowrap;
+}
 .pdfsdk-page canvas {
   position: absolute;
   inset: 0;

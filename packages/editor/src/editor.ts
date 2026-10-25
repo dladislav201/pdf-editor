@@ -9,6 +9,7 @@ import { placeWords, type InvisibleWord } from './ocr/place';
 import { recognizeRaster } from './ocr/recognize';
 import { TesseractEngine } from './ocr/tesseract';
 import type { OcrPage, Raster } from './ocr/types';
+import { checkLicense, type LicenseInfo } from './license';
 import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
@@ -162,6 +163,7 @@ export class PdfEditor {
   private readonly assetsUrl: string;
   private readonly fallbackFontsUrl: string;
   private readonly ocrUrl: string;
+  private readonly license: Promise<LicenseInfo>;
   private ocr: { engine: TesseractEngine; languages: string } | null = null;
   private recognizing = false;
   private geometries: PageGeometry[] = [];
@@ -251,6 +253,14 @@ export class PdfEditor {
     this.root.className = 'pdfsdk-root';
     this.root.tabIndex = 0;
     this.root.dataset.theme = options.theme ?? 'auto';
+    // Checked offline; until it is, the editor counts as licensed so a paying
+    // customer never sees the watermark flash.
+    this.license = checkLicense(options.licenseKey, globalThis.location?.hostname ?? '');
+    void this.license.then((info) => {
+      if (info.status === 'valid') return;
+      this.root.dataset.license = 'trial';
+      console.warn(`[pdfsdk] ${info.message}`);
+    });
     this.root.dataset.tool = this.tool;
 
     this.viewportEl = document.createElement('div');
@@ -414,7 +424,12 @@ export class PdfEditor {
         fallbackFonts[font] = bytes;
       }
       const base = plans.length ? await this.engine.writeText(this.bytes, plans, fallbackFonts) : this.bytes;
-      return await exportPdf(base, this.annotations, { fontBytes, flatten: options.flatten });
+      const license = await this.license;
+      return await exportPdf(base, this.annotations, {
+        fontBytes,
+        flatten: options.flatten,
+        ...(license.status === 'valid' ? {} : { watermark: 'PDF SDK trial' }),
+      });
     } catch (error) {
       this.events.emit('error', { error });
       throw error;
@@ -524,6 +539,11 @@ export class PdfEditor {
       this.commit(this.annotations.map((a) => (a.id === this.selectedId ? { ...a, color } : a)));
     }
     this.events.emit('colorChange', { color: this.getColor() });
+  }
+
+  /** What the licence key says and whether the editor runs as a trial. */
+  getLicense(): Promise<LicenseInfo> {
+    return this.license;
   }
 
   // ------------------------------------------------------------------ text
