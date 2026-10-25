@@ -109,6 +109,13 @@ export class EngineClient {
     return (await this.send({ type: 'scanPatch', docId, page, erase }).promise) as ScanPatch;
   }
 
+  /** A copy of `bytes` with its pictures re-encoded (see `PdfiumDocument.compressImages`). */
+  async compress(bytes: Uint8Array, dpi: number, quality: number): Promise<Uint8Array> {
+    await this.ready;
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return (await this.send({ type: 'compress', data: buffer, dpi, quality }, [buffer]).promise) as Uint8Array;
+  }
+
   /** RGBA pixels of a page at the given size, without annotations. */
   async raster(docId: number, page: number, width: number, height: number): Promise<Uint8ClampedArray> {
     return (await this.send({ type: 'raster', docId, page, width, height }).promise) as Uint8ClampedArray;

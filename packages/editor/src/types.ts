@@ -165,6 +165,8 @@ export interface EditorEventMap {
   error: { error: unknown };
 }
 
+export type CompressLevel = 'light' | 'recommended' | 'strong';
+
 /** Pages of a PDF for thumbnails: their displayed sizes (points, rotation applied) and a renderer. */
 export interface PageSource {
   pageCount: number;

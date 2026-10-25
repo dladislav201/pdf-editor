@@ -295,6 +295,23 @@ moving fast), type it in one of three script fonts, or upload a photo of it
 (the paper turns transparent); black or blue ink; the last three signatures
 are kept in this browser only.
 
+## Compress and convert
+
+`editor.compress(level)` makes the document (with its edits) smaller: in
+the engine worker each picture sharper than the level's resolution where
+it's drawn (`light` 200 dpi, `recommended` 150, `strong` 110 at lower
+quality) is scaled down and stored as JPEG through PDFium
+(`FPDFImageObj_LoadJpegFileInline`, fed by a JS callback), if that is
+smaller. Pictures with transparency, 1-bit fax scans and pictures shared by
+several pages stay as they are; text and drawings are untouched. The
+synthetic scan goes from 152 KB to 50 KB on `strong`.
+
+`imagesToPdf(images)` makes a PDF with one page per JPEG or PNG, sized as
+printed at 150 dpi (JPEGs go in unchanged). The site's Download menu adds
+"Compressed PDF" and "Pictures" (every page as PNG or JPG at 72/150/300
+dpi, several pages as a ZIP); dropping photos on the start page turns them
+into a PDF.
+
 ## Pages
 
 `editor.pages()` gives the open document's pages for thumbnails (sizes and a

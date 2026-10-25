@@ -2,7 +2,7 @@
 import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium';
 import { analyzePage } from '../text/analyze';
 import { createSubsetter, type Subsetter } from './hb-subset';
-import { EngineError, PdfiumDocument, initLibrary } from './pdfium-core';
+import { EngineError, PdfiumDocument, initLibrary, type EncodeJpeg } from './pdfium-core';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -47,6 +47,20 @@ function loadSubsetter(): Promise<Subsetter> {
     throw error;
   });
 }
+
+/** JPEG encoding with the browser's own encoder, resized in high quality on the way. */
+const encodeJpeg: EncodeJpeg = async (rgba, width, height, targetWidth, targetHeight, quality) => {
+  const bitmap = await createImageBitmap(new ImageData(new Uint8ClampedArray(rgba), width, height), {
+    resizeWidth: targetWidth,
+    resizeHeight: targetHeight,
+    resizeQuality: 'high',
+  });
+  const canvas = new OffscreenCanvas(targetWidth, targetHeight);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+  return new Uint8Array(await blob.arrayBuffer());
+};
 
 function openDoc(docId: number): PdfiumDocument {
   const doc = docs.get(docId);
@@ -183,6 +197,21 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         fail(request.id, error);
       }
       return;
+    case 'compress': {
+      let copy: PdfiumDocument | null = null;
+      try {
+        if (!library) throw new EngineError('EngineError', 'The engine is not initialised.');
+        copy = new PdfiumDocument(await library, new Uint8Array(request.data));
+        await copy.compressImages({ dpi: request.dpi, quality: request.quality }, encodeJpeg);
+        const saved = copy.save();
+        reply({ id: request.id, ok: true, result: saved }, [saved.buffer]);
+      } catch (error) {
+        fail(request.id, error);
+      } finally {
+        copy?.close();
+      }
+      return;
+    }
     case 'scanPatch':
       try {
         const patch = openDoc(request.docId).scanPatch(request.page, request.erase);

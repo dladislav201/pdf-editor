@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url';
 import { Home, type OpenRequest } from './Home';
+import { imagesToPdf, type PageImage } from '@pdfsdk/editor';
 import { createSamplePdf } from './sample-pdf';
 import { Workspace } from './Workspace';
 
@@ -50,6 +51,25 @@ export function App() {
     }
   };
 
+  /** Photos become a PDF (one page each), opened for editing. WebP goes through a canvas to PNG. */
+  const pictures = async (files: File[]) => {
+    const images: PageImage[] = [];
+    for (const file of files) {
+      if (file.type === 'image/jpeg') images.push({ bytes: new Uint8Array(await file.arrayBuffer()), type: 'jpeg' });
+      else if (file.type === 'image/png') images.push({ bytes: new Uint8Array(await file.arrayBuffer()), type: 'png' });
+      else {
+        const bitmap = await createImageBitmap(file);
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        images.push({ bytes: new Uint8Array(await blob.arrayBuffer()), type: 'png' });
+      }
+    }
+    const bytes = await imagesToPdf(images);
+    const name = files.length === 1 ? `${files[0]!.name.replace(/\.[^.]+$/, '')}.pdf` : 'Pictures.pdf';
+    show({ file: new File([bytes as BlobPart], name, { type: 'application/pdf' }), pages: files.length > 1 });
+  };
+
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   return open ? (
@@ -60,11 +80,12 @@ export function App() {
       recognize={open.recognize}
       pages={open.pages}
       sign={open.sign}
+      dialog={open.dialog}
       theme={theme}
       onToggleTheme={toggleTheme}
       onClose={() => history.back()}
     />
   ) : (
-    <Home onOpen={show} onSample={(kind) => void sample(kind)} theme={theme} onToggleTheme={toggleTheme} />
+    <Home onOpen={show} onPictures={(files) => void pictures(files)} onSample={(kind) => void sample(kind)} theme={theme} onToggleTheme={toggleTheme} />
   );
 }

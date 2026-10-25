@@ -38,6 +38,7 @@ import type {
   Annotation,
   DocumentSource,
   EditorEventMap,
+  CompressLevel,
   EditorOptions,
   PageSource,
   Point,
@@ -144,6 +145,12 @@ async function readSource(source: DocumentSource): Promise<{ bytes: Uint8Array; 
   const bytes = source instanceof Uint8Array ? source.slice() : new Uint8Array(source.slice(0));
   return { bytes, name: 'document.pdf' };
 }
+
+const COMPRESS_LEVELS: Record<CompressLevel, { dpi: number; quality: number }> = {
+  light: { dpi: 200, quality: 0.82 },
+  recommended: { dpi: 150, quality: 0.72 },
+  strong: { dpi: 110, quality: 0.6 },
+};
 
 /** Tesseract reads best at about 300 dpi; much larger pages only cost memory. */
 const OCR_DPI = 300;
@@ -674,6 +681,21 @@ export class PdfEditor {
       },
       close,
     };
+  }
+
+  /**
+   * The document (with its edits and annotations) made smaller: pictures
+   * scaled down and re-encoded as JPEG. `light` keeps 200 dpi, `recommended`
+   * 150 dpi, `strong` 110 dpi with lower quality. Text and vector graphics
+   * are untouched. Returns the new file and both sizes.
+   */
+  async compress(level: CompressLevel = 'recommended'): Promise<{ bytes: Uint8Array; before: number; after: number }> {
+    const base = await this.exportPdf();
+    const { dpi, quality } = COMPRESS_LEVELS[level];
+    const compressed = await this.engine.compress(base, dpi, quality);
+    // Never hand back a bigger file.
+    const bytes = compressed.length < base.length ? compressed : base;
+    return { bytes, before: base.length, after: bytes.length };
   }
 
   /** Switches the colour theme (`'auto'` follows the OS). */

@@ -11,7 +11,12 @@ export interface OpenRequest {
   pages?: boolean;
   /** Open the signature dialog right away. */
   sign?: boolean;
+  /** Open a save dialog right away. */
+  dialog?: 'compress' | 'images';
 }
+
+const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+const isPicture = (f: File) => /^image\/(png|jpe?g|webp)$/.test(f.type);
 
 const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequest, 'file'> }[] = [
   { icon: 'editText', title: 'Edit text', text: 'Change words and numbers in place, in the document’s own fonts.', open: { tool: 'editText' } },
@@ -19,15 +24,20 @@ const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequ
   { icon: 'highlight', title: 'Annotate', text: 'Highlight, draw, add shapes and notes.', open: { tool: 'highlight' } },
   { icon: 'sign', title: 'Sign', text: 'Draw, type or upload your signature and place it.', open: { sign: true } },
   { icon: 'pages', title: 'Organize pages', text: 'Merge, split, rotate, delete and reorder.', open: { pages: true } },
+  { icon: 'compress', title: 'Compress', text: 'Make a PDF smaller for email: scans and photos shrink, text stays sharp.', open: { dialog: 'compress' } },
+  { icon: 'image', title: 'Convert', text: 'Turn photos into a PDF, or save every page as a picture.', open: { dialog: 'images' } },
 ];
 
 export function Home({
   onOpen,
+  onPictures,
   onSample,
   theme,
   onToggleTheme,
 }: {
   onOpen: (request: OpenRequest) => void;
+  /** Pictures (JPG, PNG, WebP) to turn into a PDF. */
+  onPictures: (files: File[]) => void;
   onSample: (kind: 'contract' | 'scan') => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
@@ -43,8 +53,10 @@ export function Home({
   const drop = (event: DragEvent) => {
     event.preventDefault();
     setOver(false);
-    const file = [...event.dataTransfer.files].find((f) => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+    const files = [...event.dataTransfer.files];
+    const file = files.find(isPdf);
     if (file) onOpen({ file });
+    else if (files.some(isPicture)) onPictures(files.filter(isPicture));
   };
 
   return (
@@ -52,11 +64,14 @@ export function Home({
       <input
         ref={input}
         type="file"
-        accept="application/pdf,.pdf"
+        accept="application/pdf,.pdf,image/png,image/jpeg,image/webp"
+        multiple
         hidden
         onChange={(event) => {
-          const file = event.target.files?.[0];
+          const files = [...(event.target.files ?? [])];
+          const file = files.find(isPdf);
           if (file) onOpen({ file, ...pending.current });
+          else if (files.some(isPicture)) onPictures(files.filter(isPicture));
           event.target.value = '';
         }}
       />
@@ -95,7 +110,7 @@ export function Home({
         <button type="button" className="pill pill--ink" onClick={() => choose()}>
           Choose a PDF
         </button>
-        <p className="drop__hint">or drop it anywhere on this page</p>
+        <p className="drop__hint">or drop it anywhere on this page — photos become a PDF</p>
         <span className="drop__privacy">
           <Icon name="lock" size={13} /> Processed on your device. Nothing is uploaded.
         </span>

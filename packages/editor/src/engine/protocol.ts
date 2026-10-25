@@ -26,6 +26,8 @@ export type EngineRequest =
     }
   /** A cleaned piece of a scan for an edited paragraph, see `PdfiumDocument.scanPatch`. */
   | { id: number; type: 'scanPatch'; docId: number; page: number; erase: ScanErase }
+  /** Re-encodes the pictures of `data` (a copy of the file) to make it smaller; returns the saved file. */
+  | { id: number; type: 'compress'; data: ArrayBuffer; dpi: number; quality: number }
   | { id: number; type: 'cancel'; target: number }
   | { id: number; type: 'close'; docId: number };
 

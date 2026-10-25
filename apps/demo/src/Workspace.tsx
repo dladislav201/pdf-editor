@@ -5,6 +5,7 @@ import { Icon, type IconName } from './icons';
 import { DEMO_LICENSE_KEY } from './license';
 import { Pages } from './Pages';
 import { SignDialog } from './SignDialog';
+import { CompressDialog, ImagesDialog } from './ExportDialogs';
 
 const TOOLS: { tool: ToolName; icon: IconName; label: string; key: string }[] = [
   { tool: 'select', icon: 'cursor', label: 'Select', key: 'V' },
@@ -29,6 +30,7 @@ export function Workspace({
   recognize,
   pages: startInPages,
   sign: startSigning,
+  dialog: startDialog,
   theme,
   onToggleTheme,
   onClose,
@@ -38,6 +40,8 @@ export function Workspace({
   recognize?: boolean;
   pages?: boolean;
   sign?: boolean;
+  /** A dialog to open once the file is loaded. */
+  dialog?: 'compress' | 'images';
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onClose: () => void;
@@ -58,6 +62,9 @@ export function Workspace({
   const wantPages = useRef(startInPages);
   const wantSign = useRef(startSigning);
   const [signing, setSigning] = useState(false);
+  const [dialog, setDialog] = useState<'compress' | 'images' | null>(null);
+  const [menu, setMenu] = useState(false);
+  const wantDialog = useRef(startDialog);
 
   // Keep the editor in step with the site's theme.
   useEffect(() => editor?.setTheme(theme), [editor, theme]);
@@ -97,6 +104,10 @@ export function Workspace({
         if (wantSign.current) {
           wantSign.current = false;
           setSigning(true);
+        }
+        if (wantDialog.current) {
+          setDialog(wantDialog.current);
+          wantDialog.current = undefined;
         }
         // Fit the width, but don't blow a page up on a wide screen.
         if (editor.getZoom() > MAX_FIT_ZOOM) editor.setZoom(MAX_FIT_ZOOM);
@@ -157,7 +168,13 @@ export function Workspace({
             <button type="button" className="pill" aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>
               <Icon name="edit" /> Edit
             </button>
-            <button type="button" className="pill" aria-pressed={mode === 'pages'} disabled={!loaded} onClick={() => setMode('pages')}>
+            <button
+              type="button"
+              className="pill"
+              aria-pressed={mode === 'pages'}
+              disabled={!loaded}
+              onClick={() => setMode('pages')}
+            >
               <Icon name="grid" /> Pages
             </button>
           </div>
@@ -171,9 +188,7 @@ export function Workspace({
       <div className="status" aria-live="polite">
         {mode === 'edit' && scan.kind === 'scanned' && (
           <div className="notice">
-            <span>
-              {scan.pages.length === 1 ? `Page ${scan.pages[0]! + 1} is` : `${scan.pages.length} pages are`} a scan
-            </span>
+            <span>{scan.pages.length === 1 ? `Page ${scan.pages[0]! + 1} is` : `${scan.pages.length} pages are`} a scan</span>
             <button type="button" className="pill pill--ink" onClick={() => void read()}>
               <Icon name="scan" /> Recognize text
             </button>
@@ -208,14 +223,68 @@ export function Workspace({
               <Icon name="plus" />
             </button>
           </div>
-          <span className="label">
-            {page.count ? `${page.index + 1} / ${page.count}` : '–'}
-          </span>
+          <span className="label">{page.count ? `${page.index + 1} / ${page.count}` : '–'}</span>
         </div>
-        <div className="bar">
-          <button type="button" className="pill pill--ink" onClick={() => void editor?.download(file.name).catch(() => undefined)}>
+        <div className="bar download">
+          <button
+            type="button"
+            className="pill pill--ink"
+            onClick={() => void editor?.download(file.name).catch(() => undefined)}
+          >
             <Icon name="download" /> Download{edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}
           </button>
+          <button
+            type="button"
+            className="pill pill--icon"
+            aria-label="More ways to save"
+            aria-expanded={menu}
+            onClick={() => setMenu((m) => !m)}
+          >
+            <Icon name="chevronDown" />
+          </button>
+          {menu && (
+            <div className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(false);
+                  void editor?.download(file.name).catch(() => undefined);
+                }}
+              >
+                <Icon name="file" />{' '}
+                <span>
+                  <strong>PDF</strong>With your edits; annotations stay editable
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(false);
+                  setDialog('compress');
+                }}
+              >
+                <Icon name="compress" />{' '}
+                <span>
+                  <strong>Compressed PDF</strong>Smaller pictures and scans
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(false);
+                  setDialog('images');
+                }}
+              >
+                <Icon name="image" />{' '}
+                <span>
+                  <strong>Pictures</strong>Each page as PNG or JPG
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -224,10 +293,22 @@ export function Workspace({
         {(drawing || tool === 'select') && (
           <div className="bar">
             <div className="group">
-              <button type="button" className="pill pill--icon" aria-label="Undo" disabled={!history.canUndo} onClick={() => editor?.undo()}>
+              <button
+                type="button"
+                className="pill pill--icon"
+                aria-label="Undo"
+                disabled={!history.canUndo}
+                onClick={() => editor?.undo()}
+              >
                 <Icon name="undo" />
               </button>
-              <button type="button" className="pill pill--icon" aria-label="Redo" disabled={!history.canRedo} onClick={() => editor?.redo()}>
+              <button
+                type="button"
+                className="pill pill--icon"
+                aria-label="Redo"
+                disabled={!history.canRedo}
+                onClick={() => editor?.redo()}
+              >
                 <Icon name="redo" />
               </button>
             </div>
@@ -249,7 +330,13 @@ export function Workspace({
             )}
             {tool === 'select' && (
               <div className="group">
-                <button type="button" className="pill pill--icon" aria-label="Delete" disabled={!selected} onClick={() => editor?.deleteSelected()}>
+                <button
+                  type="button"
+                  className="pill pill--icon"
+                  aria-label="Delete"
+                  disabled={!selected}
+                  onClick={() => editor?.deleteSelected()}
+                >
                   <Icon name="trash" />
                 </button>
               </div>
@@ -257,7 +344,9 @@ export function Workspace({
           </div>
         )}
         {tool === 'editText' && <div className="notice notice--plain">Click a paragraph to edit it. Esc to finish.</div>}
-        {tool === 'image' && <div className="notice notice--plain">Click where your signature goes. Then drag it, or resize it from the corner.</div>}
+        {tool === 'image' && (
+          <div className="notice notice--plain">Click where your signature goes. Then drag it, or resize it from the corner.</div>
+        )}
         <nav className="bar" aria-label="Tools">
           <div className="group">
             {TOOLS.map(({ tool: t, icon, label, key }) => (
@@ -283,6 +372,9 @@ export function Workspace({
         </nav>
       </div>
 
+      {editor && dialog === 'compress' && <CompressDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
+      {editor && dialog === 'images' && <ImagesDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
+
       {signing && (
         <SignDialog
           onClose={() => setSigning(false)}
@@ -292,7 +384,6 @@ export function Workspace({
           }}
         />
       )}
-
     </div>
   );
 }

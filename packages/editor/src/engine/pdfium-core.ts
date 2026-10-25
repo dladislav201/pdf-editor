@@ -40,6 +40,16 @@ export interface ScanPatch {
   yAxis: Point;
 }
 
+/** Encodes RGBA pixels (`width`×`height`) as a JPEG of `targetWidth`×`targetHeight` at `quality` (0–1). */
+export type EncodeJpeg = (
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  targetWidth: number,
+  targetHeight: number,
+  quality: number,
+) => Promise<Uint8Array>;
+
 /** Errors keep a stable `name`, so callers can tell "password" from "not a PDF" across the worker boundary. */
 export class EngineError extends Error {
   constructor(name: 'PasswordException' | 'InvalidPDFException' | 'EngineError', message: string) {
@@ -604,6 +614,151 @@ export class PdfiumDocument {
       lib.FPDFFont_Close(regular);
       if (bold !== regular) lib.FPDFFont_Close(bold);
     }
+  }
+
+  /**
+   * Makes the file smaller by re-encoding its pictures: each one sharper than
+   * `dpi` where it's drawn is scaled down to it, and stored as JPEG at
+   * `quality` (0–1) if that is smaller than it was. Pictures with
+   * transparency, 1-bit pictures (fax scans compress better as they are) and
+   * pictures drawn on several pages are left alone. `encode` turns RGBA
+   * pixels into JPEG bytes at a given size (the worker uses OffscreenCanvas).
+   */
+  async compressImages(
+    options: { dpi: number; quality: number },
+    encode: EncodeJpeg,
+  ): Promise<{ images: number; recompressed: number }> {
+    const lib = this.lib;
+    const { wasmExports } = lib.pdfium;
+    const scratch = wasmExports.malloc(32);
+    const pageHandle = wasmExports.malloc(4);
+    const access = wasmExports.malloc(12);
+    // The JPEG being loaded, read by PDFium through a callback.
+    let source = { ptr: 0, length: 0 };
+    const module = lib.pdfium as unknown as {
+      addFunction(fn: (...args: number[]) => number, signature: string): number;
+      removeFunction(ptr: number): void;
+    };
+    const getBlock = module.addFunction((_param: number, position: number, buffer: number, size: number) => {
+      if (position + size > source.length) return 0;
+      heapU8(lib).copyWithin(buffer, source.ptr + position, source.ptr + position + size);
+      return 1;
+    }, 'iiiii');
+
+    // Images drawn on several pages (logos, letterheads) share one stream; replacing it
+    // per page would store it many times over.
+    type Candidate = { page: number; object: number; key: string };
+    const candidates: Candidate[] = [];
+    const uses = new Map<string, number>();
+    let images = 0;
+    let recompressed = 0;
+    try {
+      for (let index = 0; index < this.pageCount; index++) {
+        const page = this.page(index);
+        const count = lib.FPDFPage_CountObjects(page);
+        for (let i = 0; i < count; i++) {
+          const object = lib.FPDFPage_GetObject(page, i);
+          if (lib.FPDFPageObj_GetType(object) !== FPDF_PAGEOBJ_IMAGE) continue;
+          images++;
+          if (!lib.FPDFImageObj_GetImagePixelSize(object, scratch, scratch + 4)) continue;
+          const [w, h] = new Uint32Array(heapU8(lib).buffer, scratch, 2);
+          const raw = lib.FPDFImageObj_GetImageDataRaw(object, 0, 0);
+          const key = `${w}x${h}:${raw}`;
+          uses.set(key, (uses.get(key) ?? 0) + 1);
+          candidates.push({ page: index, object: i, key });
+        }
+      }
+
+      const touched = new Set<number>();
+      for (const { page: index, object: objectIndex, key } of candidates) {
+        if (uses.get(key)! > 1) continue;
+        const page = this.page(index);
+        const object = lib.FPDFPage_GetObject(page, objectIndex);
+        if (!lib.FPDFImageObj_GetImagePixelSize(object, scratch, scratch + 4)) continue;
+        const [width, height] = [...new Uint32Array(heapU8(lib).buffer, scratch, 2)] as [number, number];
+        if (width * height < 160_000) continue;
+        // FPDF_IMAGEOBJ_METADATA: width, height, dpi x/y (floats), bits per pixel, colorspace, marked content.
+        if (lib.FPDFImageObj_GetImageMetadata(object, page, scratch) && new Uint32Array(heapU8(lib).buffer, scratch + 16, 1)[0]! <= 1) continue;
+        if (!lib.FPDFPageObj_GetBounds(object, scratch, scratch + 4, scratch + 8, scratch + 12)) continue;
+        const [left, bottom, right, top] = [...heapF32(lib).subarray(scratch >> 2, (scratch >> 2) + 4)] as number[];
+        const shownWidth = Math.max(1, Math.max(right! - left!, top! - bottom!));
+        const dpi = Math.max(width, height) / (shownWidth / 72);
+        const scale = Math.min(1, options.dpi / dpi);
+        const raw = lib.FPDFImageObj_GetImageDataRaw(object, 0, 0);
+
+        // Transparency (a soft mask or a colour key) would turn into a solid background.
+        const rendered = lib.FPDFImageObj_GetRenderedBitmap(this.handle, page, object);
+        if (rendered) {
+          const rw = lib.FPDFBitmap_GetWidth(rendered);
+          const rh = lib.FPDFBitmap_GetHeight(rendered);
+          const stride = lib.FPDFBitmap_GetStride(rendered);
+          const buffer = lib.FPDFBitmap_GetBuffer(rendered);
+          let transparent = false;
+          if (lib.FPDFBitmap_GetFormat(rendered) === 4) {
+            const heap = heapU8(lib);
+            for (let y = 0; y < rh && !transparent; y++) {
+              for (let x = 0; x < rw; x++) if (heap[buffer + y * stride + x * 4 + 3]! < 250) (transparent = true);
+            }
+          }
+          lib.FPDFBitmap_Destroy(rendered);
+          if (transparent) continue;
+        }
+
+        const bitmap = lib.FPDFImageObj_GetBitmap(object);
+        if (!bitmap) continue;
+        let rgba: Uint8ClampedArray;
+        try {
+          const format = lib.FPDFBitmap_GetFormat(bitmap);
+          const bytesPerPixel = { 1: 1, 2: 3, 3: 4, 4: 4 }[format];
+          if (!bytesPerPixel) continue;
+          const stride = lib.FPDFBitmap_GetStride(bitmap);
+          const buffer = lib.FPDFBitmap_GetBuffer(bitmap);
+          const heap = heapU8(lib);
+          rgba = new Uint8ClampedArray(width * height * 4);
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              const from = buffer + y * stride + x * bytesPerPixel;
+              const to = (y * width + x) * 4;
+              if (bytesPerPixel === 1) rgba[to] = rgba[to + 1] = rgba[to + 2] = heap[from]!;
+              else {
+                rgba[to] = heap[from + 2]!;
+                rgba[to + 1] = heap[from + 1]!;
+                rgba[to + 2] = heap[from]!;
+              }
+              rgba[to + 3] = 255;
+            }
+          }
+        } finally {
+          lib.FPDFBitmap_Destroy(bitmap);
+        }
+        const jpeg = await encode(rgba, width, height, Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), options.quality);
+        if (jpeg.length >= raw * 0.9) continue;
+
+        source = { ptr: wasmExports.malloc(jpeg.length), length: jpeg.length };
+        try {
+          heapU8(lib).set(jpeg, source.ptr);
+          new Uint32Array(heapU8(lib).buffer, access, 3).set([jpeg.length, getBlock, 0]);
+          new Uint32Array(heapU8(lib).buffer, pageHandle, 1)[0] = page;
+          // Inline: PDFium copies the bytes, so they can be freed right after.
+          if (lib.FPDFImageObj_LoadJpegFileInline(pageHandle, 1, object, access)) {
+            recompressed++;
+            touched.add(index);
+          }
+        } finally {
+          wasmExports.free(source.ptr);
+          source = { ptr: 0, length: 0 };
+        }
+      }
+      for (const index of touched) {
+        if (!lib.FPDFPage_GenerateContent(this.page(index))) throw new EngineError('EngineError', `Could not write page ${index + 1}.`);
+      }
+    } finally {
+      module.removeFunction(getBlock);
+      wasmExports.free(scratch);
+      wasmExports.free(pageHandle);
+      wasmExports.free(access);
+    }
+    return { images, recompressed };
   }
 
   /** The document as a PDF file, including changes made through the engine. */
