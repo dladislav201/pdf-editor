@@ -4,3 +4,5 @@ dist
 .wrangler
 *.log
 *.pem
+test-results
+playwright-report

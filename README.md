@@ -20,7 +20,24 @@ npm run dev        # demo at http://localhost:5180, hot-reloads SDK sources
 npm run build      # builds both packages and the demo
 npm run typecheck
 npm test           # engine, text, OCR, scan editing, annotation and licence tests (vitest)
+npm run e2e        # the built site in Chromium, Edge, Firefox, WebKit and an iPhone (Playwright)
 ```
+
+## Browser checks
+
+`e2e/site.spec.ts` drives the production build (`vite preview` on port 4180)
+the way people use it: opening a PDF, editing a paragraph, search, filling
+a form, signing, page thumbnails, compressing, recognizing a scan and a
+300-page document; downloads are read back with pdf-lib and PDFium. Each
+runs in Chromium, Edge (the installed browser), Firefox, WebKit (Safari's
+engine) and an iPhone 14 (WebKit, touch, 390 px). Locally the Playwright
+Firefox build doesn't start on this macOS version, so Firefox is covered on
+CI (Linux), where Edge is skipped.
+
+Measured in Chromium: a 1000-page text PDF opens in about 1 s and its last
+page draws at once (pages render as they scroll in); the first search reads
+every page's text in the worker (about 10 ms a page, so 10 s; matches show
+as they're found), later searches use the kept index (60 ms).
 
 ## Deploy the demo
 
@@ -39,7 +56,8 @@ npm run deploy:demo    # builds the demo and uploads it
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull
 request: `npm ci`, typecheck, all tests (PDFium, HarfBuzz and Tesseract run
-in Node) and the build. On `main`, once the checks pass, it deploys the demo
+in Node) and the build, and in a second job the browser checks in Chromium,
+Firefox, WebKit and the iPhone profile. On `main`, once the checks pass, it deploys the demo
 too, provided the repository has a `CLOUDFLARE_API_TOKEN` secret (a
 Cloudflare API token with the "Edit Cloudflare Workers" template); without it
 that job only leaves a notice.
@@ -302,7 +320,11 @@ included, paragraph by paragraph (so a phrase that wraps onto the next line
 is found), ignoring case and extra spaces by default; it marks every match
 under the page content and returns them (page, a box per line, the text).
 `showSearchMatch(i)` marks one as current and scrolls to it;
-`clearSearch()` removes the marks. The site opens its search bar with
+`clearSearch()` removes the marks. Pages are searched in the engine worker,
+ten at a time (`onProgress` reports matches so far), and each page's text is
+kept there as a compact index (`indexPage`: strings and typed arrays of
+boxes), so a long document's text models never fill the page's memory
+(1000 pages: 45 MB instead of 700 MB) and refining a query is instant. The site opens its search bar with
 ⌘F / Ctrl+F: Enter and Shift+Enter step through the matches, Esc closes.
 
 ## Forms
@@ -401,6 +423,9 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
   opened reads the page again (a few seconds); the image work (ink, skew, cells) runs on the main thread between
   Tesseract calls; handwriting and photographed (perspective) pages are
   not handled; only Ukrainian and English models ship.
+- Phones: reordering pages relies on HTML drag and drop (iOS 15+ after a
+  long press; not yet checked on a real device); the theme switch and zoom
+  buttons are hidden (pinch to zoom).
 - Forms: no JavaScript (calculated fields, formatting, validation), no
   XFA-only forms, comb fields and rich text are filled as plain text;
   signature fields are left to Sign. No password prompt yet.

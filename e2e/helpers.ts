@@ -1,0 +1,84 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { init } from '@embedpdf/pdfium';
+import { expect, type Download, type Page } from '@playwright/test';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { PdfiumDocument, initLibrary } from '../packages/editor/src/engine/pdfium-core';
+
+const require = createRequire(import.meta.url);
+let lib: ReturnType<typeof initLibrary> | undefined;
+
+/** The text of every page of a PDF, read with the same engine the site uses. */
+export async function pdfText(bytes: Uint8Array): Promise<string[]> {
+  lib ??= initLibrary(
+    await init({ wasmBinary: readFileSync(join(dirname(require.resolve('@embedpdf/pdfium')), 'pdfium.wasm')) }),
+  );
+  const doc = new PdfiumDocument(lib, bytes);
+  try {
+    return Array.from({ length: doc.pageCount }, (_, i) =>
+      doc
+        .extractText(i)
+        .chars.map((c) => c.text)
+        .join(''),
+    );
+  } finally {
+    doc.close();
+  }
+}
+
+export async function downloadBytes(download: Download): Promise<Uint8Array> {
+  return new Uint8Array(readFileSync((await download.path())!));
+}
+
+/** Share of dark pixels on a rendered page; 0 while it is still blank. */
+export function ink(page: Page, index = 0): Promise<number> {
+  return page.locator(`.pdfsdk-page[data-page-index="${index}"] canvas`).evaluate(async (canvas: HTMLCanvasElement) => {
+    if (!canvas.width || !canvas.height) return 0;
+    const bitmap = await createImageBitmap(canvas);
+    const copy = document.createElement('canvas');
+    copy.width = bitmap.width;
+    copy.height = bitmap.height;
+    const ctx = copy.getContext('2d')!;
+    ctx.drawImage(bitmap, 0, 0);
+    const data = ctx.getImageData(0, 0, copy.width, copy.height).data;
+    let dark = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3]! > 0 && data[i]! < 128) dark++;
+    return dark / (data.length / 4);
+  });
+}
+
+/** Waits until a page has been drawn. */
+export async function expectPainted(page: Page, index = 0): Promise<void> {
+  await expect.poll(() => ink(page, index), { message: `page ${index + 1} is drawn` }).toBeGreaterThan(0.002);
+}
+
+export async function openSample(page: Page, name: 'A contract' | 'A scanned invoice' | 'A form'): Promise<void> {
+  await page.goto('/');
+  await page.getByRole('button', { name, exact: true }).click();
+  await expectPainted(page);
+}
+
+export async function openFile(page: Page, name: string, bytes: Uint8Array): Promise<void> {
+  await page.goto('/');
+  await page.locator('input[type=file]').setInputFiles({ name, mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
+  await expectPainted(page);
+}
+
+/** A long report: `pages` pages of text, each with its number and a word found only there. */
+export async function longPdf(pages: number): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.TimesRoman);
+  const bold = await doc.embedFont(StandardFonts.TimesRomanBold);
+  const filler =
+    'The committee reviewed the quarterly figures and agreed that the budget for maintenance, training and travel stays within the limits set last year.';
+  for (let n = 1; n <= pages; n++) {
+    const page = doc.addPage([595, 842]);
+    page.drawText(`Section ${n}`, { x: 56, y: 770, size: 18, font: bold });
+    for (let line = 0; line < 40; line++) {
+      page.drawText(filler.slice(0, 90 + (line % 5) * 5), { x: 56, y: 730 - line * 16, size: 11, font });
+    }
+    page.drawText(`Marker word: checkpoint${n}`, { x: 56, y: 60, size: 11, font });
+  }
+  return doc.save();
+}

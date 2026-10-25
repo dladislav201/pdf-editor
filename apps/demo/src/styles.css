@@ -507,6 +507,7 @@ button {
 .file-name {
   max-width: 260px;
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text);
   font-weight: 500;
@@ -533,19 +534,83 @@ button {
   font-weight: 600;
 }
 
+.narrow-only {
+  display: none;
+}
+
+/* Phones: one row of file, search and download, the Edit/Pages switch under
+   it, icon-only tools at the bottom. Zoom is a pinch; the theme follows the system. */
 @media (max-width: 720px) {
+  .wide-only {
+    display: none;
+  }
+  .narrow-only {
+    display: inline-flex;
+  }
+  .top-left {
+    top: 12px;
+    left: 12px;
+    gap: 8px;
+  }
+  .top-right {
+    top: 12px;
+    right: 12px;
+  }
+  .top-right > .float,
+  .top-right .bar:not(.download) {
+    display: none;
+  }
   .top-center {
-    top: auto;
-    bottom: 140px;
+    top: 68px;
+  }
+  .status,
+  .pages__status {
+    top: 124px;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+  }
+  .workspace .pdfsdk-pages {
+    gap: 16px;
+    padding: 124px 8px 150px;
   }
   .bar {
-    max-width: calc(100vw - 32px);
+    max-width: calc(100vw - 24px);
     overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .bar::-webkit-scrollbar {
+    display: none;
+  }
+  /* Its menu hangs below it; scrolling would clip it. */
+  .bar.download {
+    overflow: visible;
+  }
+  .menu {
+    max-width: calc(100vw - 24px);
+  }
+  .top-left .bar > .pill--icon[aria-hidden='true'] {
+    display: none;
   }
   .file-name {
-    max-width: 120px;
+    max-width: calc(100vw - 230px);
+    padding-left: 10px;
   }
-  .top-right .bar:not(:last-child) {
+  .bottom-center {
+    bottom: 14px;
+  }
+  .notice {
+    font-size: 12px;
+  }
+  /* Pages has its own Cancel / Done at the top right. */
+  .workspace[data-mode='pages'] .top-left .bar {
+    display: none;
+  }
+  .pages__grid {
+    gap: 20px 16px;
+    padding: 176px 12px 120px;
+  }
+  /* The open search takes the whole top row. */
+  .workspace[data-search='open'] .top-right {
     display: none;
   }
 }
@@ -894,6 +959,10 @@ button {
 }
 @media (max-width: 720px) {
   .searchbar input {
-    width: 120px;
+    width: calc(100vw - 272px);
+    min-width: 60px;
+  }
+  .searchbar .label {
+    min-width: 0;
   }
 }

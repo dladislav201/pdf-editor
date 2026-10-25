@@ -1,4 +1,5 @@
 import type { InvisibleWord } from '../ocr/place';
+import type { SearchMatch, SearchOptions } from '../text/search';
 import type { PageText } from '../text/types';
 import type { TextWritePlan } from '../text/write-plan';
 import type { ScanErase } from '../text/scan-edit';
@@ -85,6 +86,11 @@ export class EngineClient {
   /** Lines, paragraphs and styles of a page. */
   async text(docId: number, page: number): Promise<PageText> {
     return (await this.send({ type: 'text', docId, page }).promise) as PageText;
+  }
+
+  /** Matches of `query` on `pages`, found in the worker. */
+  async search(docId: number, pages: number[], query: string, options: SearchOptions): Promise<SearchMatch[]> {
+    return (await this.send({ type: 'search', docId, pages, query, options }).promise) as SearchMatch[];
   }
 
   /** Outlines and advances of `chars` in the font of a page's text object. */

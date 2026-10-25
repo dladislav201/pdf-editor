@@ -65,7 +65,7 @@ export function Workspace({
   const [signing, setSigning] = useState(false);
   const [dialog, setDialog] = useState<'compress' | 'images' | null>(null);
   const [menu, setMenu] = useState(false);
-  const [search, setSearch] = useState<{ open: boolean; query: string; count: number; active: number }>({
+  const [search, setSearch] = useState<{ open: boolean; query: string; count: number; active: number; busy?: boolean }>({
     open: false,
     query: '',
     count: 0,
@@ -158,13 +158,25 @@ export function Workspace({
     setSearch((s) => ({ ...s, active }));
   };
 
-  // Search as the query changes (a moment after typing stops), then show the first match.
+  // Search as the query changes (a moment after typing stops); the first match shows as soon as it's found.
   useEffect(() => {
     if (!editor || !search.open) return;
+    const query = search.query;
+    const update = (count: number, busy: boolean) =>
+      setSearch((s) => (s.query === query ? { ...s, count, busy, active: count ? Math.max(s.active, 0) : -1 } : s));
     const timer = setTimeout(async () => {
-      const matches = await editor.search(search.query);
-      if (matches.length) editor.showSearchMatch(0);
-      setSearch((s) => (s.query === search.query ? { ...s, count: matches.length, active: matches.length ? 0 : -1 } : s));
+      let shown = false;
+      update(0, !!query.trim());
+      const matches = await editor.search(query, {
+        onProgress: ({ matches, done, total }) => {
+          if (matches.length && !shown) {
+            shown = true;
+            editor.showSearchMatch(0);
+          }
+          update(matches.length, done < total);
+        },
+      });
+      update(matches.length, false);
     }, 200);
     return () => clearTimeout(timer);
   }, [editor, search.open, search.query]);
@@ -184,7 +196,7 @@ export function Workspace({
   const drawing = tool === 'highlight' || tool === 'ink' || tool === 'rectangle' || tool === 'text';
 
   return (
-    <div className="workspace" data-search={search.open ? 'open' : undefined}>
+    <div className="workspace" data-search={search.open ? 'open' : undefined} data-mode={mode}>
       <div className="workspace__editor">
         <PdfEditor
           ref={editorRef}
@@ -219,7 +231,15 @@ export function Workspace({
                 if (e.key === 'Escape') closeSearch();
               }}
             />
-            <span className="label">{search.query.trim() ? (search.count ? `${search.active + 1} of ${search.count}` : 'No results') : ''}</span>
+            <span className="label">
+              {!search.query.trim()
+                ? ''
+                : search.count
+                  ? `${search.active + 1} of ${search.count}${search.busy ? '…' : ''}`
+                  : search.busy
+                    ? 'Searching…'
+                    : 'No results'}
+            </span>
             <div className="group">
               <button type="button" className="pill pill--icon" aria-label="Previous match" disabled={!search.count} onClick={() => step(-1)}>
                 <Icon name="up" />
@@ -263,6 +283,8 @@ export function Workspace({
               <Icon name="grid" /> Pages
             </button>
           </div>
+          {/* On phones the zoom bar is gone; the page number lives here. */}
+          <span className="label narrow-only">{page.count ? `${page.index + 1} / ${page.count}` : '–'}</span>
         </div>
       </div>
 
@@ -319,9 +341,11 @@ export function Workspace({
           <button
             type="button"
             className="pill pill--ink"
+            aria-label={`Download${edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}`}
             onClick={() => void editor?.download(file.name).catch(() => undefined)}
           >
-            <Icon name="download" /> Download{edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}
+            <Icon name="download" />
+            <span className="wide-only">Download{edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}</span>
           </button>
           <button
             type="button"
@@ -450,13 +474,14 @@ export function Workspace({
                 onClick={() => editor?.setTool(t)}
               >
                 <Icon name={icon} />
-                {t !== 'select' && label}
+                {t !== 'select' && <span className="wide-only">{label}</span>}
               </button>
             ))}
           </div>
           <div className="group">
-            <button type="button" className="pill" aria-pressed={signing || tool === 'image'} onClick={() => setSigning(true)}>
-              <Icon name="sign" /> Sign
+            <button type="button" className="pill" aria-label="Sign" aria-pressed={signing || tool === 'image'} onClick={() => setSigning(true)}>
+              <Icon name="sign" />
+              <span className="wide-only">Sign</span>
             </button>
           </div>
         </nav>

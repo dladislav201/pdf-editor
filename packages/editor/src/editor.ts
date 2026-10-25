@@ -61,6 +61,8 @@ const DEFAULT_COLORS: Record<DrawingTool, string> = {
   text: '#111827',
   image: '#000000',
 };
+/** Pages searched per round trip to the worker: small enough to keep rendering and progress flowing. */
+const SEARCH_BATCH = 10;
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
 const MIN_ZOOM = ZOOM_STEPS[0]!;
 const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
@@ -814,20 +816,39 @@ export class PdfEditor {
    * every match and returns them in reading order. A newer search, or an
    * empty query, replaces the marks.
    */
-  async search(query: string, options: SearchOptions = {}): Promise<SearchMatch[]> {
+  async search(
+    query: string,
+    options: SearchOptions & {
+      /** Called as pages are searched, with the matches so far; long documents take a while. */
+      onProgress?: (progress: { matches: SearchMatch[]; done: number; total: number }) => void;
+    } = {},
+  ): Promise<SearchMatch[]> {
     const token = ++this.searchToken;
-    const matches: SearchMatch[] = [];
-    if (query.trim() && this.docId !== null) {
-      for (let page = 0; page < this.views.length; page++) {
-        const text = await this.getPageText(page);
-        if (token !== this.searchToken) return matches;
-        matches.push(...searchPage(text, query, options));
-      }
-    }
-    if (token !== this.searchToken) return matches;
+    const { onProgress, ...match } = options;
+    const docId = this.docId;
+    const total = this.views.length;
+    let matches: SearchMatch[] = [];
     this.searchMatches = matches;
     this.searchActive = -1;
     this.drawSearch();
+    if (!query.trim() || docId === null) return matches;
+    for (let start = 0; start < total; start += SEARCH_BATCH) {
+      const pages = Array.from({ length: Math.min(SEARCH_BATCH, total - start) }, (_, i) => start + i);
+      // Pages already read here are searched here; the rest in the worker.
+      const local = pages.flatMap((page) => {
+        const text = this.pageTexts.get(page);
+        return text ? searchPage(text, query, match) : [];
+      });
+      const remote = pages.filter((page) => !this.pageTexts.has(page));
+      const found = [...local, ...(remote.length ? await this.engine.search(docId, remote, query, match) : [])];
+      if (token !== this.searchToken) return matches;
+      if (found.length) {
+        matches = [...matches, ...found.sort((a, b) => a.pageIndex - b.pageIndex)];
+        this.searchMatches = matches;
+        this.drawSearch();
+      }
+      onProgress?.({ matches, done: start + pages.length, total });
+    }
     return matches;
   }
 

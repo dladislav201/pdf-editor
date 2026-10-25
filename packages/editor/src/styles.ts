@@ -162,8 +162,13 @@ const CSS = /* css */ `
   width: 100%;
   height: 100%;
   overflow: visible;
+  /* Fingers draw with the drawing tools; with Select and Edit text they scroll and zoom the document. */
   touch-action: none;
 }
+.pdfsdk-root[data-tool="select"] .pdfsdk-page__overlay,
+.pdfsdk-root[data-tool="editText"] .pdfsdk-page__overlay { touch-action: pan-x pan-y pinch-zoom; }
+/* Except on the page holding a selected annotation, so it can be dragged (tap it first). */
+.pdfsdk-root[data-tool="select"] .pdfsdk-page__overlay:has(.pdfsdk-selection) { touch-action: none; }
 .pdfsdk-root[data-tool="select"] .pdfsdk-page__overlay { cursor: default; }
 .pdfsdk-root[data-tool="text"] .pdfsdk-page__overlay { cursor: text; }
 .pdfsdk-root[data-tool="highlight"] .pdfsdk-page__overlay,

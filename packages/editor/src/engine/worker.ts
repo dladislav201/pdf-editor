@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium';
 import { analyzePage } from '../text/analyze';
+import { indexPage, searchIndex, type SearchIndex } from '../text/search';
 import { createSubsetter, type Subsetter } from './hb-subset';
 import { EngineError, PdfiumDocument, initLibrary, type EncodeJpeg } from './pdfium-core';
 import type { EngineRequest, EngineResponse, OpenResult } from './protocol';
@@ -17,6 +18,12 @@ const docs = new Map<number, PdfiumDocument>();
 /** The document being edited; opening another without `keep` replaces it. */
 let mainId: number | null = null;
 let nextDocId = 1;
+/**
+ * Search indexes of pages, kept per document: reading a page's text is the
+ * slow part of search (about 10 ms a page), so typing a longer query in a
+ * long document doesn't read it all again. Dropped with the document.
+ */
+const searchIndexes = new WeakMap<PdfiumDocument, Map<number, SearchIndex>>();
 const queue: RenderRequest[] = [];
 const cancelled = new Set<number>();
 let pumping = false;
@@ -181,6 +188,21 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         fail(request.id, error);
       }
       return;
+    case 'search':
+      try {
+        const doc = openDoc(request.docId);
+        let indexes = searchIndexes.get(doc);
+        if (!indexes) searchIndexes.set(doc, (indexes = new Map()));
+        const result = request.pages.flatMap((page) => {
+          let index = indexes.get(page);
+          if (!index) indexes.set(page, (index = indexPage(analyzePage(doc.extractText(page)))));
+          return searchIndex(index, request.query, request.options);
+        });
+        reply({ id: request.id, ok: true, result });
+      } catch (error) {
+        fail(request.id, error);
+      }
+      return;
     case 'scanInfo':
       try {
         reply({ id: request.id, ok: true, result: openDoc(request.docId).scanInfo(request.page) });
@@ -227,6 +249,8 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         const words = request.pages.flatMap((p) => p.words);
         const subset = (font: ArrayBuffer, bold: boolean) =>
           hb.subset(new Uint8Array(font), new Set(words.filter((w) => w.bold === bold).flatMap((w) => [...w.text])));
+        // Recognized text is now part of those pages.
+        for (const { page } of request.pages) searchIndexes.get(doc)?.delete(page);
         doc.addInvisibleText(request.pages, {
           regular: subset(request.fonts.regular, false),
           ...(words.some((w) => w.bold) ? { bold: subset(request.fonts.bold, true) } : {}),

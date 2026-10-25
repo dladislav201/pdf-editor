@@ -12,9 +12,13 @@
     "build": "npm run build --workspace=packages/editor && npm run build --workspace=packages/react && npm run build --workspace=apps/demo",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "deploy:demo": "npm run deploy --workspace=apps/demo",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "e2e": "playwright test"
   },
   "engines": {
     "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
   }
 }
