@@ -59,6 +59,7 @@ export function App() {
       tool={open.tool}
       recognize={open.recognize}
       pages={open.pages}
+      sign={open.sign}
       theme={theme}
       onToggleTheme={toggleTheme}
       onClose={() => history.back()}

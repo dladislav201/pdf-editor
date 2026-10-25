@@ -4,6 +4,8 @@ import {
   PDFHexString,
   PDFString,
   beginText,
+  concatTransformationMatrix,
+  drawObject,
   endText,
   fill,
   lineTo,
@@ -23,6 +25,7 @@ import {
   stroke,
   type PDFDocument,
   type PDFFont,
+  type PDFImage,
   type PDFOperator,
   type PDFPage,
 } from 'pdf-lib';
@@ -49,7 +52,10 @@ function textBox(annotation: TextAnnotation, font: PDFFont): Rect {
   return { x, y: top - height, width, height };
 }
 
-function build(annotation: Annotation, font: PDFFont | null): Built | null {
+/** Key of the stream with a picture's original file, so the editor can read it back as it was. */
+export const IMAGE_SOURCE_KEY = 'PDFSDKSource';
+
+function build(annotation: Annotation, font: PDFFont | null, images: Map<string, PDFImage>): Built | null {
   const [r, g, b] = hexToComponents(annotation.color);
 
   switch (annotation.type) {
@@ -117,6 +123,18 @@ function build(annotation: Annotation, font: PDFFont | null): Built | null {
         },
       };
     }
+    case 'image': {
+      const image = images.get(annotation.src);
+      if (!image) return null;
+      const { x, y, width, height } = annotation.rect;
+      return {
+        subtype: 'Stamp',
+        rect: annotation.rect,
+        appearance: [pushGraphicsState(), concatTransformationMatrix(width, 0, 0, height, x, y), drawObject('Im0'), popGraphicsState()],
+        resources: { XObject: { Im0: image.ref } },
+        extra: { Name: annotation.kind === 'signature' ? 'Signature' : 'Image' },
+      };
+    }
     case 'text': {
       if (!font) return null;
       const baselines = textBaselines(annotation);
@@ -142,18 +160,44 @@ function build(annotation: Annotation, font: PDFFont | null): Built | null {
   }
 }
 
+/** The bytes and format of a picture given as a data URL. */
+export function decodeDataUrl(src: string): { bytes: Uint8Array; type: 'png' | 'jpeg' } | null {
+  const match = /^data:image\/(png|jpe?g);base64,(.*)$/i.exec(src);
+  if (!match) return null;
+  const binary = atob(match[2]!);
+  return { bytes: Uint8Array.from(binary, (c) => c.charCodeAt(0)), type: match[1]!.toLowerCase() === 'png' ? 'png' : 'jpeg' };
+}
+
+/** Embeds every picture the annotations use, once each. */
+export async function embedImages(doc: PDFDocument, annotations: Annotation[]): Promise<Map<string, PDFImage>> {
+  const images = new Map<string, PDFImage>();
+  for (const annotation of annotations) {
+    if (annotation.type !== 'image' || images.has(annotation.src)) continue;
+    const decoded = decodeDataUrl(annotation.src);
+    if (!decoded) continue;
+    images.set(annotation.src, decoded.type === 'png' ? await doc.embedPng(decoded.bytes) : await doc.embedJpg(decoded.bytes));
+  }
+  return images;
+}
+
 /**
  * Adds every annotation to its page as a real PDF annotation (Highlight,
- * Square, Ink, FreeText) with an appearance stream, so other viewers show it
- * and it stays editable in Acrobat, Preview and the editor itself.
+ * Square, Ink, FreeText, Stamp for pictures) with an appearance stream, so
+ * other viewers show it and it stays editable in Acrobat, Preview and the
+ * editor itself. `images` are the pictures embedded by `embedImages`.
  */
-export function writeAnnotations(doc: PDFDocument, annotations: Annotation[], font: PDFFont | null): void {
+export function writeAnnotations(
+  doc: PDFDocument,
+  annotations: Annotation[],
+  font: PDFFont | null,
+  images: Map<string, PDFImage> = new Map(),
+): void {
   const pages: PDFPage[] = doc.getPages();
   const modified = PDFString.of(pdfDate(new Date()));
 
   for (const annotation of annotations) {
     const page = pages[annotation.pageIndex];
-    const built = page && build(annotation, font);
+    const built = page && build(annotation, font, images);
     if (!page || !built) continue;
 
     const bbox = rectToArray(built.rect);
@@ -180,6 +224,14 @@ export function writeAnnotations(doc: PDFDocument, annotations: Annotation[], fo
     });
     for (const [key, value] of Object.entries(built.extra ?? {})) {
       dict.set(name(key), doc.context.obj(value as never));
+    }
+    if (annotation.type === 'image') {
+      // The original file, so reopening gives back the same picture rather than a re-encoded one.
+      const decoded = decodeDataUrl(annotation.src);
+      if (decoded) {
+        const source = doc.context.flateStream(decoded.bytes, { Subtype: decoded.type === 'png' ? 'image/png' : 'image/jpeg' });
+        dict.set(name(IMAGE_SOURCE_KEY), doc.context.register(source));
+      }
     }
     page.node.addAnnot(doc.context.register(dict));
   }

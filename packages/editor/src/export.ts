@@ -1,8 +1,8 @@
 import fontkit from '@pdf-lib/fontkit';
-import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont } from 'pdf-lib';
+import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage } from 'pdf-lib';
 import { textBaselines, textLines } from './geometry';
 import { hexToRgb } from './pdf/objects';
-import { writeAnnotations } from './pdf/write-annotations';
+import { embedImages, writeAnnotations } from './pdf/write-annotations';
 import { pathData } from './render-annotations';
 import type { Annotation } from './types';
 
@@ -36,7 +36,7 @@ async function textFont(doc: PDFDocument, annotations: Annotation[], options: Ex
   return doc.embedFont(StandardFonts.Helvetica);
 }
 
-function flattenAnnotations(doc: PDFDocument, annotations: Annotation[], font: PDFFont | null): void {
+function flattenAnnotations(doc: PDFDocument, annotations: Annotation[], font: PDFFont | null, images: Map<string, PDFImage>): void {
   const pages = doc.getPages();
   for (const annotation of annotations) {
     const page = pages[annotation.pageIndex];
@@ -65,6 +65,11 @@ function flattenAnnotations(doc: PDFDocument, annotations: Annotation[], font: P
           });
         }
         break;
+      case 'image': {
+        const image = images.get(annotation.src);
+        if (image) page.drawImage(image, annotation.rect);
+        break;
+      }
       case 'text': {
         if (!font) break;
         const baselines = textBaselines(annotation);
@@ -108,8 +113,9 @@ export async function exportPdf(
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(base, { updateMetadata: false });
   const font = await textFont(doc, annotations, options);
-  if (options.flatten) flattenAnnotations(doc, annotations, font);
-  else writeAnnotations(doc, annotations, font);
+  const images = await embedImages(doc, annotations);
+  if (options.flatten) flattenAnnotations(doc, annotations, font, images);
+  else writeAnnotations(doc, annotations, font, images);
   if (options.watermark) await stampWatermark(doc, options.watermark);
   return doc.save();
 }

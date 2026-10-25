@@ -1,7 +1,8 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, PDFStream } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, decodePDFRawStream } from 'pdf-lib';
 import { round } from '../geometry';
 import type { Annotation, Point, Rect } from '../types';
 import { componentsToHex, name, numbersOf, readBorderWidth, readDate, readNumber, readRect, readText } from './objects';
+import { IMAGE_SOURCE_KEY } from './write-annotations';
 
 /** `/F 2`: hidden. Such annotations are left in the file untouched. */
 const HIDDEN_FLAG = 2;
@@ -11,7 +12,19 @@ const DEFAULT_COLORS: Record<string, string> = {
   Square: '#ef4444',
   Ink: '#2f6fed',
   FreeText: '#000000',
+  Stamp: '#000000',
 };
+
+/** A picture we saved as a stamp, as a data URL; other stamps stay in the file as they are. */
+function stampImage(dict: PDFDict): string | null {
+  const source = dict.lookupMaybe(name(IMAGE_SOURCE_KEY), PDFStream);
+  if (!(source instanceof PDFRawStream)) return null;
+  const type = source.dict.lookupMaybe(name('Subtype'), PDFName)?.decodeText() === 'image/png' ? 'png' : 'jpeg';
+  const bytes = decodePDFRawStream(source).decode();
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:image/${type};base64,${btoa(binary)}`;
+}
 
 export interface ImportResult {
   /** The PDF without the imported annotations, or the original bytes when nothing was imported. */
@@ -123,6 +136,12 @@ function parseAnnotation(dict: PDFDict, pageIndex: number, fallbackId: string): 
       }
       if (!paths.length) return null;
       return { ...base, ...comment, type: 'ink', paths, strokeWidth: readBorderWidth(dict) };
+    }
+    case 'Stamp': {
+      const src = stampImage(dict);
+      if (!src) return null;
+      const kind = dict.lookupMaybe(name('Name'), PDFName)?.decodeText() === 'Signature' ? 'signature' : 'image';
+      return { ...base, ...comment, type: 'image', kind, src, rect: roundRect(rect) };
     }
     case 'FreeText': {
       const { fontSize, color } = parseDefaultAppearance(readText(dict, 'DA'));

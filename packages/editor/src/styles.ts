@@ -215,6 +215,15 @@ const CSS = /* css */ `
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
+.pdfsdk-handle {
+  fill: var(--pdfsdk-surface);
+  stroke: var(--pdfsdk-accent);
+  stroke-width: 2px;
+  cursor: nwse-resize;
+  pointer-events: none;
+}
+.pdfsdk-root[data-hover="resize"] .pdfsdk-page__overlay { cursor: nwse-resize; }
+.pdfsdk-root[data-tool="image"] .pdfsdk-page__overlay { cursor: copy; }
 .pdfsdk-text-editor {
   position: absolute;
   z-index: 2;

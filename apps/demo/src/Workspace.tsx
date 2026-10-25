@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './icons';
 import { DEMO_LICENSE_KEY } from './license';
 import { Pages } from './Pages';
+import { SignDialog } from './SignDialog';
 
 const TOOLS: { tool: ToolName; icon: IconName; label: string; key: string }[] = [
   { tool: 'select', icon: 'cursor', label: 'Select', key: 'V' },
@@ -27,6 +28,7 @@ export function Workspace({
   tool: initialTool,
   recognize,
   pages: startInPages,
+  sign: startSigning,
   theme,
   onToggleTheme,
   onClose,
@@ -35,6 +37,7 @@ export function Workspace({
   tool?: ToolName;
   recognize?: boolean;
   pages?: boolean;
+  sign?: boolean;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onClose: () => void;
@@ -53,6 +56,8 @@ export function Workspace({
   const [mode, setMode] = useState<'edit' | 'pages'>('edit');
   const [loaded, setLoaded] = useState(false);
   const wantPages = useRef(startInPages);
+  const wantSign = useRef(startSigning);
+  const [signing, setSigning] = useState(false);
 
   // Keep the editor in step with the site's theme.
   useEffect(() => editor?.setTheme(theme), [editor, theme]);
@@ -88,6 +93,10 @@ export function Workspace({
         if (wantPages.current) {
           wantPages.current = false;
           setMode('pages');
+        }
+        if (wantSign.current) {
+          wantSign.current = false;
+          setSigning(true);
         }
         // Fit the width, but don't blow a page up on a wide screen.
         if (editor.getZoom() > MAX_FIT_ZOOM) editor.setZoom(MAX_FIT_ZOOM);
@@ -248,6 +257,7 @@ export function Workspace({
           </div>
         )}
         {tool === 'editText' && <div className="notice notice--plain">Click a paragraph to edit it. Esc to finish.</div>}
+        {tool === 'image' && <div className="notice notice--plain">Click where your signature goes. Then drag it, or resize it from the corner.</div>}
         <nav className="bar" aria-label="Tools">
           <div className="group">
             {TOOLS.map(({ tool: t, icon, label, key }) => (
@@ -265,8 +275,23 @@ export function Workspace({
               </button>
             ))}
           </div>
+          <div className="group">
+            <button type="button" className="pill" aria-pressed={signing || tool === 'image'} onClick={() => setSigning(true)}>
+              <Icon name="sign" /> Sign
+            </button>
+          </div>
         </nav>
       </div>
+
+      {signing && (
+        <SignDialog
+          onClose={() => setSigning(false)}
+          onPlace={(signature) => {
+            setSigning(false);
+            editor?.placeImage({ ...signature, kind: 'signature' });
+          }}
+        />
+      )}
 
     </div>
   );

@@ -72,6 +72,17 @@ const sample: Annotation[] = [
     text: 'Перевірити дати\nдругий рядок',
     fontSize: 14,
   },
+  {
+    ...base,
+    id: 's1',
+    pageIndex: 1,
+    color: '#000000',
+    type: 'image',
+    kind: 'signature',
+    // A 1×1 PNG: what goes in comes back byte for byte.
+    src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    rect: { x: 380, y: 90, width: 150, height: 50 },
+  },
 ];
 
 describe('PDF annotations', () => {
@@ -88,7 +99,7 @@ describe('PDF annotations', () => {
   it('writes standard annotation objects with appearance streams', async () => {
     const saved = await exportPdf(await blankPdf(), sample, { fontBytes });
     expect(await annotationSubtypes(saved, 0)).toEqual(['Highlight', 'Square']);
-    expect(await annotationSubtypes(saved, 1)).toEqual(['Ink', 'FreeText']);
+    expect(await annotationSubtypes(saved, 1)).toEqual(['Ink', 'FreeText', 'Stamp']);
 
     const doc = await PDFDocument.load(saved);
     const annots = doc.getPage(0).node.Annots()!;
@@ -102,6 +113,9 @@ describe('PDF annotations', () => {
   it('keeps the saved file free of annotations when flattening', async () => {
     const saved = await exportPdf(await blankPdf(), sample, { fontBytes, flatten: true });
     expect(await annotationSubtypes(saved, 0)).toEqual([]);
+    // The signature is drawn into the page itself.
+    const page = (await PDFDocument.load(saved)).getPage(1);
+    expect(page.node.Resources()?.lookup(PDFName.of('XObject'), PDFDict).keys().length).toBe(1);
     expect((await importAnnotations(saved)).annotations).toEqual([]);
   });
 

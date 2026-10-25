@@ -14,7 +14,7 @@ import { checkLicense, type LicenseInfo } from './license';
 import { arrangePages, type ArrangedPage } from './pdf/arrange';
 import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
-import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations } from './render-annotations';
+import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations, resizeHandle } from './render-annotations';
 import { injectStyles } from './styles';
 import { TextEditSession, paragraphChars, paragraphFrame } from './text/edit-session';
 import { CUSTOM_FONT_BASE, FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontSource } from './text/glyph-store';
@@ -56,6 +56,7 @@ const DEFAULT_COLORS: Record<DrawingTool, string> = {
   rectangle: '#ef4444',
   ink: '#2f6fed',
   text: '#111827',
+  image: '#000000',
 };
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
 const MIN_ZOOM = ZOOM_STEPS[0]!;
@@ -69,7 +70,8 @@ const PARAGRAPH_HIT_PADDING = 2;
 type Interaction =
   | { kind: 'shape'; view: PageView; tool: 'highlight' | 'rectangle'; start: Point; current: Point }
   | { kind: 'ink'; view: PageView; points: Point[] }
-  | { kind: 'move'; view: PageView; id: string; start: Point; before: Annotation[]; moved: boolean };
+  | { kind: 'move'; view: PageView; id: string; start: Point; before: Annotation[]; moved: boolean }
+  | { kind: 'resize'; view: PageView; id: string; before: Annotation[]; resized: boolean };
 
 interface TextEditorState {
   el: HTMLTextAreaElement;
@@ -239,6 +241,7 @@ export class PdfEditor {
   private opening: { id: string; point: Point; event: PointerEvent; token: number; clicks: number } | null = null;
   private openToken = 0;
   private tool: ToolName = 'select';
+  private pendingImage: { src: string; width: number; height: number; kind: 'signature' | 'image' } | null = null;
   private colors = { ...DEFAULT_COLORS };
   private zoomMode: ZoomValue;
   private zoom = 1;
@@ -571,6 +574,17 @@ export class PdfEditor {
     }
     this.events.emit('toolChange', { tool });
     this.events.emit('colorChange', { color: this.getColor() });
+  }
+
+  /**
+   * Places a picture (a signature) where the user clicks next: switches to
+   * the `image` tool; the click puts it there, about a third of the page
+   * wide at most, and selects it for moving and resizing.
+   */
+  placeImage(image: { src: string; width: number; height: number; kind?: 'signature' | 'image' }): void {
+    if (this.readOnly) return;
+    this.pendingImage = { kind: 'image', ...image };
+    this.setTool('image');
   }
 
   /** Color of the selected annotation, else of the active drawing tool. */
@@ -1334,6 +1348,14 @@ export class PdfEditor {
     return pageEl ? this.views[Number(pageEl.dataset.pageIndex)] : undefined;
   }
 
+  /** The selected picture whose resize handle is under the pointer. */
+  private handleAt(view: PageView, point: Point): Annotation | undefined {
+    const selected = this.annotations.find((a) => a.id === this.selectedId);
+    if (selected?.type !== 'image' || selected.pageIndex !== view.index) return undefined;
+    const [hx, hy] = resizeHandle(selected);
+    return Math.hypot(point[0] - hx, point[1] - hy) <= 9 / this.zoom ? selected : undefined;
+  }
+
   private annotationAt(view: PageView, point: Point): Annotation | undefined {
     const tolerance = 4 / this.zoom;
     for (let i = this.annotations.length - 1; i >= 0; i--) {
@@ -1386,11 +1408,37 @@ export class PdfEditor {
         return;
       }
       case 'select': {
+        const resizing = this.handleAt(view, point);
+        if (resizing && !this.readOnly) {
+          this.interaction = { kind: 'resize', view, id: resizing.id, before: this.annotations, resized: false };
+          break;
+        }
         const hit = this.annotationAt(view, point);
         this.select(hit?.id ?? null);
         if (!hit || this.readOnly) return;
         this.interaction = { kind: 'move', view, id: hit.id, start: point, before: this.annotations, moved: false };
         break;
+      }
+      case 'image': {
+        event.preventDefault();
+        const image = this.pendingImage;
+        if (!image) return;
+        // A third of the page wide at most, and never more than its own pixels at 2x.
+        const pageWidth = view.base.width;
+        const width = round(Math.min(pageWidth / 3, 180, image.width / 2));
+        const height = round((width * image.height) / image.width);
+        const annotation: Annotation = {
+          ...this.newAnnotationBase(view.index, 'image'),
+          type: 'image',
+          kind: image.kind,
+          src: image.src,
+          rect: { x: round(point[0] - width / 2), y: round(point[1] - height / 2), width, height },
+        };
+        this.pendingImage = null;
+        this.commit([...this.annotations, annotation]);
+        this.setTool('select');
+        this.select(annotation.id);
+        return;
       }
       case 'highlight':
       case 'rectangle':
@@ -1438,8 +1486,9 @@ export class PdfEditor {
       }
       if (this.tool === 'select' && !this.readOnly) {
         const view = this.viewFromEvent(event);
-        const hit = view && this.annotationAt(view, view.clientToPdf(event.clientX, event.clientY));
-        this.root.dataset.hover = hit ? 'annotation' : '';
+        const point = view && view.clientToPdf(event.clientX, event.clientY);
+        const hit = view && point && this.annotationAt(view, point);
+        this.root.dataset.hover = view && point && this.handleAt(view, point) ? 'resize' : hit ? 'annotation' : '';
       }
       return;
     }
@@ -1455,6 +1504,19 @@ export class PdfEditor {
         if (Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.75 / this.zoom) return;
         interaction.points.push(point);
         this.drawInkDraft(interaction);
+        break;
+      }
+      case 'resize': {
+        // The top-left corner stays; the picture keeps its proportions.
+        interaction.resized = true;
+        this.annotations = interaction.before.map((a) => {
+          if (a.id !== interaction.id || a.type !== 'image') return a;
+          const top = a.rect.y + a.rect.height;
+          const width = round(Math.max(12, point[0] - a.rect.x));
+          const height = round((width * a.rect.height) / a.rect.width);
+          return { ...a, rect: { x: a.rect.x, y: round(top - height), width, height } };
+        });
+        this.refresh();
         break;
       }
       case 'move': {
@@ -1501,7 +1563,8 @@ export class PdfEditor {
         ]);
         break;
       case 'move':
-        if (interaction.moved) {
+      case 'resize':
+        if (interaction.kind === 'move' ? interaction.moved : interaction.resized) {
           this.history.push(interaction.before);
           this.emitAnnotations();
           this.emitHistory();
@@ -1515,7 +1578,7 @@ export class PdfEditor {
     if (!interaction) return;
     this.interaction = null;
     interaction.view.draft.replaceChildren();
-    if (interaction.kind === 'move') {
+    if (interaction.kind === 'move' || interaction.kind === 'resize') {
       this.annotations = interaction.before;
       this.refresh();
     }

@@ -279,6 +279,22 @@ its weight over the scan with its words erased (`src/text/scan-edit.ts`).
 paragraph comes back as it was, a new amount and a new word are drawn and
 stay searchable, nothing outside the piece changes.
 
+## Signatures and pictures
+
+`editor.placeImage({ src, width, height, kind })` puts a picture (a PNG or
+JPEG data URL) where the user clicks next (the `image` tool), a third of the
+page wide at most; it is then selected, can be moved, and resizes from its
+bottom-right corner keeping its proportions. It is an `image` annotation:
+saved as a PDF Stamp (`/Name /Signature` for signatures) whose appearance
+draws the picture, with the original file kept alongside so reopening the
+PDF here gives back the same picture, still movable; flattening draws it
+into the page.
+
+The site's Sign dialog makes the picture: draw it (a pen that thins when
+moving fast), type it in one of three script fonts, or upload a photo of it
+(the paper turns transparent); black or blue ink; the last three signatures
+are kept in this browser only.
+
 ## Pages
 
 `editor.pages()` gives the open document's pages for thumbnails (sizes and a

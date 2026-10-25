@@ -53,6 +53,17 @@ export function annotationElement(annotation: Annotation): SVGElement {
       }
       return group;
     }
+    case 'image': {
+      const { x, y, width, height } = annotation.rect;
+      // The user-space group is flipped; flip the picture back so it's upright.
+      return svg('image', {
+        href: annotation.src,
+        width,
+        height,
+        transform: `matrix(1 0 0 -1 ${x} ${y + height})`,
+        preserveAspectRatio: 'none',
+      });
+    }
     case 'text': {
       const group = svg('g', {
         fill: annotation.color,
@@ -72,6 +83,11 @@ export function annotationElement(annotation: Annotation): SVGElement {
       return group;
     }
   }
+}
+
+/** Where a picture's resize handle sits: its bottom-right corner, in user space. */
+export function resizeHandle(annotation: { rect: { x: number; y: number; width: number } }): Point {
+  return [annotation.rect.x + annotation.rect.width, annotation.rect.y];
 }
 
 export function renderPageAnnotations(
@@ -97,13 +113,18 @@ export function renderPageAnnotations(
   const pad = 3;
   const a = view.pdfToOverlay([box.x, box.y]);
   const b = view.pdfToOverlay([box.x + box.width, box.y + box.height]);
-  view.chrome.replaceChildren(
-    svg('rect', {
-      class: 'pdfsdk-selection',
-      x: Math.min(a[0], b[0]) - pad,
-      y: Math.min(a[1], b[1]) - pad,
-      width: Math.abs(a[0] - b[0]) + pad * 2,
-      height: Math.abs(a[1] - b[1]) + pad * 2,
-    }),
-  );
+  const frame = svg('rect', {
+    class: 'pdfsdk-selection',
+    x: Math.min(a[0], b[0]) - pad,
+    y: Math.min(a[1], b[1]) - pad,
+    width: Math.abs(a[0] - b[0]) + pad * 2,
+    height: Math.abs(a[1] - b[1]) + pad * 2,
+  });
+  if (selected.type !== 'image') {
+    view.chrome.replaceChildren(frame);
+    return;
+  }
+  // Pictures resize from their bottom-right corner.
+  const [hx, hy] = view.pdfToOverlay(resizeHandle(selected));
+  view.chrome.replaceChildren(frame, svg('circle', { class: 'pdfsdk-handle', cx: hx, cy: hy, r: 6 }));
 }

@@ -9,13 +9,15 @@ export interface OpenRequest {
   recognize?: boolean;
   /** Open in the page view (organize pages). */
   pages?: boolean;
+  /** Open the signature dialog right away. */
+  sign?: boolean;
 }
 
 const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequest, 'file'> }[] = [
   { icon: 'editText', title: 'Edit text', text: 'Change words and numbers in place, in the document’s own fonts.', open: { tool: 'editText' } },
   { icon: 'scan', title: 'Edit a scan', text: 'Recognize scanned pages, then edit them in the scan’s own letters.', open: { tool: 'editText', recognize: true } },
   { icon: 'highlight', title: 'Annotate', text: 'Highlight, draw, add shapes and notes.', open: { tool: 'highlight' } },
-  { icon: 'sign', title: 'Sign', text: 'Draw or upload your signature.' },
+  { icon: 'sign', title: 'Sign', text: 'Draw, type or upload your signature and place it.', open: { sign: true } },
   { icon: 'pages', title: 'Organize pages', text: 'Merge, split, rotate, delete and reorder.', open: { pages: true } },
 ];
 

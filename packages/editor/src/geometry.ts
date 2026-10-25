@@ -34,6 +34,7 @@ export function bounds(annotation: Annotation, measure: MeasureText): Rect {
   switch (annotation.type) {
     case 'highlight':
     case 'rectangle':
+    case 'image':
       return annotation.rect;
     case 'ink': {
       let minX = Infinity;
@@ -84,6 +85,8 @@ export function hitTest(annotation: Annotation, point: Point, tolerance: number,
       return (annotation.segments ?? [annotation.rect]).some((rect) => inRect(rect, point, tolerance));
     case 'text':
       return inRect(bounds(annotation, measure), point, tolerance);
+    case 'image':
+      return inRect(annotation.rect, point, tolerance);
     case 'rectangle': {
       // Only the outline is grabbable, so content inside an empty frame stays clickable.
       const { rect } = annotation;
@@ -109,7 +112,8 @@ export function hitTest(annotation: Annotation, point: Point, tolerance: number,
 export function translate(annotation: Annotation, dx: number, dy: number): Annotation {
   switch (annotation.type) {
     case 'highlight':
-    case 'rectangle': {
+    case 'rectangle':
+    case 'image': {
       const move = (rect: Rect): Rect => ({ ...rect, x: round(rect.x + dx), y: round(rect.y + dy) });
       if (annotation.type === 'highlight' && annotation.segments) {
         return { ...annotation, rect: move(annotation.rect), segments: annotation.segments.map(move) };

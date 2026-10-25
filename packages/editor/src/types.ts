@@ -16,7 +16,8 @@ export interface Rect {
   height: number;
 }
 
-export type ToolName = 'select' | 'editText' | 'highlight' | 'rectangle' | 'ink' | 'text';
+/** `image` places the picture given to `placeImage()` (a signature) where the user clicks. */
+export type ToolName = 'select' | 'editText' | 'highlight' | 'rectangle' | 'ink' | 'text' | 'image';
 
 interface AnnotationBase {
   id: string;
@@ -64,11 +65,22 @@ export interface TextAnnotation extends AnnotationBase {
   fontSize: number;
 }
 
+/** A picture on the page, such as a signature: saved as a PDF stamp that keeps the original image. */
+export interface ImageAnnotation extends AnnotationBase {
+  type: 'image';
+  rect: Rect;
+  /** The image as a `data:image/png` or `data:image/jpeg` URL. */
+  src: string;
+  /** What it is, for other viewers (the stamp's name): a signature or any image. */
+  kind: 'signature' | 'image';
+}
+
 export type Annotation =
   | HighlightAnnotation
   | RectangleAnnotation
   | InkAnnotation
-  | TextAnnotation;
+  | TextAnnotation
+  | ImageAnnotation;
 
 export type DocumentSource = string | URL | ArrayBuffer | Uint8Array | Blob;
 
