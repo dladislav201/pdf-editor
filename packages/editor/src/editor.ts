@@ -610,6 +610,11 @@ export class PdfEditor {
     return model;
   }
 
+  /** Switches the colour theme (`'auto'` follows the OS). */
+  setTheme(theme: 'light' | 'dark' | 'auto'): void {
+    this.root.dataset.theme = theme;
+  }
+
   // ------------------------------------------------------------------- OCR
 
   /** Whether a page is a scan (a picture with no real text) and whether it already has recognized text. */

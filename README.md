@@ -9,7 +9,7 @@ files are never uploaded anywhere.
 |---|---|
 | `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (PDFium WebAssembly in a Web Worker), annotation tools, undo/redo, PDF annotation read/write (pdf-lib) |
 | `packages/react` | `@pdfsdk/react` — `<PdfEditor />` component |
-| `apps/demo` | Demo site (Vite + React) with a generated sample contract |
+| `apps/demo` | The web service (Vite + React): start page with drop zone and tools, and the editor with floating pill toolbars (the editor's built-in toolbar is off). Name and domain to come |
 | `scripts/copy-engine-assets.mjs` | Copies `pdfium.wasm`, `harfbuzz-subset.wasm`, the fallback fonts and the OCR assets (Tesseract worker, cores, Ukrainian and English models) next to the bundle |
 
 ## Run
