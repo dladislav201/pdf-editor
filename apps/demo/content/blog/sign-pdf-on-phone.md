@@ -4,7 +4,6 @@ description: Sign a PDF on your phone in a minute, without installing an app: dr
 date: 2026-10-26
 tool: /sign-pdf
 toolName: Sign a PDF
-draft: true
 ---
 
 Someone sends you a PDF to sign and you’re away from your computer. You don’t need to print it, and you don’t need an app: your phone’s browser is enough.

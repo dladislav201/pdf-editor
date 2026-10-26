@@ -163,11 +163,12 @@ test('opens a 300-page document quickly and reaches its end', async ({ page }, i
   expect(opened).toBeLessThan(10_000);
 });
 
-test('every page in the sitemap is plain HTML with its own title, heading and FAQ', async ({ request }, info) => {
+test('every page in the sitemap is plain HTML with its own title, heading and structured data', async ({ request }, info) => {
   test.skip(info.project.name !== 'chromium', 'Server output: one browser is enough.');
   const sitemap = await (await request.get('/sitemap.xml')).text();
   const paths = [...sitemap.matchAll(/<loc>https?:\/\/[^/]+(\/[^<]*)<\/loc>/g)].map((m) => m[1]!);
   expect(paths.length).toBeGreaterThanOrEqual(14);
+  expect(paths).toContain('/blog');
   const titles = new Set<string>();
   for (const path of paths) {
     const response = await request.get(path);
@@ -176,7 +177,8 @@ test('every page in the sitemap is plain HTML with its own title, heading and FA
     titles.add(/<title>([^<]+)<\/title>/.exec(html)?.[1] ?? '');
     expect(html, path).toMatch(/<h1>[^<]+<\/h1>/);
     expect(html, path).toContain(`<link rel="canonical" href="`);
-    expect(html, path).toContain('"@type":"FAQPage"');
+    // Tool pages answer questions; guides are articles.
+    expect(html, path).toContain(path.startsWith('/blog') ? (path === '/blog' ? '"@type":"Blog"' : '"@type":"Article"') : '"@type":"FAQPage"');
   }
   expect(titles.size).toBe(paths.length);
   expect(await (await request.get('/robots.txt')).text()).toContain('Sitemap:');

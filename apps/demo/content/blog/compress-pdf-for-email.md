@@ -4,7 +4,6 @@ description: Why some PDFs are too big to attach, and how to make them small eno
 date: 2026-10-26
 tool: /compress-pdf
 toolName: Compress a PDF
-draft: true
 ---
 
 “Attachment too large” usually comes up at the worst moment. Gmail takes attachments up to 25 MB, Outlook usually 20 MB, and many company mail servers stop at 10 MB. A single scanned document can be bigger than all of those.

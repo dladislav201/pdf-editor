@@ -4,7 +4,6 @@ description: Add a hidden text layer to scanned PDF pages with OCR, so you can s
 date: 2026-10-26
 tool: /ocr-pdf
 toolName: Make a scanned PDF searchable
-draft: true
 ---
 
 You know the invoice number is somewhere in that scanned PDF, but Ctrl+F finds nothing and you can’t select a single word. That’s because a scan is a picture of a page: there is no text in it to search.

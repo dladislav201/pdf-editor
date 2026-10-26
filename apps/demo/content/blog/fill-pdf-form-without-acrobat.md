@@ -4,7 +4,6 @@ description: Fill in fillable PDF forms in your browser, and what to do when a P
 date: 2026-10-26
 tool: /fill-pdf-form
 toolName: Fill in a PDF form
-draft: true
 ---
 
 You don’t need Acrobat to fill in a PDF form. What you do need to know is which of two kinds of form you have, because they’re filled in differently.

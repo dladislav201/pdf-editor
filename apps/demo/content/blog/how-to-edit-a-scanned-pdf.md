@@ -4,7 +4,6 @@ description: A scanned PDF is a picture of a page, so ordinary editors can’t c
 date: 2026-10-26
 tool: /edit-scanned-pdf
 toolName: Edit a scanned PDF
-draft: true
 ---
 
 You open a scanned contract or invoice, click on a word to fix it, and nothing happens. That’s not your editor failing: a scanned PDF doesn’t contain text at all. Each page is a photograph of paper, and to a computer the letters on it are just dark pixels.
