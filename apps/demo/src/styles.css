@@ -80,6 +80,10 @@ button {
   background: var(--surface);
   box-shadow: var(--shadow-pill);
 }
+/* Every bar is one height, 54px: pills straight on the bar get the room a grey group takes. */
+.bar:not(:has(> .group)) {
+  padding: 9px;
+}
 /* Items that belong together share a grey pill. */
 .group {
   display: inline-flex;
@@ -143,8 +147,9 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  flex: none;
+  width: 54px;
+  height: 54px;
   border: 0;
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -544,6 +549,26 @@ button {
   font-weight: 600;
 }
 
+/* Windows under ~1120px: the top row can't hold all three groups, so Edit/Pages moves under it. */
+@media (max-width: 1120px) {
+  .top-right > .float {
+    display: none;
+  }
+  .top-center {
+    top: 84px;
+  }
+  .status,
+  .pages__status {
+    top: 150px;
+  }
+  .workspace .pdfsdk-pages {
+    padding-top: 154px;
+  }
+  .pages__grid {
+    padding-top: 210px;
+  }
+}
+
 .narrow-only {
   display: none;
 }
@@ -571,17 +596,17 @@ button {
     display: none;
   }
   .top-center {
-    top: 68px;
+    top: 74px;
   }
   .status,
   .pages__status {
-    top: 124px;
+    top: 136px;
     width: max-content;
     max-width: calc(100vw - 24px);
   }
   .workspace .pdfsdk-pages {
     gap: 16px;
-    padding: 124px 8px 150px;
+    padding: 136px 8px 150px;
   }
   .bar {
     max-width: calc(100vw - 24px);
@@ -602,7 +627,7 @@ button {
     display: none;
   }
   .file-name {
-    max-width: calc(100vw - 230px);
+    max-width: calc(100vw - 264px);
     padding-left: 10px;
   }
   .bottom-center {
@@ -617,7 +642,7 @@ button {
   }
   .pages__grid {
     gap: 20px 16px;
-    padding: 176px 12px 120px;
+    padding: 188px 12px 120px;
   }
   /* The open search takes the whole top row. */
   .workspace[data-search='open'] .top-right {
