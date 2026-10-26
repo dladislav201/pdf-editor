@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent } from 'react';
 import { FeedbackDialog } from './FeedbackDialog';
 import type { ToolName } from '@pdfsdk/editor';
 import { Icon, type IconName } from './icons';
+import { LANDINGS, type Landing } from './site';
 
 export interface OpenRequest {
   file: File;
@@ -31,12 +32,15 @@ const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequ
 ];
 
 export function Home({
+  page,
   onOpen,
   onPictures,
   onSample,
   theme,
   onToggleTheme,
 }: {
+  /** The page people landed on: the start page or one tool's page. */
+  page: Landing;
   onOpen: (request: OpenRequest) => void;
   /** Pictures (JPG, PNG, WebP) to turn into a PDF. */
   onPictures: (files: File[]) => void;
@@ -45,7 +49,8 @@ export function Home({
   onToggleTheme: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const pending = useRef<Omit<OpenRequest, 'file'>>({});
+  // What the chooser opens files with: this page's tool unless a tool card was picked.
+  const pending = useRef<Omit<OpenRequest, 'file'>>(page.open ?? {});
   const [over, setOver] = useState(false);
   const [feedback, setFeedback] = useState(false);
 
@@ -58,7 +63,7 @@ export function Home({
     setOver(false);
     const files = [...event.dataTransfer.files];
     const file = files.find(isPdf);
-    if (file) onOpen({ file });
+    if (file) onOpen({ file, ...page.open });
     else if (files.some(isPicture)) onPictures(files.filter(isPicture));
   };
 
@@ -81,9 +86,9 @@ export function Home({
       <div className="home__top">
         <nav className="bar" aria-label="Sections">
           <div className="group">
-            <button type="button" className="pill pill--icon" aria-pressed="true" aria-label="Home">
+            <a className="pill pill--icon" href="/" aria-current={page.path === '/' ? 'page' : undefined} aria-label="Home">
               <Icon name="home" />
-            </button>
+            </a>
             <button type="button" className="pill" onClick={() => choose()}>
               <Icon name="file" /> Open PDF
             </button>
@@ -100,8 +105,8 @@ export function Home({
       </div>
 
       <section className="home__hero">
-        <h1>Edit any PDF, right in your browser.</h1>
-        <p>Change text, fix scans, sign and mark up. Your files never leave your device.</p>
+        <h1>{page.h1}</h1>
+        <p>{page.lead}</p>
       </section>
 
       <div
@@ -115,8 +120,8 @@ export function Home({
         <div className="drop__icon">
           <Icon name="upload" size={22} />
         </div>
-        <button type="button" className="pill pill--ink" onClick={() => choose()}>
-          Choose a PDF
+        <button type="button" className="pill pill--ink" onClick={() => choose(page.open)}>
+          {page.pictures ? 'Choose pictures' : 'Choose a PDF'}
         </button>
         <p className="drop__hint">or drop it anywhere on this page — photos become a PDF</p>
         <span className="drop__privacy">
@@ -151,9 +156,34 @@ export function Home({
           </button>
         </div>
       </div>
-      <p className="home__privacy">
-        No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.
-      </p>
+      <section className="explain" aria-labelledby="how">
+        <h2 id="how">How it works</h2>
+        <ol className="steps">
+          {page.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <h2>Questions</h2>
+        <dl className="faq">
+          {page.faq.map(({ q, a }) => (
+            <div key={q}>
+              <dt>{q}</dt>
+              <dd>{a}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <footer className="footer">
+        <nav aria-label="All tools">
+          {LANDINGS.map((landing) => (
+            <a key={landing.path} href={landing.path} aria-current={landing.path === page.path ? 'page' : undefined}>
+              {landing.name}
+            </a>
+          ))}
+        </nav>
+        <p>No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.</p>
+      </footer>
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
     </main>
   );

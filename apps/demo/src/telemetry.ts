@@ -12,7 +12,7 @@ let queue: string[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 // Only the deployed site has the API; local development stays quiet.
-const enabled = !import.meta.env.DEV;
+const enabled = !import.meta.env.DEV && typeof window !== 'undefined';
 
 function send(path: string, body: unknown): void {
   const data = JSON.stringify(body);

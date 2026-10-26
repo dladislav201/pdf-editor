@@ -52,6 +52,32 @@ npx wrangler login     # once per machine
 npm run deploy:demo    # builds the demo and uploads it
 ```
 
+## Search engines
+
+The site is built for search as well as for use (`apps/demo`):
+
+- **A page per task people search for**: `/edit-pdf-text`, `/edit-scanned-pdf`,
+  `/ocr-pdf`, `/sign-pdf`, `/fill-pdf-form`, `/annotate-pdf`, `/compress-pdf`,
+  `/merge-pdf`, `/split-pdf`, `/rotate-pdf`, `/delete-pdf-pages`, `/pdf-to-jpg`,
+  `/jpg-to-pdf`, plus the start page. Each has its own title, description,
+  heading, three steps and questions (`src/site.ts`), opens a chosen file
+  straight in its tool, and every page links to every other in the footer.
+- **Static HTML**: after `vite build`, `src/entry-server.tsx` is built for
+  Node and `scripts/prerender.mjs` writes each page (`compress-pdf.html`,
+  served as `/compress-pdf`) with its words in the markup, a canonical link,
+  Open Graph and Twitter tags, and JSON-LD (`WebApplication`, free offer, and
+  `FAQPage`); also `404.html` (noindex; unknown paths now answer 404),
+  `sitemap.xml` and `robots.txt`.
+- **A light start page**: the editor, PDFium and pdf-lib load when a file is
+  opened (the start page's script went from the whole app to about 250 KB),
+  and the handwriting fonts load with the signature dialog only.
+- **Icons and a preview picture**: `public/favicon.svg`, PNG icons and
+  `public/og.png` (1200×630), drawn by `scripts/make-images.mjs`.
+
+The name and address are placeholders in `src/site.ts` (`SITE`): a custom
+domain, set there and added to the Worker in Cloudflare, is the next step,
+then Google Search Console and Bing Webmaster Tools with the sitemap.
+
 ## Usage counts and feedback
 
 The site's Worker (`apps/demo/worker/`) serves the static files and, under

@@ -19,6 +19,23 @@ const FONTS = [
   { name: 'Hand', family: '"Caveat", cursive' },
   { name: 'Formal', family: '"Mrs Saint Delafield", cursive' },
 ];
+const FONTS_URL =
+  'https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Dancing+Script:wght@500&family=Mrs+Saint+Delafield&display=swap';
+let fontsLoading: Promise<void> | undefined;
+
+/** The handwriting fonts load with this dialog, not with every page of the site. */
+function loadFonts(): Promise<void> {
+  fontsLoading ??= new Promise((resolve) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = FONTS_URL;
+    link.onload = () => void Promise.all(FONTS.map((f) => document.fonts.load(`120px ${f.family}`))).then(() => resolve(), () => resolve());
+    link.onerror = () => resolve();
+    document.head.append(link);
+  });
+  return fontsLoading;
+}
+
 const SAVED_KEY = 'signatures';
 const MAX_SAVED = 3;
 
@@ -99,6 +116,9 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
   const pad = useRef<HTMLCanvasElement>(null);
   const last = useRef<{ x: number; y: number } | null>(null);
   const upload = useRef<HTMLInputElement>(null);
+  // A typed signature is drawn in a handwriting font: wait for it.
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => void loadFonts().then(() => setFontsReady(true)), []);
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
@@ -161,7 +181,7 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
     if (mode === 'type') return typed();
     return uploaded;
   };
-  const ready = mode === 'draw' ? drawn : mode === 'type' ? !!name.trim() : !!uploaded;
+  const ready = mode === 'draw' ? drawn : mode === 'type' ? !!name.trim() && fontsReady : !!uploaded;
 
   const place = (signature: Signature | null) => {
     if (!signature) return;

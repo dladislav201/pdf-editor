@@ -7,7 +7,7 @@
     "predev": "npm run assets",
     "dev": "vite",
     "prebuild": "npm run assets",
-    "build": "vite build",
+    "build": "vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "deploy": "npm run build && wrangler d1 migrations apply pdf-sdk-site --remote && wrangler deploy",

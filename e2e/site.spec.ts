@@ -162,3 +162,33 @@ test('opens a 300-page document quickly and reaches its end', async ({ page }, i
   info.annotations.push({ type: 'timing', description: `open ${opened} ms, search ${Date.now() - searched} ms` });
   expect(opened).toBeLessThan(10_000);
 });
+
+test('every page in the sitemap is plain HTML with its own title, heading and FAQ', async ({ request }, info) => {
+  test.skip(info.project.name !== 'chromium', 'Server output: one browser is enough.');
+  const sitemap = await (await request.get('/sitemap.xml')).text();
+  const paths = [...sitemap.matchAll(/<loc>https?:\/\/[^/]+(\/[^<]*)<\/loc>/g)].map((m) => m[1]!);
+  expect(paths.length).toBeGreaterThanOrEqual(14);
+  const titles = new Set<string>();
+  for (const path of paths) {
+    const response = await request.get(path);
+    expect(response.status(), path).toBe(200);
+    const html = await response.text();
+    titles.add(/<title>([^<]+)<\/title>/.exec(html)?.[1] ?? '');
+    expect(html, path).toMatch(/<h1>[^<]+<\/h1>/);
+    expect(html, path).toContain(`<link rel="canonical" href="`);
+    expect(html, path).toContain('"@type":"FAQPage"');
+  }
+  expect(titles.size).toBe(paths.length);
+  expect(await (await request.get('/robots.txt')).text()).toContain('Sitemap:');
+});
+
+test('a tool page opens its tool', async ({ page }) => {
+  const bytes = await longPdf(1);
+  await page.goto('/compress-pdf');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Compress a PDF.');
+  await page.locator('input[type=file]').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
+  await expect(page.getByRole('dialog', { name: 'Compress PDF' })).toBeVisible();
+  await page.goto('/sign-pdf');
+  await page.locator('input[type=file]').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
+  await expect(page.getByRole('dialog', { name: 'Add your signature' })).toBeVisible();
+});

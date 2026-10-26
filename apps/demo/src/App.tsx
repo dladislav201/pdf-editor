@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice-en.pdf?url';
+import type { PageImage } from '@pdfsdk/editor';
 import { Home, type OpenRequest } from './Home';
-import { imagesToPdf, type PageImage } from '@pdfsdk/editor';
-import { createSampleForm } from './sample-form';
-import { createSamplePdf } from './sample-pdf';
+import { landingFor, LANDINGS } from './site';
 import { track } from './telemetry';
-import { Workspace } from './Workspace';
+
+// The editor, PDFium and pdf-lib load when a file is opened, so the start page stays light.
+const Workspace = lazy(() => import('./Workspace').then((m) => ({ default: m.Workspace })));
 
 type Theme = 'light' | 'dark';
 
@@ -31,6 +32,9 @@ function openedWith(request: OpenRequest): string {
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [open, setOpen] = useState<OpenRequest | null>(null);
+  // Every tool page is the start page with its own words; an unknown path shows the start page.
+  const [page] = useState(() => landingFor(location.pathname) ?? LANDINGS[0]!);
+  useEffect(() => track(`view.${page.path === '/' ? 'home' : page.path.slice(1)}`), [page]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -55,9 +59,11 @@ export function App() {
   const sample = async (kind: 'contract' | 'scan' | 'form') => {
     track(`open.sample.${kind}`);
     if (kind === 'form') {
+      const { createSampleForm } = await import('./sample-form');
       const bytes = await createSampleForm();
       show({ file: new File([bytes as BlobPart], 'Membership application.pdf', { type: 'application/pdf' }) });
     } else if (kind === 'contract') {
+      const { createSamplePdf } = await import('./sample-pdf');
       const bytes = await createSamplePdf();
       show({ file: new File([bytes as BlobPart], 'Services agreement.pdf', { type: 'application/pdf' }), tool: 'editText' });
     } else {
@@ -81,6 +87,7 @@ export function App() {
         images.push({ bytes: new Uint8Array(await blob.arrayBuffer()), type: 'png' });
       }
     }
+    const { imagesToPdf } = await import('@pdfsdk/editor');
     const bytes = await imagesToPdf(images);
     const name = files.length === 1 ? `${files[0]!.name.replace(/\.[^.]+$/, '')}.pdf` : 'Pictures.pdf';
     show({ file: new File([bytes as BlobPart], name, { type: 'application/pdf' }), pages: files.length > 1 });
@@ -89,20 +96,23 @@ export function App() {
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   return open ? (
-    <Workspace
-      key={`${open.file.name}-${open.file.lastModified}`}
-      file={open.file}
-      tool={open.tool}
-      recognize={open.recognize}
-      pages={open.pages}
-      sign={open.sign}
-      dialog={open.dialog}
-      theme={theme}
-      onToggleTheme={toggleTheme}
-      onClose={() => history.back()}
-    />
+    <Suspense fallback={<div className="workspace" />}>
+      <Workspace
+        key={`${open.file.name}-${open.file.lastModified}`}
+        file={open.file}
+        tool={open.tool}
+        recognize={open.recognize}
+        pages={open.pages}
+        sign={open.sign}
+        dialog={open.dialog}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onClose={() => history.back()}
+      />
+    </Suspense>
   ) : (
     <Home
+      page={page}
       onOpen={(request) => {
         track(openedWith(request));
         show(request);

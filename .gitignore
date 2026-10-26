@@ -6,3 +6,4 @@ dist
 *.pem
 test-results
 playwright-report
+dist-ssr
