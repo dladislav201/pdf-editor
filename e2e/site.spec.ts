@@ -60,6 +60,16 @@ test('edits a paragraph and saves it into the PDF', async ({ page }) => {
   expect(squash(first!)).not.toContain('isenteredintoby');
 });
 
+test('the Edit text hint mentions Esc only while a paragraph is open', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await expect(page.getByText('Click a paragraph to edit it.', { exact: true })).toBeVisible();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.getByText('Esc or a click outside finishes the paragraph.')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Click a paragraph to edit it.', { exact: true })).toBeVisible();
+});
+
 test('undoes typing in an open paragraph, with any keyboard layout', async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Edit text' }).click();

@@ -60,7 +60,9 @@ annotation changes and paragraph edits, where each paragraph left after
 changing it (Escape, a click elsewhere) is one step, scanned paragraphs
 included. Shortcuts go by the key's place (`event.code`), so they work with
 any keyboard layout (⌘Z on a Ukrainian one reports "я"). The site shows Undo
-and Redo with the Edit text tool too, without taking the caret away.
+and Redo with the Edit text tool too, without taking the caret away. The
+`textEditing` event says when a paragraph opens and closes; the site's hint
+mentions Esc only then.
 
 ## Search engines
 

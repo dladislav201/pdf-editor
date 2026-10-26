@@ -96,6 +96,8 @@ export function Workspace({
   const [message, setMessage] = useState<string | null>(null);
   const [edits, setEdits] = useState(0);
   const [fields, setFields] = useState(0);
+  // A paragraph is open for typing: Esc (or a click elsewhere) finishes it.
+  const [typing, setTyping] = useState(false);
   const [mode, setMode] = useState<'edit' | 'pages'>('edit');
   const [loaded, setLoaded] = useState(false);
   const wantPages = useRef(startInPages);
@@ -138,6 +140,7 @@ export function Workspace({
       editor.on('zoomChange', ({ zoom }) => setZoom(zoom)),
       editor.on('pageChange', ({ pageIndex }) => setPage((p) => ({ ...p, index: pageIndex }))),
       editor.on('textEditsChange', ({ edits }) => setEdits(edits.length)),
+      editor.on('textEditing', ({ paragraph }) => setTyping(!!paragraph)),
       editor.on('ocrProgress', ({ pageIndex, done, total }) => {
         if (pageIndex >= 0) setScan({ kind: 'reading', done, total });
       }),
@@ -531,7 +534,7 @@ export function Workspace({
         )}
         {tool === 'editText' && (
           <div className="notice notice--plain">
-            {scan.kind === 'scanned' ? w.editTextScan : scan.kind === 'reading' ? w.editTextReading : w.editTextHint}
+            {typing ? w.editTextFinish : scan.kind === 'scanned' ? w.editTextScan : scan.kind === 'reading' ? w.editTextReading : w.editTextHint}
           </div>
         )}
         {tool === 'image' && (

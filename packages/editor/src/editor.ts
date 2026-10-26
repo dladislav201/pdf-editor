@@ -1488,6 +1488,7 @@ export class PdfEditor {
       ...(scan ? { paint: (session: TextEditSession) => this.paintScan(session, scan) } : {}),
     }, initial);
     this.root.dataset.editing = 'text';
+    this.events.emit('textEditing', { paragraph });
     if (ready) this.textSession.setBackground({ href: ready.href, ...ready.patch });
     this.updateHidden(paragraph.pageIndex);
     this.textSession.pointerDown(opening.point, opening.event, opening.clicks);
@@ -1644,6 +1645,7 @@ export class PdfEditor {
     this.textSession = null;
     this.textDragging = false;
     delete this.root.dataset.editing;
+    this.events.emit('textEditing', { paragraph: null });
     // Leaving a paragraph after changing it is one step of the undo history.
     const start = this.sessionStart;
     this.sessionStart = null;

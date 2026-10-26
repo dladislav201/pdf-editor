@@ -175,6 +175,8 @@ export interface EditorEventMap {
   historyChange: { canUndo: boolean; canRedo: boolean };
   /** A paragraph of page text was selected with the Edit text tool (or the selection cleared). */
   paragraphSelect: { paragraph: TextParagraph | null };
+  /** A paragraph opened for typing with the Edit text tool, or the open one was left (`paragraph` null). */
+  textEditing: { paragraph: TextParagraph | null };
   /** Page text was edited (fires when an edit session ends). */
   textEditsChange: { edits: { paragraphId: string; pageIndex: number; text: string }[] };
   /** Text recognition is reading `pageIndex` (after `done` of `total` pages); `pageIndex` is -1 once it has stopped. */
