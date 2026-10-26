@@ -39,7 +39,7 @@ export function BlogIndex({ posts }: { posts: Post[] }) {
           </li>
         ))}
       </ul>
-      <Footer current="/blog" />
+      <Footer current="blog" />
     </main>
   );
 }

@@ -1,22 +1,39 @@
-// Build-time rendering of the start page, every tool page and the guides to
-// static HTML (see scripts/prerender.mjs), so search engines and link
-// previews see the words without running the app.
+// Build-time rendering of the start page and every tool page in every
+// language, and the guides, to static HTML (see scripts/prerender.mjs), so
+// search engines and link previews see the words without running the app.
 import { renderToString } from 'react-dom/server';
 import { BlogIndex, BlogPost } from './Blog';
 import { Home } from './Home';
+import { I18nProvider, type Locale, type Messages } from './i18n';
+import { de } from './i18n/de';
+import { en } from './i18n/en';
+import { nb } from './i18n/nb';
+import { sv } from './i18n/sv';
+import { uk } from './i18n/uk';
 import type { Post } from './posts';
-import type { Landing } from './site';
+import type { LandingId } from './site';
 
+export { LOCALES, REGIONS } from './i18n';
 export { POSTS } from './posts';
-export { LANDINGS, SITE } from './site';
+export { ALL_PAGES, LANDING_IDS, landingPath, SITE } from './site';
+
+export const MESSAGES: Record<Locale, Messages> = { en, de, nb, sv, uk };
 
 const nothing = () => undefined;
 
-export function renderPage(page: Landing): string {
+export function renderPage(id: LandingId, locale: Locale): string {
   return renderToString(
-    <Home page={page} onOpen={nothing} onPictures={nothing} onSample={nothing} theme="light" onToggleTheme={nothing} />,
+    <I18nProvider locale={locale} messages={MESSAGES[locale]}>
+      <Home id={id} onOpen={nothing} onPictures={nothing} onSample={nothing} theme="light" onToggleTheme={nothing} />
+    </I18nProvider>,
   );
 }
 
-export const renderBlogIndex = (posts: Post[]) => renderToString(<BlogIndex posts={posts} />);
-export const renderPost = (post: Post) => renderToString(<BlogPost post={post} />);
+const english = (node: React.ReactNode) =>
+  renderToString(
+    <I18nProvider locale="en" messages={en}>
+      {node}
+    </I18nProvider>,
+  );
+export const renderBlogIndex = (posts: Post[]) => english(<BlogIndex posts={posts} />);
+export const renderPost = (post: Post) => english(<BlogPost post={post} />);

@@ -1,6 +1,7 @@
 import type { ArrangedPage, PageSource } from '@pdfsdk/editor';
 import type { PdfEditorInstance } from '@pdfsdk/react';
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
+import { useI18n } from './i18n';
 import { Icon } from './icons';
 import { track } from './telemetry';
 
@@ -73,6 +74,7 @@ export function Pages({
   onClose: () => void;
   onMessage: (message: string) => void;
 }) {
+  const p = useI18n().t.pages;
   const own = useMemo(() => editor.pages(), [editor]);
   const [sources, setSources] = useState<{ source: PageSource; bytes?: Uint8Array; name: string }[]>([
     { source: own, name: fileName },
@@ -113,7 +115,7 @@ export function Pages({
     setItems((list) => list.map((i) => (keys.has(i.key) ? { ...i, rotate: (i.rotate + by + 360) % 360 } : i)));
   const remove = (keys: Set<string>) => {
     if (items.every((i) => keys.has(i.key))) {
-      onMessage('A PDF needs at least one page.');
+      onMessage(p.atLeastOne);
       return;
     }
     setItems((list) => list.filter((i) => !keys.has(i.key)));
@@ -136,7 +138,7 @@ export function Pages({
   };
 
   const addFiles = async (files: FileList) => {
-    setBusy('Opening…');
+    setBusy(p.opening);
     try {
       for (const file of [...files]) {
         const opened = await editor.openPages(file);
@@ -159,7 +161,7 @@ export function Pages({
   const plan = (list: Item[]): ArrangedPage[] => list.map(({ source, page, rotate }) => ({ source, page, rotate }));
 
   const extract = async () => {
-    setBusy('Preparing…');
+    setBusy(p.preparing);
     try {
       track('pages.extract');
       const bytes = await editor.arrangePages(plan(targets), others());
@@ -167,7 +169,7 @@ export function Pages({
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${fileName.replace(/\.pdf$/i, '')} (pages ${numbers.join(', ')}).pdf`;
+      link.download = p.extractedName(fileName.replace(/\.pdf$/i, ''), numbers);
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (error) {
@@ -179,7 +181,7 @@ export function Pages({
 
   const done = async () => {
     if (!changed) return onClose();
-    setBusy('Applying…');
+    setBusy(p.applying);
     try {
       track('pages.apply');
       await editor.applyPageArrangement(plan(items), others());
@@ -239,13 +241,13 @@ export function Pages({
               >
                 <Thumbnail source={source} page={item.page} rotate={item.rotate} />
                 <div className="page-card__actions" onClick={(e) => e.stopPropagation()}>
-                  <button type="button" className="pill pill--icon" aria-label="Rotate left" onClick={() => rotate(one, -90)}>
+                  <button type="button" className="pill pill--icon" aria-label={p.rotateLeft} onClick={() => rotate(one, -90)}>
                     <Icon name="rotateLeft" size={16} />
                   </button>
-                  <button type="button" className="pill pill--icon" aria-label="Rotate right" onClick={() => rotate(one, 90)}>
+                  <button type="button" className="pill pill--icon" aria-label={p.rotateRight} onClick={() => rotate(one, 90)}>
                     <Icon name="rotateRight" size={16} />
                   </button>
-                  <button type="button" className="pill pill--icon" aria-label="Delete page" onClick={() => remove(one)}>
+                  <button type="button" className="pill pill--icon" aria-label={p.deletePage} onClick={() => remove(one)}>
                     <Icon name="trash" size={16} />
                   </button>
                 </div>
@@ -260,21 +262,21 @@ export function Pages({
       </div>
 
       <div className="bottom-center">
-        <nav className="bar" aria-label="Page tools">
+        <nav className="bar" aria-label={p.tools}>
           <div className="group">
             <button
               type="button"
               className="pill"
               onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((i) => i.key)))}
             >
-              {selected.size === items.length ? 'Select none' : 'Select all'}
+              {selected.size === items.length ? p.selectNone : p.selectAll}
             </button>
           </div>
           <div className="group">
             <button
               type="button"
               className="pill pill--icon"
-              aria-label="Rotate selected left"
+              aria-label={p.rotateSelectedLeft}
               disabled={!targets.length}
               onClick={() => rotate(selected, -90)}
             >
@@ -283,7 +285,7 @@ export function Pages({
             <button
               type="button"
               className="pill pill--icon"
-              aria-label="Rotate selected right"
+              aria-label={p.rotateSelectedRight}
               disabled={!targets.length}
               onClick={() => rotate(selected, 90)}
             >
@@ -292,7 +294,7 @@ export function Pages({
             <button
               type="button"
               className="pill pill--icon"
-              aria-label="Delete selected"
+              aria-label={p.deleteSelected}
               disabled={!targets.length}
               onClick={() => remove(selected)}
             >
@@ -301,10 +303,10 @@ export function Pages({
           </div>
           <div className="group">
             <button type="button" className="pill" disabled={!targets.length || !!busy} onClick={() => void extract()}>
-              <Icon name="split" /> Extract
+              <Icon name="split" /> {p.extract}
             </button>
             <button type="button" className="pill" disabled={!!busy} onClick={() => addInput.current?.click()}>
-              <Icon name="merge" /> Add PDF
+              <Icon name="merge" /> {p.addPdf}
             </button>
           </div>
         </nav>
@@ -314,8 +316,8 @@ export function Pages({
         <div className="notice notice--plain">
           {busy ?? (
             <>
-              <strong>{items.length} pages</strong>
-              {selected.size ? ` · ${selected.size} selected` : ' · drag to reorder, click to select'}
+              <strong>{p.count(items.length)}</strong>
+              {` · ${selected.size ? p.selected(selected.size) : p.hint}`}
             </>
           )}
         </div>
@@ -324,10 +326,10 @@ export function Pages({
       <div className="pages__done">
         <div className="bar">
           <button type="button" className="pill" onClick={onClose} disabled={!!busy}>
-            Cancel
+            {p.cancel}
           </button>
           <button type="button" className="pill pill--ink" onClick={() => void done()} disabled={!!busy}>
-            {changed ? 'Apply changes' : 'Done'}
+            {changed ? p.apply : p.done}
           </button>
         </div>
       </div>

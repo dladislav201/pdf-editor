@@ -1,0 +1,405 @@
+/**
+ * English: the reference every other language follows (same keys, same
+ * shape). Functions take numbers so each language can say them its own way.
+ */
+
+/** The words of one page people can land on from a search. */
+export interface LandingText {
+  /** Link text in the footer. */
+  name: string;
+  /** The page title: what people search for first. */
+  title: string;
+  description: string;
+  h1: string;
+  lead: string;
+  steps: [string, string, string];
+  faq: { q: string; a: string }[];
+}
+
+const PRIVATE = {
+  q: 'Are my files uploaded?',
+  a: 'No. The PDF is opened, changed and saved in your browser, on your device. Nothing is sent to a server, so it works with confidential documents too.',
+};
+const FREE = { q: 'Is it free?', a: 'Yes, with no sign-up, no watermark and no limit on the number of files.' };
+
+export const en = {
+  home: {
+    sections: 'Sections',
+    home: 'Home',
+    openPdf: 'Open PDF',
+    feedback: 'Send feedback',
+    theme: 'Switch theme',
+    language: 'Language',
+    choosePdf: 'Choose a PDF',
+    choosePictures: 'Choose pictures',
+    dropHint: 'or drop it anywhere on this page — photos become a PDF',
+    privacy: 'Processed on your device. Nothing is uploaded.',
+    tools: 'Tools',
+    noPdf: 'No PDF at hand? Try',
+    samples: { contract: 'A contract', scan: 'A scanned invoice', form: 'A form' },
+    how: 'How it works',
+    questions: 'Questions',
+  },
+  cards: {
+    editText: { title: 'Edit text', text: 'Change words and numbers in place, in the document’s own fonts.' },
+    editScan: { title: 'Edit a scan', text: 'Recognize scanned pages, then edit them in the scan’s own letters.' },
+    annotate: { title: 'Annotate', text: 'Highlight, draw, add shapes and notes.' },
+    fillForm: { title: 'Fill a form', text: 'Type into the fields, tick the boxes, pick from lists.' },
+    sign: { title: 'Sign', text: 'Draw, type or upload your signature and place it.' },
+    pages: { title: 'Organize pages', text: 'Merge, split, rotate, delete and reorder.' },
+    compress: { title: 'Compress', text: 'Make a PDF smaller for email: scans and photos shrink, text stays sharp.' },
+    convert: { title: 'Convert', text: 'Turn photos into a PDF, or save every page as a picture.' },
+  },
+  footer: {
+    allTools: 'All tools',
+    guides: 'Guides',
+    privacy: 'No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.',
+  },
+  workspace: {
+    back: 'Back to start',
+    find: 'Find in document',
+    findShortcut: 'Find in document (⌘F)',
+    findTitle: 'Find (⌘F)',
+    match: (active: number, count: number) => `${active} of ${count}`,
+    searching: 'Searching…',
+    noResults: 'No results',
+    previousMatch: 'Previous match',
+    nextMatch: 'Next match',
+    closeSearch: 'Close search',
+    edit: 'Edit',
+    pages: 'Pages',
+    scanPages: (pages: number[]) => (pages.length === 1 ? `Page ${pages[0]! + 1} is a scan` : `${pages.length} pages are a scan`),
+    recognize: 'Recognize text',
+    reading: (page: number, total: number) => `Reading page ${page} of ${total}…`,
+    recognized: (words: number) => `${words} words recognized.`,
+    recognizedHint: 'Pick Edit text and click a line to change it.',
+    fields: (count: number) => `${count} fields to fill.`,
+    fieldsHint: 'Click one and type; Tab moves to the next.',
+    theme: 'Switch theme',
+    zoomOut: 'Zoom out',
+    zoomIn: 'Zoom in',
+    fitWidth: 'Fit width',
+    download: 'Download',
+    edits: (count: number) => (count === 1 ? '1 edit' : `${count} edits`),
+    moreSave: 'More ways to save',
+    savePdf: { title: 'PDF', text: 'With your edits; annotations stay editable' },
+    saveCompressed: { title: 'Compressed PDF', text: 'Smaller pictures and scans' },
+    savePictures: { title: 'Pictures', text: 'Each page as PNG or JPG' },
+    undo: 'Undo',
+    redo: 'Redo',
+    colour: (colour: string) => `Colour ${colour}`,
+    delete: 'Delete',
+    editTextScan: 'Click any line on the scan: its text is read first, then you can edit it.',
+    editTextReading: 'Reading the scan… the line you clicked opens when it’s done.',
+    editTextHint: 'Click a paragraph to edit it. Esc to finish.',
+    placeSignature: 'Click where your signature goes. Then drag it, or resize it from the corner.',
+    tools: 'Tools',
+    tool: { select: 'Select', editText: 'Edit text', highlight: 'Highlight', ink: 'Draw', rectangle: 'Shape', text: 'Note' },
+    sign: 'Sign',
+    feedback: 'Send feedback',
+  },
+  pages: {
+    atLeastOne: 'A PDF needs at least one page.',
+    opening: 'Opening…',
+    preparing: 'Preparing…',
+    applying: 'Applying…',
+    extractedName: (name: string, pages: number[]) => `${name} (pages ${pages.join(', ')}).pdf`,
+    rotateLeft: 'Rotate left',
+    rotateRight: 'Rotate right',
+    deletePage: 'Delete page',
+    tools: 'Page tools',
+    selectAll: 'Select all',
+    selectNone: 'Select none',
+    rotateSelectedLeft: 'Rotate selected left',
+    rotateSelectedRight: 'Rotate selected right',
+    deleteSelected: 'Delete selected',
+    extract: 'Extract',
+    addPdf: 'Add PDF',
+    count: (pages: number) => (pages === 1 ? '1 page' : `${pages} pages`),
+    selected: (count: number) => `${count} selected`,
+    hint: 'drag to reorder, click to select',
+    cancel: 'Cancel',
+    apply: 'Apply changes',
+    done: 'Done',
+  },
+  sign: {
+    title: 'Add your signature',
+    signHere: 'Sign here',
+    private: 'Your signature stays in this browser. Nothing is uploaded.',
+    close: 'Close',
+    draw: 'Draw',
+    type: 'Type',
+    upload: 'Upload',
+    drawHint: 'Draw with your mouse, trackpad or finger',
+    clear: 'Clear',
+    name: 'Your name',
+    fonts: { script: 'Script', hand: 'Hand', formal: 'Formal' },
+    chooseImage: 'Choose an image',
+    imageHint: 'A photo of your signature on white paper works best: the paper turns transparent.',
+    ink: 'Ink colour',
+    inks: { black: 'Black', blue: 'Blue' },
+    saved: 'Saved',
+    useSaved: 'Use a saved signature',
+    cancel: 'Cancel',
+    place: 'Place signature',
+  },
+  compress: {
+    title: 'Compress PDF',
+    levels: {
+      light: { label: 'Light', text: 'Pictures at 200 dpi. Best quality.' },
+      recommended: { label: 'Recommended', text: 'Pictures at 150 dpi. Good for email and screens.' },
+      strong: { label: 'Strong', text: 'Pictures at 110 dpi. Smallest file.' },
+    },
+    note: 'Text and drawings stay sharp; only pictures and scans get smaller. Done on your device.',
+    smaller: (percent: number) => `${percent}% smaller`,
+    smallest: 'Already as small as it gets',
+    cancel: 'Cancel',
+    download: 'Download',
+    run: 'Compress',
+    running: 'Compressing…',
+    fileName: (name: string) => `${name} (compressed).pdf`,
+  },
+  images: {
+    title: 'Save pages as pictures',
+    format: 'Format',
+    resolution: 'Resolution',
+    note: 'One picture per page; several pages come as a ZIP. Edits and annotations are included.',
+    progress: (page: number, total: number) => `Page ${page} of ${total}…`,
+    cancel: 'Cancel',
+    save: 'Save pictures',
+    pageName: (name: string, page: number) => `${name} - page ${page}`,
+    zipName: (name: string) => `${name} (pages).zip`,
+  },
+  feedback: {
+    title: 'Send feedback',
+    message: 'Your feedback',
+    placeholder: 'What worked, what didn’t, what you’d like to see…',
+    email: 'Email (optional)',
+    emailPlaceholder: 'Email, if you’d like an answer (optional)',
+    note: 'Your files are never sent. Don’t paste anything private here.',
+    cancel: 'Cancel',
+    send: 'Send',
+    sending: 'Sending…',
+    thanks: 'Thank you',
+    read: 'We read every note.',
+    answer: 'If you asked something, we’ll write back.',
+    done: 'Done',
+    invalid: 'Please check the message and email.',
+    failed: 'Could not send it. Try again later.',
+  },
+  dialog: { close: 'Close' },
+  /** The editor's own words (see EditorMessages). */
+  editor: {
+    empty: 'Open a PDF to get started.',
+    loading: 'Loading…',
+    passwordProtected: 'This PDF is password-protected.',
+    invalidPdf: 'This file is not a valid PDF.',
+    openFailed: 'Could not open the PDF.',
+  },
+  notFound: { title: 'Page not found', h1: 'This page doesn’t exist, but the editor does.' },
+  landings: {
+    home: {
+      name: 'Edit PDF',
+      title: 'Edit PDF online, free and private',
+      description:
+        'Edit any PDF in your browser: change text, edit scans, sign, fill forms, compress and organize pages. Free, no sign-up, files never leave your device.',
+      h1: 'Edit any PDF, right in your browser.',
+      lead: 'Change text, fix scans, sign and mark up. Your files never leave your device.',
+      steps: ['Choose a PDF or drop it on the page.', 'Pick a tool: edit text, sign, annotate, organize pages.', 'Download the edited PDF.'],
+      faq: [
+        PRIVATE,
+        FREE,
+        {
+          q: 'Can I change the text that is already in the PDF?',
+          a: 'Yes. Click a paragraph with Edit text and type: lines wrap as you write, in the document’s own fonts.',
+        },
+        { q: 'Does it work on a phone?', a: 'Yes, in any modern browser: Chrome, Safari, Edge and Firefox, on a computer or a phone.' },
+      ],
+    },
+    editText: {
+      name: 'Edit PDF text',
+      title: 'Edit PDF text online, in the original font',
+      description:
+        'Change words, numbers and whole paragraphs in a PDF. Text wraps as you type and keeps the document’s fonts. Free, private, in your browser.',
+      h1: 'Edit the text of a PDF.',
+      lead: 'Click a paragraph and type. Lines wrap, alignment and fonts stay as they were.',
+      steps: ['Choose the PDF.', 'Click the paragraph you want to change and type.', 'Download the PDF with the new text.'],
+      faq: [
+        {
+          q: 'Will the edited text look like the rest?',
+          a: 'It is set in the PDF’s own font. If that font lacks a letter you type, a matching open font fills in just that letter.',
+        },
+        { q: 'Can I still search and copy the text afterwards?', a: 'Yes. The new text is real text in the saved PDF, not a picture.' },
+        PRIVATE,
+      ],
+    },
+    editScan: {
+      name: 'Edit a scanned PDF',
+      title: 'Edit a scanned PDF online, in the scan’s own letters',
+      description:
+        'Change text on a scanned PDF: the page is read with OCR, and your edits are set in letters cut from the scan itself, stamps and signatures kept. Free and private.',
+      h1: 'Edit a scanned PDF.',
+      lead: 'The scan is read, then your words are set in letters taken from the scan itself, so they blend in.',
+      steps: ['Choose the scanned PDF.', 'Click a line: its text is read first, then you can edit it.', 'Download the PDF.'],
+      faq: [
+        {
+          q: 'How does editing a scan work?',
+          a: 'The page is recognized (OCR) in your browser. When you change a line, it is redrawn from the scan’s own letters, on the scan’s slant, and the rest of the page stays untouched.',
+        },
+        { q: 'What about stamps and signatures?', a: 'They stay. Only the letters you change are redrawn; a stamp over them is kept.' },
+        { q: 'Which languages are recognized?', a: 'English and Ukrainian.' },
+        PRIVATE,
+      ],
+    },
+    ocr: {
+      name: 'OCR PDF',
+      title: 'OCR PDF online: make a scanned PDF searchable',
+      description:
+        'Recognize the text of scanned PDF pages and add it as an invisible text layer, so you can search, select and copy it. Free OCR in your browser.',
+      h1: 'Make a scanned PDF searchable.',
+      lead: 'Text recognition adds an invisible layer of text under the scan: the page looks the same, but you can search and copy it.',
+      steps: ['Choose the scanned PDF.', 'Its pages are read in your browser.', 'Download a searchable PDF.'],
+      faq: [
+        {
+          q: 'Does OCR change how the page looks?',
+          a: 'No. The recognized text is invisible and sits under the scan, as in Acrobat’s Recognize text.',
+        },
+        { q: 'Which languages are recognized?', a: 'English and Ukrainian.' },
+        PRIVATE,
+      ],
+    },
+    sign: {
+      name: 'Sign PDF',
+      title: 'Sign PDF online: draw, type or upload your signature',
+      description:
+        'Add your signature to a PDF: draw it, type it in a handwriting font or upload a picture, then place, move and resize it. Free, private, no sign-up.',
+      h1: 'Sign a PDF.',
+      lead: 'Draw, type or upload your signature, then place it where it goes.',
+      steps: ['Choose the PDF.', 'Draw, type or upload your signature.', 'Place it, resize it, and download.'],
+      faq: [
+        { q: 'Is my signature saved?', a: 'Only in your browser, so you can reuse it next time. It is never uploaded.' },
+        {
+          q: 'Is this a digital (certificate) signature?',
+          a: 'No. It is a picture of your signature on the page, like signing a printout. Certificate signatures are not supported yet.',
+        },
+        FREE,
+      ],
+    },
+    fillForm: {
+      name: 'Fill PDF form',
+      title: 'Fill PDF forms online',
+      description:
+        'Type into PDF form fields, tick check boxes, pick from lists and save the filled form. Works with any script. Free, private, in your browser.',
+      h1: 'Fill in a PDF form.',
+      lead: 'Type into the fields, tick the boxes, pick from the lists. Tab moves to the next field.',
+      steps: ['Choose the PDF form.', 'Fill in the fields.', 'Download the filled form.'],
+      faq: [
+        {
+          q: 'Will the form still be editable after saving?',
+          a: 'Yes. The values are saved in the form fields, so you or someone else can change them later.',
+        },
+        { q: 'My PDF has no fields. Can I still fill it?', a: 'Yes: use Note to type text anywhere on the page, or Sign to add a signature.' },
+        PRIVATE,
+      ],
+    },
+    annotate: {
+      name: 'Annotate PDF',
+      title: 'Annotate PDF online: highlight, draw, add notes',
+      description:
+        'Highlight text, draw, add shapes and notes to a PDF. Annotations stay editable in any PDF viewer. Free, private, in your browser.',
+      h1: 'Highlight and annotate a PDF.',
+      lead: 'Highlight, draw, add shapes and notes. They are saved as real PDF annotations.',
+      steps: ['Choose the PDF.', 'Highlight, draw or add a note.', 'Download the annotated PDF.'],
+      faq: [
+        {
+          q: 'Can others see and change my annotations?',
+          a: 'Yes. They are saved as standard PDF annotations, which other PDF viewers show and can edit.',
+        },
+        PRIVATE,
+        FREE,
+      ],
+    },
+    compress: {
+      name: 'Compress PDF',
+      title: 'Compress PDF online: make a PDF smaller for email',
+      description:
+        'Reduce the size of a PDF: scans and photos are made smaller while text stays sharp. Three levels, free, and your file never leaves your device.',
+      h1: 'Compress a PDF.',
+      lead: 'Make a PDF small enough for email: pictures and scans shrink, text and drawings stay sharp.',
+      steps: ['Choose the PDF.', 'Pick light, recommended or strong.', 'Download the smaller PDF.'],
+      faq: [
+        { q: 'Will the text get blurry?', a: 'No. Only pictures and scanned pages are made smaller; text and vector drawings are not touched.' },
+        {
+          q: 'How much smaller will it get?',
+          a: 'It depends on the pictures in it. A scanned document often shrinks to a third of its size on Strong.',
+        },
+        PRIVATE,
+      ],
+    },
+    merge: {
+      name: 'Merge PDF',
+      title: 'Merge PDF files online',
+      description: 'Combine several PDFs into one and put the pages in the order you want. Free, private, no upload.',
+      h1: 'Merge PDF files.',
+      lead: 'Add pages from other PDFs, drag them into order, and save one file.',
+      steps: ['Choose the first PDF.', 'Add the other PDFs and drag pages into order.', 'Apply and download.'],
+      faq: [{ q: 'Do links and annotations survive?', a: 'Yes, they travel with their pages.' }, PRIVATE, FREE],
+    },
+    split: {
+      name: 'Split PDF',
+      title: 'Split PDF online: extract pages into a new PDF',
+      description: 'Pick the pages you need and save them as a new PDF. Free, private, in your browser.',
+      h1: 'Split a PDF.',
+      lead: 'Select the pages you need and extract them into a new PDF.',
+      steps: ['Choose the PDF.', 'Select pages (Shift-click for a range).', 'Extract them as a new PDF.'],
+      faq: [{ q: 'Is the original file changed?', a: 'No. The extracted pages are saved as a new file.' }, PRIVATE, FREE],
+    },
+    rotate: {
+      name: 'Rotate PDF',
+      title: 'Rotate PDF pages online',
+      description: 'Turn one page or the whole PDF left or right and save it. Free, private, in your browser.',
+      h1: 'Rotate PDF pages.',
+      lead: 'Turn single pages or all of them, then save the PDF the right way up.',
+      steps: ['Choose the PDF.', 'Rotate the pages that need it.', 'Apply and download.'],
+      faq: [PRIVATE, FREE],
+    },
+    deletePages: {
+      name: 'Delete PDF pages',
+      title: 'Delete pages from a PDF online',
+      description: 'Remove pages you don’t need from a PDF, reorder the rest and save. Free, private, in your browser.',
+      h1: 'Delete pages from a PDF.',
+      lead: 'Select the pages you don’t need, delete them, and save the rest.',
+      steps: ['Choose the PDF.', 'Select the pages to remove and delete them.', 'Apply and download.'],
+      faq: [PRIVATE, FREE],
+    },
+    pdfToJpg: {
+      name: 'PDF to JPG',
+      title: 'PDF to JPG or PNG online',
+      description:
+        'Save every page of a PDF as a JPG or PNG picture at 72, 150 or 300 dpi. Several pages come as a ZIP. Free and private.',
+      h1: 'Turn PDF pages into pictures.',
+      lead: 'Every page as a JPG or PNG, edits and annotations included.',
+      steps: ['Choose the PDF.', 'Pick JPG or PNG and a resolution.', 'Save the pictures (a ZIP for several pages).'],
+      faq: [{ q: 'Which resolution should I pick?', a: '150 dpi for screens and email, 300 dpi for printing.' }, PRIVATE, FREE],
+    },
+    jpgToPdf: {
+      name: 'JPG to PDF',
+      title: 'JPG to PDF online: turn photos into a PDF',
+      description: 'Turn JPG, PNG or WebP photos into one PDF, a page per picture, then edit or sign it. Free, private, in your browser.',
+      h1: 'Turn photos into a PDF.',
+      lead: 'Choose one or more pictures: each becomes a page of one PDF.',
+      steps: ['Choose your JPG, PNG or WebP pictures.', 'Reorder the pages if needed.', 'Download the PDF.'],
+      faq: [
+        {
+          q: 'Are the photos made smaller?',
+          a: 'JPGs go into the PDF as they are, so nothing is lost. Use Compress afterwards for a smaller file.',
+        },
+        PRIVATE,
+        FREE,
+      ],
+    },
+  } satisfies Record<string, LandingText>,
+};
+
+/** Every language has exactly these words, with the same arguments. */
+export type Messages = typeof en;

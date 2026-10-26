@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Dialog } from './ExportDialogs';
+import { useI18n } from './i18n';
 import { Icon } from './icons';
 import { sendFeedback, track } from './telemetry';
 
 /** A note to us: what worked, what didn't. An email only if they want an answer. */
 export function FeedbackDialog({ onClose }: { onClose: () => void }) {
+  const f = useI18n().t.feedback;
   const [message, setMessage] = useState('');
   const [email, setEmail] = useState('');
   // Hidden from people; bots fill it in.
@@ -20,18 +22,20 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
       track('feedback.sent');
       setState('sent');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error && e.message === 'invalid' ? f.invalid : f.failed);
       setState('editing');
     }
   };
 
   if (state === 'sent') {
     return (
-      <Dialog title="Thank you" onClose={onClose}>
-        <p className="dialog__text">We read every note. {email ? 'If you asked something, we’ll write back.' : ''}</p>
+      <Dialog title={f.thanks} onClose={onClose}>
+        <p className="dialog__text">
+          {f.read} {email ? f.answer : ''}
+        </p>
         <div className="modal__foot">
           <button type="button" className="pill pill--ink" onClick={onClose}>
-            Done
+            {f.done}
           </button>
         </div>
       </Dialog>
@@ -39,7 +43,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Dialog title="Send feedback" onClose={onClose}>
+    <Dialog title={f.title} onClose={onClose}>
       <form
         className="feedback"
         onSubmit={(e) => {
@@ -52,16 +56,16 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
           value={message}
           maxLength={4000}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="What worked, what didn’t, what you’d like to see…"
-          aria-label="Your feedback"
+          placeholder={f.placeholder}
+          aria-label={f.message}
         />
         <input
           type="email"
           value={email}
           maxLength={200}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email, if you’d like an answer (optional)"
-          aria-label="Email (optional)"
+          placeholder={f.emailPlaceholder}
+          aria-label={f.email}
         />
         <input
           className="feedback__trap"
@@ -71,14 +75,14 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
           onChange={(e) => setWebsite(e.target.value)}
           aria-hidden="true"
         />
-        <p className="dialog__note">Your files are never sent. Don’t paste anything private here.</p>
+        <p className="dialog__note">{f.note}</p>
         {error && <p className="dialog__error">{error}</p>}
         <div className="modal__foot">
           <button type="button" className="pill" onClick={onClose}>
-            Cancel
+            {f.cancel}
           </button>
           <button type="submit" className="pill pill--ink" disabled={!message.trim() || state === 'sending'}>
-            <Icon name="send" /> {state === 'sending' ? 'Sending…' : 'Send'}
+            <Icon name="send" /> {state === 'sending' ? f.sending : f.send}
           </button>
         </div>
       </form>

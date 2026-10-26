@@ -87,6 +87,16 @@ export type DocumentSource = string | URL | ArrayBuffer | Uint8Array | Blob;
 
 export type ZoomValue = number | 'fit-width';
 
+/** Words the editor shows on its own, in English unless given. */
+export interface EditorMessages {
+  /** No document yet. */
+  empty: string;
+  loading: string;
+  passwordProtected: string;
+  invalidPdf: string;
+  openFailed: string;
+}
+
 export interface EditorOptions {
   /** Element the editor mounts into. It should have an explicit height. */
   container: HTMLElement;
@@ -117,6 +127,8 @@ export interface EditorOptions {
    * and English. Defaults to `ocr/` under `assetsUrl`.
    */
   ocrUrl?: string;
+  /** The editor's own words, for other languages. */
+  messages?: Partial<EditorMessages>;
   /**
    * With the Edit text tool, a click on a scanned page whose text isn't
    * recognized yet reads that page (as `recognizeText` does) and then opens

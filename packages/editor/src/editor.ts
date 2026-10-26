@@ -41,6 +41,7 @@ import type {
   DocumentSource,
   EditorEventMap,
   CompressLevel,
+  EditorMessages,
   EditorOptions,
   PageSource,
   Point,
@@ -187,11 +188,19 @@ interface ScanEdit {
 
 const abortError = (message: string) => Object.assign(new Error(message), { name: 'AbortError' });
 
-function describeLoadError(error: unknown): string {
+const MESSAGES: EditorMessages = {
+  empty: 'Open a PDF to get started.',
+  loading: 'Loading…',
+  passwordProtected: 'This PDF is password-protected.',
+  invalidPdf: 'This file is not a valid PDF.',
+  openFailed: 'Could not open the PDF.',
+};
+
+function describeLoadError(error: unknown, messages: EditorMessages): string {
   const name = (error as { name?: string })?.name;
-  if (name === 'PasswordException') return 'This PDF is password-protected.';
-  if (name === 'InvalidPDFException') return 'This file is not a valid PDF.';
-  return error instanceof Error ? error.message : 'Could not open the PDF.';
+  if (name === 'PasswordException') return messages.passwordProtected;
+  if (name === 'InvalidPDFException') return messages.invalidPdf;
+  return error instanceof Error ? error.message : messages.openFailed;
 }
 
 /**
@@ -209,6 +218,7 @@ export class PdfEditor {
   private readonly fallbackFontsUrl: string;
   private readonly ocrUrl: string;
   private readonly recognizeOnEdit: boolean;
+  private readonly messages: EditorMessages;
   private readonly license: Promise<LicenseInfo>;
   private ocr: { engine: TesseractEngine; languages: string } | null = null;
   private recognizing = false;
@@ -296,6 +306,7 @@ export class PdfEditor {
     this.fallbackFontsUrl = withTrailingSlash(options.fallbackFontsUrl ?? `${this.assetsUrl}fonts/`);
     this.ocrUrl = withTrailingSlash(options.ocrUrl ?? `${this.assetsUrl}ocr/`);
     this.recognizeOnEdit = options.recognizeOnEdit ?? true;
+    this.messages = { ...MESSAGES, ...options.messages };
     const { workerUrl } = options;
     this.engine = new EngineClient(
       () =>
@@ -333,7 +344,7 @@ export class PdfEditor {
     if (this.toolbar) this.root.append(this.toolbar.el);
     this.root.append(this.viewportEl);
     container.append(this.root);
-    this.showMessage('Open a PDF to get started.');
+    this.showMessage(this.messages.empty);
 
     this.measureCtx = document.createElement('canvas').getContext('2d');
     this.fontBytes = options.fontUrl ? this.loadFont(options.fontUrl) : null;
@@ -382,7 +393,7 @@ export class PdfEditor {
   async load(source: DocumentSource): Promise<void> {
     const token = ++this.loadToken;
     this.commitTextEditor();
-    this.showMessage('Loading…');
+    this.showMessage(this.messages.loading);
     try {
       const file = await readSource(source);
       if (token !== this.loadToken) return;
@@ -442,7 +453,7 @@ export class PdfEditor {
       this.prefetchScanLetters();
     } catch (error) {
       if (token !== this.loadToken) return;
-      this.showMessage(describeLoadError(error));
+      this.showMessage(describeLoadError(error, this.messages));
       this.events.emit('error', { error });
       throw error;
     }

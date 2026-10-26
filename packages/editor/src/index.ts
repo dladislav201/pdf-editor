@@ -21,6 +21,7 @@ export type {
   Annotation,
   DocumentSource,
   EditorEventMap,
+  EditorMessages,
   EditorOptions,
   HighlightAnnotation,
   InkAnnotation,

@@ -2,7 +2,8 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice-en.pdf?url';
 import type { PageImage } from '@pdfsdk/editor';
 import { Home, type OpenRequest } from './Home';
-import { landingFor, LANDINGS } from './site';
+import { useI18n } from './i18n';
+import { routeOf } from './site';
 import { track } from './telemetry';
 import { applyTheme, initialTheme, type Theme } from './theme';
 
@@ -21,9 +22,10 @@ function openedWith(request: OpenRequest): string {
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [open, setOpen] = useState<OpenRequest | null>(null);
+  const { locale } = useI18n();
   // Every tool page is the start page with its own words; an unknown path shows the start page.
-  const [page] = useState(() => landingFor(location.pathname) ?? LANDINGS[0]!);
-  useEffect(() => track(`view.${page.path === '/' ? 'home' : page.path.slice(1)}`), [page]);
+  const [id] = useState(() => routeOf(location.pathname)?.id ?? 'home');
+  useEffect(() => track(`view.${id}.${locale}`), [id, locale]);
 
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -94,7 +96,7 @@ export function App() {
     </Suspense>
   ) : (
     <Home
-      page={page}
+      id={id}
       onOpen={(request) => {
         track(openedWith(request));
         show(request);

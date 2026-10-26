@@ -74,6 +74,22 @@ The site is built for search as well as for use (`apps/demo`):
 - **Icons and a preview picture**: `public/favicon.svg`, PNG icons and
   `public/og.png` (1200×630), drawn by `scripts/make-images.mjs`.
 
+**Languages**: English, German, Norwegian (Bokmål), Swedish and Ukrainian.
+Every word of the site and the editor's own messages are in
+`apps/demo/src/i18n/<code>.ts`: `en.ts` is the reference, and the others
+must have the same keys and arguments (TypeScript checks it); counts are
+functions, so each language says "1 Seite / 2 Seiten", "1 сторінка / 2
+сторінки / 5 сторінок" its own way. English lives at `/`, the others under
+`/de`, `/nb`, `/sv`, `/uk`, with the tool pages at addresses in their own
+words (`/de/pdf-komprimieren`, `/sv/komprimera-pdf`; `src/site.ts`). Each
+page is prerendered with its `lang`, `og:locale` and `hreflang` links to
+the other languages (and `x-default` to English), and the sitemap lists
+the alternates. A language menu on the start page goes to the same page in
+another language; an English page offers the visitor's browser language
+once. The page's dictionary alone is downloaded. The editor takes its
+words through the new `messages` option (`EditorMessages`). Guides and scan
+recognition stay English (and Ukrainian, for OCR).
+
 **Guides** (`/blog`): step-by-step articles for the longer searches people
 make ("how to edit a scanned PDF", "compress a PDF for email"…), each
 leading to its tool page. A guide is a Markdown file in

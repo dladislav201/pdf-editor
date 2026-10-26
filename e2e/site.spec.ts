@@ -194,3 +194,31 @@ test('a tool page opens its tool', async ({ page }) => {
   await page.locator('input[type=file]').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
   await expect(page.getByRole('dialog', { name: 'Add your signature' })).toBeVisible();
 });
+
+test('every language has its own pages, linked to each other, and a German page works in German', async ({ page, request }, info) => {
+  const bytes = await longPdf(1);
+  if (info.project.name === 'chromium') {
+    const html = await (await request.get('/de/pdf-komprimieren')).text();
+    expect(html).toContain('<html lang="de">');
+    expect(html).toContain('<h1>Ein PDF komprimieren.</h1>');
+    for (const [lang, path] of [
+      ['en', '/compress-pdf'],
+      ['nb', '/nb/komprimer-pdf'],
+      ['sv', '/sv/komprimera-pdf'],
+      ['uk', '/uk/stysnuty-pdf'],
+      ['x-default', '/compress-pdf'],
+    ]) {
+      expect(html).toMatch(new RegExp(`hreflang="${lang}" href="[^"]+${path}"`));
+    }
+    const sitemap = await (await request.get('/sitemap.xml')).text();
+    expect(sitemap.match(/<loc>/g)!.length).toBeGreaterThanOrEqual(70);
+  }
+  await page.goto('/uk');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Редагуйте будь-який PDF просто в браузері.');
+  await page.getByRole('button', { name: 'Мова' }).click();
+  await page.getByRole('menuitem', { name: 'Deutsch' }).click();
+  await expect(page).toHaveURL(/\/de$/);
+  await page.locator('input[type=file]').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
+  await expect(page.getByRole('navigation', { name: 'Werkzeuge' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Herunterladen/ })).toBeVisible();
+});

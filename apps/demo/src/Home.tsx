@@ -1,9 +1,10 @@
-import { useRef, useState, type DragEvent } from 'react';
-import { FeedbackDialog } from './FeedbackDialog';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import type { ToolName } from '@pdfsdk/editor';
-import { Icon, type IconName } from './icons';
+import { FeedbackDialog } from './FeedbackDialog';
 import { Footer } from './Footer';
-import type { Landing } from './site';
+import { browserLocale, LANGUAGE_NAMES, LOCALES, SUGGEST, useI18n, type Locale, type Messages } from './i18n';
+import { Icon, type IconName } from './icons';
+import { LANDING_TOOLS, landingPath, type LandingId } from './site';
 
 export interface OpenRequest {
   file: File;
@@ -21,19 +22,78 @@ export interface OpenRequest {
 const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
 const isPicture = (f: File) => /^image\/(png|jpe?g|webp)$/.test(f.type);
 
-const TOOLS: { icon: IconName; title: string; text: string; open?: Omit<OpenRequest, 'file'> }[] = [
-  { icon: 'editText', title: 'Edit text', text: 'Change words and numbers in place, in the document’s own fonts.', open: { tool: 'editText' } },
-  { icon: 'scan', title: 'Edit a scan', text: 'Recognize scanned pages, then edit them in the scan’s own letters.', open: { tool: 'editText', recognize: true } },
-  { icon: 'highlight', title: 'Annotate', text: 'Highlight, draw, add shapes and notes.', open: { tool: 'highlight' } },
-  { icon: 'form', title: 'Fill a form', text: 'Type into the fields, tick the boxes, pick from lists.', open: { tool: 'select' } },
-  { icon: 'sign', title: 'Sign', text: 'Draw, type or upload your signature and place it.', open: { sign: true } },
-  { icon: 'pages', title: 'Organize pages', text: 'Merge, split, rotate, delete and reorder.', open: { pages: true } },
-  { icon: 'compress', title: 'Compress', text: 'Make a PDF smaller for email: scans and photos shrink, text stays sharp.', open: { dialog: 'compress' } },
-  { icon: 'image', title: 'Convert', text: 'Turn photos into a PDF, or save every page as a picture.', open: { dialog: 'images' } },
+const TOOLS: { icon: IconName; card: keyof Messages['cards']; open: Omit<OpenRequest, 'file'> }[] = [
+  { icon: 'editText', card: 'editText', open: { tool: 'editText' } },
+  { icon: 'scan', card: 'editScan', open: { tool: 'editText', recognize: true } },
+  { icon: 'highlight', card: 'annotate', open: { tool: 'highlight' } },
+  { icon: 'form', card: 'fillForm', open: { tool: 'select' } },
+  { icon: 'sign', card: 'sign', open: { sign: true } },
+  { icon: 'pages', card: 'pages', open: { pages: true } },
+  { icon: 'compress', card: 'compress', open: { dialog: 'compress' } },
+  { icon: 'image', card: 'convert', open: { dialog: 'images' } },
 ];
 
+const SUGGEST_KEY = 'language-suggested';
+
+/** The same page in the other languages. */
+function LanguageMenu({ id }: { id: LandingId }) {
+  const { locale, t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="language">
+      <button type="button" className="float" aria-label={t.home.language} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Icon name="globe" />
+      </button>
+      {open && (
+        <div className="menu menu--languages" role="menu" onMouseLeave={() => setOpen(false)}>
+          {LOCALES.map((l) => (
+            <a key={l} role="menuitem" href={landingPath(id, l)} hrefLang={l} lang={l} aria-current={l === locale ? 'true' : undefined}>
+              {LANGUAGE_NAMES[l]}
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** On an English page, a quiet offer of the same page in the browser's language, once. */
+function LanguageSuggestion({ id }: { id: LandingId }) {
+  const { locale } = useI18n();
+  const [offer, setOffer] = useState<Locale | null>(null);
+  useEffect(() => {
+    const preferred = browserLocale();
+    let dismissed = false;
+    try {
+      dismissed = !!localStorage.getItem(SUGGEST_KEY);
+    } catch {
+      // Storage blocked: offer anyway.
+    }
+    if (locale === 'en' && preferred && preferred !== 'en' && !dismissed) setOffer(preferred);
+  }, [locale]);
+  if (!offer) return null;
+  const dismiss = () => {
+    setOffer(null);
+    try {
+      localStorage.setItem(SUGGEST_KEY, '1');
+    } catch {
+      // Not remembered; fine.
+    }
+  };
+  return (
+    <div className="notice language-offer" lang={offer}>
+      <a href={landingPath(id, offer)} onClick={dismiss}>
+        {SUGGEST[offer]} {LANGUAGE_NAMES[offer]} →
+      </a>
+      <button type="button" className="pill pill--icon" aria-label="×" onClick={dismiss}>
+        <Icon name="close" size={14} />
+      </button>
+    </div>
+  );
+}
+
 export function Home({
-  page,
+  id,
   onOpen,
   onPictures,
   onSample,
@@ -41,7 +101,7 @@ export function Home({
   onToggleTheme,
 }: {
   /** The page people landed on: the start page or one tool's page. */
-  page: Landing;
+  id: LandingId;
   onOpen: (request: OpenRequest) => void;
   /** Pictures (JPG, PNG, WebP) to turn into a PDF. */
   onPictures: (files: File[]) => void;
@@ -49,9 +109,12 @@ export function Home({
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
 }) {
+  const { locale, t } = useI18n();
+  const page = t.landings[id];
+  const tool = LANDING_TOOLS[id];
   const input = useRef<HTMLInputElement>(null);
   // What the chooser opens files with: this page's tool unless a tool card was picked.
-  const pending = useRef<Omit<OpenRequest, 'file'>>(page.open ?? {});
+  const pending = useRef<Omit<OpenRequest, 'file'>>(tool.open ?? {});
   const [over, setOver] = useState(false);
   const [feedback, setFeedback] = useState(false);
 
@@ -64,7 +127,7 @@ export function Home({
     setOver(false);
     const files = [...event.dataTransfer.files];
     const file = files.find(isPdf);
-    if (file) onOpen({ file, ...page.open });
+    if (file) onOpen({ file, ...tool.open });
     else if (files.some(isPicture)) onPictures(files.filter(isPicture));
   };
 
@@ -85,25 +148,33 @@ export function Home({
         }}
       />
       <div className="home__top">
-        <nav className="bar" aria-label="Sections">
+        <nav className="bar" aria-label={t.home.sections}>
           <div className="group">
-            <a className="pill pill--icon" href="/" aria-current={page.path === '/' ? 'page' : undefined} aria-label="Home">
+            <a
+              className="pill pill--icon"
+              href={landingPath('home', locale)}
+              aria-current={id === 'home' ? 'page' : undefined}
+              aria-label={t.home.home}
+            >
               <Icon name="home" />
             </a>
-            <button type="button" className="pill" onClick={() => choose()}>
-              <Icon name="file" /> Open PDF
+            <button type="button" className="pill" aria-label={t.home.openPdf} onClick={() => choose()}>
+              <Icon name="file" />
+              <span className="wide-only">{t.home.openPdf}</span>
             </button>
           </div>
         </nav>
         <div className="home__corner">
-          <button type="button" className="float" onClick={() => setFeedback(true)} aria-label="Send feedback" title="Send feedback">
+          <LanguageMenu id={id} />
+          <button type="button" className="float" onClick={() => setFeedback(true)} aria-label={t.home.feedback} title={t.home.feedback}>
             <Icon name="feedback" />
           </button>
-          <button type="button" className="float" onClick={onToggleTheme} aria-label="Switch theme">
+          <button type="button" className="float" onClick={onToggleTheme} aria-label={t.home.theme}>
             <Icon name={theme === 'dark' ? 'moon' : 'sun'} />
           </button>
         </div>
       </div>
+      <LanguageSuggestion id={id} />
 
       <section className="home__hero">
         <h1>{page.h1}</h1>
@@ -121,50 +192,49 @@ export function Home({
         <div className="drop__icon">
           <Icon name="upload" size={22} />
         </div>
-        <button type="button" className="pill pill--ink" onClick={() => choose(page.open)}>
-          {page.pictures ? 'Choose pictures' : 'Choose a PDF'}
+        <button type="button" className="pill pill--ink" onClick={() => choose(tool.open)}>
+          {tool.pictures ? t.home.choosePictures : t.home.choosePdf}
         </button>
-        <p className="drop__hint">or drop it anywhere on this page — photos become a PDF</p>
+        <p className="drop__hint">{t.home.dropHint}</p>
         <span className="drop__privacy">
-          <Icon name="lock" size={13} /> Processed on your device. Nothing is uploaded.
+          <Icon name="lock" size={13} /> {t.home.privacy}
         </span>
       </div>
 
-      <section className="tools" aria-label="Tools">
-        {TOOLS.map((tool) => (
-          <button key={tool.title} type="button" className="tool" disabled={!tool.open} onClick={() => tool.open && choose(tool.open)}>
-            {!tool.open && <em className="tool__soon">Soon</em>}
+      <section className="tools" aria-label={t.home.tools}>
+        {TOOLS.map(({ icon, card, open }) => (
+          <button key={card} type="button" className="tool" onClick={() => choose(open)}>
             <span className="tool__icon">
-              <Icon name={tool.icon} />
+              <Icon name={icon} />
             </span>
-            <strong>{tool.title}</strong>
-            <span>{tool.text}</span>
+            <strong>{t.cards[card].title}</strong>
+            <span>{t.cards[card].text}</span>
           </button>
         ))}
       </section>
 
       <div className="samples">
-        No PDF at hand? Try
+        {t.home.noPdf}
         <div className="group">
           <button type="button" className="pill" onClick={() => onSample('contract')}>
-            A contract
+            {t.home.samples.contract}
           </button>
           <button type="button" className="pill" onClick={() => onSample('scan')}>
-            A scanned invoice
+            {t.home.samples.scan}
           </button>
           <button type="button" className="pill" onClick={() => onSample('form')}>
-            A form
+            {t.home.samples.form}
           </button>
         </div>
       </div>
       <section className="explain" aria-labelledby="how">
-        <h2 id="how">How it works</h2>
+        <h2 id="how">{t.home.how}</h2>
         <ol className="steps">
           {page.steps.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
-        <h2>Questions</h2>
+        <h2>{t.home.questions}</h2>
         <dl className="faq">
           {page.faq.map(({ q, a }) => (
             <div key={q}>
@@ -175,7 +245,7 @@ export function Home({
         </dl>
       </section>
 
-      <Footer current={page.path} />
+      <Footer current={id} />
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
     </main>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useI18n } from './i18n';
 import { Icon } from './icons';
 
 export interface Signature {
@@ -11,14 +12,14 @@ export interface Signature {
 type Mode = 'draw' | 'type' | 'upload';
 
 const INKS = [
-  { name: 'Black', value: '#1b1b1f' },
-  { name: 'Blue', value: '#1d3fbf' },
-];
+  { name: 'black', value: '#1b1b1f' },
+  { name: 'blue', value: '#1d3fbf' },
+] as const;
 const FONTS = [
-  { name: 'Script', family: '"Dancing Script", cursive' },
-  { name: 'Hand', family: '"Caveat", cursive' },
-  { name: 'Formal', family: '"Mrs Saint Delafield", cursive' },
-];
+  { name: 'script', family: '"Dancing Script", cursive' },
+  { name: 'hand', family: '"Caveat", cursive' },
+  { name: 'formal', family: '"Mrs Saint Delafield", cursive' },
+] as const;
 const FONTS_URL =
   'https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Dancing+Script:wght@500&family=Mrs+Saint+Delafield&display=swap';
 let fontsLoading: Promise<void> | undefined;
@@ -106,8 +107,9 @@ async function fromImage(file: File): Promise<Signature | null> {
 }
 
 export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signature) => void; onClose: () => void }) {
+  const s = useI18n().t.sign;
   const [mode, setMode] = useState<Mode>('draw');
-  const [ink, setInk] = useState(INKS[0]!.value);
+  const [ink, setInk] = useState<string>(INKS[0].value);
   const [name, setName] = useState('');
   const [font, setFont] = useState(0);
   const [drawn, setDrawn] = useState(false);
@@ -190,7 +192,7 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
   };
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="Add your signature" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal" role="dialog" aria-modal="true" aria-label={s.title} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal__card">
         <div className="modal__art">
           <div className="modal__paper">
@@ -199,15 +201,15 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
             ) : mode === 'upload' && uploaded ? (
               <img src={uploaded.src} alt="" />
             ) : (
-              <span className="modal__line">Sign here</span>
+              <span className="modal__line">{s.signHere}</span>
             )}
           </div>
-          <p>Your signature stays in this browser. Nothing is uploaded.</p>
+          <p>{s.private}</p>
         </div>
         <div className="modal__body">
           <div className="modal__head">
-            <h2>Add your signature</h2>
-            <button type="button" className="pill pill--icon" aria-label="Close" onClick={onClose}>
+            <h2>{s.title}</h2>
+            <button type="button" className="pill pill--icon" aria-label={s.close} onClick={onClose}>
               <Icon name="close" />
             </button>
           </div>
@@ -215,7 +217,7 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
           <div className="group modal__tabs">
             {(['draw', 'type', 'upload'] as const).map((m) => (
               <button key={m} type="button" className="pill" aria-pressed={mode === m} onClick={() => setMode(m)}>
-                {m === 'draw' ? 'Draw' : m === 'type' ? 'Type' : 'Upload'}
+                {s[m]}
               </button>
             ))}
           </div>
@@ -232,7 +234,7 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
                 onPointerUp={() => (last.current = null)}
                 onPointerCancel={() => (last.current = null)}
               />
-              {!drawn && <span className="sign-pad__hint">Draw with your mouse, trackpad or finger</span>}
+              {!drawn && <span className="sign-pad__hint">{s.drawHint}</span>}
               <button
                 type="button"
                 className="pill sign-pad__clear"
@@ -242,18 +244,18 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
                   setDrawn(false);
                 }}
               >
-                Clear
+                {s.clear}
               </button>
             </div>
           )}
 
           {mode === 'type' && (
             <div className="sign-type">
-              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" aria-label="Your name" />
+              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={s.name} aria-label={s.name} />
               <div className="group">
                 {FONTS.map((f, i) => (
                   <button key={f.name} type="button" className="pill" aria-pressed={font === i} onClick={() => setFont(i)} style={{ fontFamily: f.family, fontSize: 18 }}>
-                    {name.trim().split(' ')[0] || f.name}
+                    {name.trim().split(' ')[0] || s.fonts[f.name]}
                   </button>
                 ))}
               </div>
@@ -274,16 +276,16 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
                 }}
               />
               <button type="button" className="pill pill--ink" onClick={() => upload.current?.click()}>
-                <Icon name="upload" /> Choose an image
+                <Icon name="upload" /> {s.chooseImage}
               </button>
-              <p>A photo of your signature on white paper works best: the paper turns transparent.</p>
+              <p>{s.imageHint}</p>
             </div>
           )}
 
           {mode !== 'upload' && (
-            <div className="group modal__inks" aria-label="Ink colour">
+            <div className="group modal__inks" aria-label={s.ink}>
               {INKS.map((c) => (
-                <button key={c.value} type="button" className="pill pill--icon" aria-label={c.name} aria-pressed={ink === c.value} onClick={() => setInk(c.value)}>
+                <button key={c.value} type="button" className="pill pill--icon" aria-label={s.inks[c.name]} aria-pressed={ink === c.value} onClick={() => setInk(c.value)}>
                   <span className="swatch" style={{ background: c.value }} />
                 </button>
               ))}
@@ -292,10 +294,10 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
 
           {saved.length > 0 && (
             <div className="modal__saved">
-              <span>Saved</span>
-              {saved.map((s) => (
-                <button key={s.src} type="button" className="saved-sign" onClick={() => place(s)} aria-label="Use a saved signature">
-                  <img src={s.src} alt="" />
+              <span>{s.saved}</span>
+              {saved.map((signature) => (
+                <button key={signature.src} type="button" className="saved-sign" onClick={() => place(signature)} aria-label={s.useSaved}>
+                  <img src={signature.src} alt="" />
                 </button>
               ))}
             </div>
@@ -303,10 +305,10 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
 
           <div className="modal__foot">
             <button type="button" className="pill" onClick={onClose}>
-              Cancel
+              {s.cancel}
             </button>
             <button type="button" className="pill pill--ink" disabled={!ready} onClick={() => place(current())}>
-              Place signature
+              {s.place}
             </button>
           </div>
         </div>

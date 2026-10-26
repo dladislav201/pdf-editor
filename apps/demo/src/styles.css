@@ -404,6 +404,15 @@ a.pill {
   display: flex;
   gap: 8px;
 }
+/* Phones: the sections bar and the round buttons share the row edge to edge. */
+@media (max-width: 720px) {
+  .home__top {
+    justify-content: space-between;
+  }
+  .home__corner {
+    position: static;
+  }
+}
 .home__hero {
   margin-top: 12vh;
   text-align: center;
@@ -1052,6 +1061,35 @@ a.pill {
   border-radius: 20px;
   background: var(--surface);
   box-shadow: var(--shadow-card);
+}
+/* Languages: the same page in another language. */
+.language {
+  position: relative;
+  z-index: 20;
+}
+.menu--languages {
+  width: 190px;
+}
+.menu--languages a {
+  padding: 10px 14px;
+  border-radius: 14px;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.menu--languages a:hover {
+  background: var(--pill);
+}
+.menu--languages a[aria-current] {
+  color: var(--text);
+  font-weight: 600;
+}
+.language-offer {
+  margin-top: 14px;
+  padding: 6px 6px 6px 16px;
+}
+.language-offer a {
+  color: var(--text);
+  text-decoration: none;
 }
 .menu button {
   display: flex;

@@ -61,7 +61,8 @@ export async function sendFeedback(feedback: { message: string; email: string; w
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(feedback),
   });
-  if (!response.ok) throw new Error(response.status === 400 ? 'Please check the message and email.' : 'Could not send it. Try again later.');
+  // The dialog says these in the page's language.
+  if (!response.ok) throw new Error(response.status === 400 ? 'invalid' : 'failed');
 }
 
 if (enabled) {

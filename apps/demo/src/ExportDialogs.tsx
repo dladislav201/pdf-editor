@@ -1,6 +1,7 @@
 import type { CompressLevel } from '@pdfsdk/editor';
 import type { PdfEditorInstance } from '@pdfsdk/react';
 import { useEffect, useState, type ReactNode } from 'react';
+import { useI18n } from './i18n';
 import { Icon } from './icons';
 import { reportError, track } from './telemetry';
 import { saveBlob, zip } from './zip';
@@ -15,6 +16,7 @@ export function formatSize(bytes: number): string {
 
 /** A small centred card on a dimmed page. */
 export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const { t } = useI18n();
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
     addEventListener('keydown', close);
@@ -32,7 +34,7 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
         <div className="modal__body">
           <div className="modal__head">
             <h2>{title}</h2>
-            <button type="button" className="pill pill--icon" aria-label="Close" onClick={onClose}>
+            <button type="button" className="pill pill--icon" aria-label={t.dialog.close} onClick={onClose}>
               <Icon name="close" />
             </button>
           </div>
@@ -43,11 +45,7 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
   );
 }
 
-const LEVELS: { level: CompressLevel; label: string; text: string }[] = [
-  { level: 'light', label: 'Light', text: 'Pictures at 200 dpi. Best quality.' },
-  { level: 'recommended', label: 'Recommended', text: 'Pictures at 150 dpi. Good for email and screens.' },
-  { level: 'strong', label: 'Strong', text: 'Pictures at 110 dpi. Smallest file.' },
-];
+const LEVELS: CompressLevel[] = ['light', 'recommended', 'strong'];
 
 export function CompressDialog({
   editor,
@@ -58,6 +56,7 @@ export function CompressDialog({
   fileName: string;
   onClose: () => void;
 }) {
+  const c = useI18n().t.compress;
   const [level, setLevel] = useState<CompressLevel>('recommended');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ level: CompressLevel; bytes: Uint8Array; before: number; after: number } | null>(null);
@@ -79,34 +78,28 @@ export function CompressDialog({
   const saved = current ? Math.round((1 - current.after / current.before) * 100) : 0;
 
   return (
-    <Dialog title="Compress PDF" onClose={onClose}>
+    <Dialog title={c.title} onClose={onClose}>
       <div className="choices">
         {LEVELS.map((l) => (
-          <button
-            key={l.level}
-            type="button"
-            className="choice"
-            aria-pressed={level === l.level}
-            onClick={() => setLevel(l.level)}
-          >
-            <strong>{l.label}</strong>
-            <span>{l.text}</span>
+          <button key={l} type="button" className="choice" aria-pressed={level === l} onClick={() => setLevel(l)}>
+            <strong>{c.levels[l].label}</strong>
+            <span>{c.levels[l].text}</span>
           </button>
         ))}
       </div>
-      <p className="dialog__note">Text and drawings stay sharp; only pictures and scans get smaller. Done on your device.</p>
+      <p className="dialog__note">{c.note}</p>
       {current && (
         <div className="result">
           <span>{formatSize(current.before)}</span>
           <Icon name="arrowRight" size={14} />
           <strong>{formatSize(current.after)}</strong>
-          <em>{saved > 0 ? `${saved}% smaller` : 'Already as small as it gets'}</em>
+          <em>{saved > 0 ? c.smaller(saved) : c.smallest}</em>
         </div>
       )}
       {error && <p className="dialog__error">{error}</p>}
       <div className="modal__foot">
         <button type="button" className="pill" onClick={onClose}>
-          Cancel
+          {c.cancel}
         </button>
         {current ? (
           <button
@@ -116,15 +109,15 @@ export function CompressDialog({
               track(`download.compressed.${current.level}`);
               saveBlob(
                 new Blob([current.bytes as BlobPart], { type: 'application/pdf' }),
-                `${baseName(fileName)} (compressed).pdf`,
+                c.fileName(baseName(fileName)),
               );
             }}
           >
-            <Icon name="download" /> Download
+            <Icon name="download" /> {c.download}
           </button>
         ) : (
           <button type="button" className="pill pill--ink" disabled={busy} onClick={() => void run()}>
-            {busy ? 'Compressing…' : 'Compress'}
+            {busy ? c.running : c.run}
           </button>
         )}
       </div>
@@ -143,6 +136,7 @@ export function ImagesDialog({
   fileName: string;
   onClose: () => void;
 }) {
+  const m = useI18n().t.images;
   const [format, setFormat] = useState<'png' | 'jpeg'>('png');
   const [dpi, setDpi] = useState(150);
   const [busy, setBusy] = useState<string | null>(null);
@@ -156,7 +150,7 @@ export function ImagesDialog({
       try {
         const files: { name: string; bytes: Uint8Array }[] = [];
         for (let page = 0; page < source.pageCount; page++) {
-          setBusy(`Page ${page + 1} of ${source.pageCount}…`);
+          setBusy(m.progress(page + 1, source.pageCount));
           const width = Math.round((source.sizes[page]!.width * dpi) / 72);
           const bitmap = await source.render(page, width);
           const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
@@ -168,13 +162,13 @@ export function ImagesDialog({
           const blob = await canvas.convertToBlob({ type: `image/${format}`, quality: 0.9 });
           const ext = format === 'png' ? 'png' : 'jpg';
           files.push({
-            name: `${baseName(fileName)} - page ${page + 1}.${ext}`,
+            name: `${m.pageName(baseName(fileName), page + 1)}.${ext}`,
             bytes: new Uint8Array(await blob.arrayBuffer()),
           });
         }
         track(`download.pictures.${format}`);
         if (files.length === 1) saveBlob(new Blob([files[0]!.bytes as BlobPart], { type: `image/${format}` }), files[0]!.name);
-        else saveBlob(zip(files), `${baseName(fileName)} (pages).zip`);
+        else saveBlob(zip(files), m.zipName(baseName(fileName)));
         onClose();
       } finally {
         source.close();
@@ -188,9 +182,9 @@ export function ImagesDialog({
   };
 
   return (
-    <Dialog title="Save pages as pictures" onClose={onClose}>
+    <Dialog title={m.title} onClose={onClose}>
       <div className="row">
-        <span className="row__label">Format</span>
+        <span className="row__label">{m.format}</span>
         <div className="group">
           <button type="button" className="pill" aria-pressed={format === 'png'} onClick={() => setFormat('png')}>
             PNG
@@ -201,7 +195,7 @@ export function ImagesDialog({
         </div>
       </div>
       <div className="row">
-        <span className="row__label">Resolution</span>
+        <span className="row__label">{m.resolution}</span>
         <div className="group">
           {DPIS.map((d) => (
             <button key={d} type="button" className="pill" aria-pressed={dpi === d} onClick={() => setDpi(d)}>
@@ -210,16 +204,16 @@ export function ImagesDialog({
           ))}
         </div>
       </div>
-      <p className="dialog__note">One picture per page; several pages come as a ZIP. Edits and annotations are included.</p>
+      <p className="dialog__note">{m.note}</p>
       {error && <p className="dialog__error">{error}</p>}
       <div className="modal__foot">
         <button type="button" className="pill" onClick={onClose}>
-          Cancel
+          {m.cancel}
         </button>
         <button type="button" className="pill pill--ink" disabled={!!busy} onClick={() => void run()}>
           {busy ?? (
             <>
-              <Icon name="download" /> Save pictures
+              <Icon name="download" /> {m.save}
             </>
           )}
         </button>

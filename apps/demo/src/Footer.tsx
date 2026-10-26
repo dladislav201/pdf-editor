@@ -1,22 +1,24 @@
-import { LANDINGS } from './site';
+import { useI18n } from './i18n';
+import { LANDING_IDS, landingPath, type LandingId } from './site';
 
-/** Links to every tool page and the guides, on every page: how people and search engines find the rest. */
-export function Footer({ current }: { current?: string }) {
+/** Links to every tool page (in the page's language) and the guides: how people and search engines find the rest. */
+export function Footer({ current }: { current?: LandingId | 'blog' }) {
+  const { locale, t } = useI18n();
   return (
     <footer className="footer">
-      <nav aria-label="All tools">
-        {LANDINGS.map((landing) => (
-          <a key={landing.path} href={landing.path} aria-current={landing.path === current ? 'page' : undefined}>
-            {landing.name}
+      <nav aria-label={t.footer.allTools}>
+        {LANDING_IDS.map((id) => (
+          <a key={id} href={landingPath(id, locale)} aria-current={id === current ? 'page' : undefined}>
+            {t.landings[id].name}
           </a>
         ))}
         {__GUIDES__ && (
-          <a href="/blog" aria-current={current === '/blog' ? 'page' : undefined}>
-            Guides
+          <a href="/blog" hrefLang="en" aria-current={current === 'blog' ? 'page' : undefined}>
+            {t.footer.guides}
           </a>
         )}
       </nav>
-      <p>No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.</p>
+      <p>{t.footer.privacy}</p>
     </footer>
   );
 }

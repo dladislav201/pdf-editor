@@ -8,14 +8,15 @@ import { SignDialog } from './SignDialog';
 import { reportError, track } from './telemetry';
 import { CompressDialog, ImagesDialog } from './ExportDialogs';
 import { FeedbackDialog } from './FeedbackDialog';
+import { useI18n } from './i18n';
 
-const TOOLS: { tool: ToolName; icon: IconName; label: string; key: string }[] = [
-  { tool: 'select', icon: 'cursor', label: 'Select', key: 'V' },
-  { tool: 'editText', icon: 'editText', label: 'Edit text', key: 'E' },
-  { tool: 'highlight', icon: 'highlight', label: 'Highlight', key: 'H' },
-  { tool: 'ink', icon: 'draw', label: 'Draw', key: 'D' },
-  { tool: 'rectangle', icon: 'shapes', label: 'Shape', key: 'R' },
-  { tool: 'text', icon: 'text', label: 'Note', key: 'T' },
+const TOOLS: { tool: 'select' | 'editText' | 'highlight' | 'ink' | 'rectangle' | 'text'; icon: IconName; key: string }[] = [
+  { tool: 'select', icon: 'cursor', key: 'V' },
+  { tool: 'editText', icon: 'editText', key: 'E' },
+  { tool: 'highlight', icon: 'highlight', key: 'H' },
+  { tool: 'ink', icon: 'draw', key: 'D' },
+  { tool: 'rectangle', icon: 'shapes', key: 'R' },
+  { tool: 'text', icon: 'text', key: 'T' },
 ];
 const COLORS = ['#facc15', '#ef4444', '#22c55e', '#2f6fed', '#191918'];
 const MAX_FIT_ZOOM = 1.25;
@@ -25,6 +26,39 @@ type Scan =
   | { kind: 'scanned'; pages: number[] }
   | { kind: 'reading'; done: number; total: number }
   | { kind: 'done'; words: number };
+
+function ToolButton({
+  name,
+  icon,
+  label,
+  shortcut,
+  active,
+  editor,
+}: {
+  name: ToolName;
+  icon: IconName;
+  label: string;
+  shortcut: string;
+  active: boolean;
+  editor: PdfEditorInstance | null;
+}) {
+  return (
+    <button
+      type="button"
+      className={name === 'select' ? 'pill pill--icon' : 'pill'}
+      aria-pressed={active}
+      title={`${label} (${shortcut})`}
+      aria-label={label}
+      onClick={() => {
+        track(`tool.${name}`);
+        editor?.setTool(name);
+      }}
+    >
+      <Icon name={icon} />
+      {name !== 'select' && <span className="wide-only">{label}</span>}
+    </button>
+  );
+}
 
 export function Workspace({
   file,
@@ -48,6 +82,8 @@ export function Workspace({
   onToggleTheme: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
+  const w = t.workspace;
   const editorRef = useRef<PdfEditorInstance | null>(null);
   const [editor, setEditor] = useState<PdfEditorInstance | null>(null);
   const [tool, setTool] = useState<ToolName>(initialTool ?? 'select');
@@ -218,6 +254,7 @@ export function Workspace({
           assetsUrl="/engine/"
           fontUrl="/fonts/DejaVuSans.ttf"
           licenseKey={DEMO_LICENSE_KEY}
+          messages={t.editor}
           onReady={setEditor}
           onError={reportError}
           onFormChange={() => {
@@ -228,7 +265,7 @@ export function Workspace({
       </div>
 
       <div className="top-left">
-        <button type="button" className="float" onClick={onClose} aria-label="Back to start">
+        <button type="button" className="float" onClick={onClose} aria-label={w.back}>
           <Icon name="back" />
         </button>
         {search.open ? (
@@ -240,8 +277,8 @@ export function Workspace({
               ref={searchInput}
               autoFocus
               value={search.query}
-              placeholder="Find in document"
-              aria-label="Find in document"
+              placeholder={w.find}
+              aria-label={w.find}
               onChange={(e) => setSearch((s) => ({ ...s, query: e.target.value }))}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') step(e.shiftKey ? -1 : 1);
@@ -252,20 +289,20 @@ export function Workspace({
               {!search.query.trim()
                 ? ''
                 : search.count
-                  ? `${search.active + 1} of ${search.count}${search.busy ? '…' : ''}`
+                  ? `${w.match(search.active + 1, search.count)}${search.busy ? '…' : ''}`
                   : search.busy
-                    ? 'Searching…'
-                    : 'No results'}
+                    ? w.searching
+                    : w.noResults}
             </span>
             <div className="group">
-              <button type="button" className="pill pill--icon" aria-label="Previous match" disabled={!search.count} onClick={() => step(-1)}>
+              <button type="button" className="pill pill--icon" aria-label={w.previousMatch} disabled={!search.count} onClick={() => step(-1)}>
                 <Icon name="up" />
               </button>
-              <button type="button" className="pill pill--icon" aria-label="Next match" disabled={!search.count} onClick={() => step(1)}>
+              <button type="button" className="pill pill--icon" aria-label={w.nextMatch} disabled={!search.count} onClick={() => step(1)}>
                 <Icon name="chevronDown" />
               </button>
             </div>
-            <button type="button" className="pill pill--icon" aria-label="Close search" onClick={closeSearch}>
+            <button type="button" className="pill pill--icon" aria-label={w.closeSearch} onClick={closeSearch}>
               <Icon name="close" />
             </button>
           </div>
@@ -277,7 +314,7 @@ export function Workspace({
             <span className="file-name" title={file.name}>
               {file.name}
             </span>
-            <button type="button" className="pill pill--icon" aria-label="Find in document (⌘F)" title="Find (⌘F)" onClick={openSearch}>
+            <button type="button" className="pill pill--icon" aria-label={w.findShortcut} title={w.findTitle} onClick={openSearch}>
               <Icon name="search" />
             </button>
           </div>
@@ -288,7 +325,7 @@ export function Workspace({
         <div className="bar">
           <div className="group">
             <button type="button" className="pill" aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>
-              <Icon name="edit" /> Edit
+              <Icon name="edit" /> {w.edit}
             </button>
             <button
               type="button"
@@ -300,7 +337,7 @@ export function Workspace({
                 setMode('pages');
               }}
             >
-              <Icon name="grid" /> Pages
+              <Icon name="grid" /> {w.pages}
             </button>
           </div>
           {/* On phones the zoom bar is gone; the page number lives here. */}
@@ -315,43 +352,43 @@ export function Workspace({
       <div className="status" aria-live="polite">
         {mode === 'edit' && scan.kind === 'scanned' && (
           <div className="notice">
-            <span>{scan.pages.length === 1 ? `Page ${scan.pages[0]! + 1} is` : `${scan.pages.length} pages are`} a scan</span>
+            <span>{w.scanPages(scan.pages)}</span>
             <button type="button" className="pill pill--ink" onClick={() => void read()}>
-              <Icon name="scan" /> Recognize text
+              <Icon name="scan" /> {w.recognize}
             </button>
           </div>
         )}
         {scan.kind === 'reading' && (
           <div className="notice notice--plain">
-            Reading page {scan.done + 1} of {scan.total}…
+            {w.reading(scan.done + 1, scan.total)}
           </div>
         )}
         {scan.kind === 'done' && (
           <div className="notice notice--plain">
-            <strong>{scan.words} words recognized.</strong>&nbsp;Pick Edit text and click a line to change it.
+            <strong>{w.recognized(scan.words)}</strong>&nbsp;{w.recognizedHint}
           </div>
         )}
         {mode === 'edit' && fields > 0 && tool === 'select' && scan.kind === 'none' && (
           <div className="notice notice--plain">
-            <strong>{fields} fields to fill.</strong>&nbsp;Click one and type; Tab moves to the next.
+            <strong>{w.fields(fields)}</strong>&nbsp;{w.fieldsHint}
           </div>
         )}
         {message && <div className="notice notice--plain">{message}</div>}
       </div>
 
       <div className="top-right" hidden={mode === 'pages'}>
-        <button type="button" className="float" onClick={onToggleTheme} aria-label="Switch theme">
+        <button type="button" className="float" onClick={onToggleTheme} aria-label={w.theme}>
           <Icon name={theme === 'dark' ? 'moon' : 'sun'} />
         </button>
         <div className="bar">
           <div className="group">
-            <button type="button" className="pill pill--icon" aria-label="Zoom out" onClick={() => editor?.zoomOut()}>
+            <button type="button" className="pill pill--icon" aria-label={w.zoomOut} onClick={() => editor?.zoomOut()}>
               <Icon name="minus" />
             </button>
-            <button type="button" className="pill label" onClick={() => editor?.setZoom('fit-width')} title="Fit width">
+            <button type="button" className="pill label" onClick={() => editor?.setZoom('fit-width')} title={w.fitWidth}>
               {Math.round(zoom * 100)}%
             </button>
-            <button type="button" className="pill pill--icon" aria-label="Zoom in" onClick={() => editor?.zoomIn()}>
+            <button type="button" className="pill pill--icon" aria-label={w.zoomIn} onClick={() => editor?.zoomIn()}>
               <Icon name="plus" />
             </button>
           </div>
@@ -361,19 +398,22 @@ export function Workspace({
           <button
             type="button"
             className="pill pill--ink"
-            aria-label={`Download${edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}`}
+            aria-label={`${w.download}${edits ? ` · ${w.edits(edits)}` : ''}`}
             onClick={() => {
               track('download.pdf');
               void editor?.download(file.name).catch(reportError);
             }}
           >
             <Icon name="download" />
-            <span className="wide-only">Download{edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}</span>
+            <span className="wide-only">
+              {w.download}
+              {edits ? ` · ${w.edits(edits)}` : ''}
+            </span>
           </button>
           <button
             type="button"
             className="pill pill--icon"
-            aria-label="More ways to save"
+            aria-label={w.moreSave}
             aria-expanded={menu}
             onClick={() => setMenu((m) => !m)}
           >
@@ -392,7 +432,8 @@ export function Workspace({
               >
                 <Icon name="file" />{' '}
                 <span>
-                  <strong>PDF</strong>With your edits; annotations stay editable
+                  <strong>{w.savePdf.title}</strong>
+                  {w.savePdf.text}
                 </span>
               </button>
               <button
@@ -405,7 +446,8 @@ export function Workspace({
               >
                 <Icon name="compress" />{' '}
                 <span>
-                  <strong>Compressed PDF</strong>Smaller pictures and scans
+                  <strong>{w.saveCompressed.title}</strong>
+                  {w.saveCompressed.text}
                 </span>
               </button>
               <button
@@ -418,7 +460,8 @@ export function Workspace({
               >
                 <Icon name="image" />{' '}
                 <span>
-                  <strong>Pictures</strong>Each page as PNG or JPG
+                  <strong>{w.savePictures.title}</strong>
+                  {w.savePictures.text}
                 </span>
               </button>
             </div>
@@ -434,7 +477,7 @@ export function Workspace({
               <button
                 type="button"
                 className="pill pill--icon"
-                aria-label="Undo"
+                aria-label={w.undo}
                 disabled={!history.canUndo}
                 onClick={() => editor?.undo()}
               >
@@ -443,7 +486,7 @@ export function Workspace({
               <button
                 type="button"
                 className="pill pill--icon"
-                aria-label="Redo"
+                aria-label={w.redo}
                 disabled={!history.canRedo}
                 onClick={() => editor?.redo()}
               >
@@ -457,7 +500,7 @@ export function Workspace({
                     key={c}
                     type="button"
                     className="pill pill--icon"
-                    aria-label={`Colour ${c}`}
+                    aria-label={w.colour(c)}
                     aria-pressed={color === c}
                     onClick={() => editor?.setColor(c)}
                   >
@@ -471,7 +514,7 @@ export function Workspace({
                 <button
                   type="button"
                   className="pill pill--icon"
-                  aria-label="Delete"
+                  aria-label={w.delete}
                   disabled={!selected}
                   onClick={() => editor?.deleteSelected()}
                 >
@@ -483,40 +526,22 @@ export function Workspace({
         )}
         {tool === 'editText' && (
           <div className="notice notice--plain">
-            {scan.kind === 'scanned'
-              ? 'Click any line on the scan: its text is read first, then you can edit it.'
-              : scan.kind === 'reading'
-                ? 'Reading the scan… the line you clicked opens when it’s done.'
-                : 'Click a paragraph to edit it. Esc to finish.'}
+            {scan.kind === 'scanned' ? w.editTextScan : scan.kind === 'reading' ? w.editTextReading : w.editTextHint}
           </div>
         )}
         {tool === 'image' && (
-          <div className="notice notice--plain">Click where your signature goes. Then drag it, or resize it from the corner.</div>
+          <div className="notice notice--plain">{w.placeSignature}</div>
         )}
-        <nav className="bar" aria-label="Tools">
+        <nav className="bar" aria-label={w.tools}>
           <div className="group">
-            {TOOLS.map(({ tool: t, icon, label, key }) => (
-              <button
-                key={t}
-                type="button"
-                className={t === 'select' ? 'pill pill--icon' : 'pill'}
-                aria-pressed={tool === t}
-                title={`${label} (${key})`}
-                aria-label={label}
-                onClick={() => {
-                  track(`tool.${t}`);
-                  editor?.setTool(t);
-                }}
-              >
-                <Icon name={icon} />
-                {t !== 'select' && <span className="wide-only">{label}</span>}
-              </button>
+            {TOOLS.map(({ tool: name, icon, key }) => (
+              <ToolButton key={name} name={name} icon={icon} label={w.tool[name]} shortcut={key} active={tool === name} editor={editor} />
             ))}
           </div>
           <div className="group">
-            <button type="button" className="pill" aria-label="Sign" aria-pressed={signing || tool === 'image'} onClick={() => setSigning(true)}>
+            <button type="button" className="pill" aria-label={w.sign} aria-pressed={signing || tool === 'image'} onClick={() => setSigning(true)}>
               <Icon name="sign" />
-              <span className="wide-only">Sign</span>
+              <span className="wide-only">{w.sign}</span>
             </button>
           </div>
         </nav>
@@ -525,7 +550,7 @@ export function Workspace({
       {editor && dialog === 'compress' && <CompressDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
       {editor && dialog === 'images' && <ImagesDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
 
-      <button type="button" className="float feedback-button" hidden={mode === 'pages'} onClick={() => setFeedback(true)} aria-label="Send feedback" title="Send feedback">
+      <button type="button" className="float feedback-button" hidden={mode === 'pages'} onClick={() => setFeedback(true)} aria-label={w.feedback} title={w.feedback}>
         <Icon name="feedback" />
       </button>
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
