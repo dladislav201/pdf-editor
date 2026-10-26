@@ -195,7 +195,7 @@ export function Pages({
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.key === 'Delete' || event.key === 'Backspace') && selected.size) remove(selected);
-      if (event.key === 'a' && (event.metaKey || event.ctrlKey)) {
+      if (event.code === 'KeyA' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         setSelected(new Set(items.map((i) => i.key)));
       }

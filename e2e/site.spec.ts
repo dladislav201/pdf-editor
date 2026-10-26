@@ -10,7 +10,7 @@ async function clickPage(page: Page, x: number, y: number, index = 0) {
 }
 
 async function download(page: Page): Promise<Uint8Array> {
-  const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^Download/ }).click()]);
+  const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^Download/ }).first().click()]);
   return downloadBytes(file);
 }
 
@@ -58,6 +58,42 @@ test('edits a paragraph and saves it into the PDF', async ({ page }) => {
   const [first] = await pdfText(await download(page));
   expect(squash(first!)).toContain('Replacedopeningparagraph.');
   expect(squash(first!)).not.toContain('isenteredintoby');
+});
+
+test('undoes typing in an open paragraph, with any keyboard layout', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('Replaced opening paragraph.');
+  // ⌘Z on a Ukrainian layout: the key is "я", the code is still KeyZ.
+  await page.locator('.pdfsdk-text-input').dispatchEvent('keydown', { key: 'я', code: 'KeyZ', metaKey: true, ctrlKey: true, bubbles: true });
+  await page.keyboard.press('Escape');
+  const [first] = await pdfText(await download(page));
+  expect(squash(first!)).toContain('isenteredintoby');
+  expect(squash(first!)).not.toContain('Replacedopeningparagraph.');
+});
+
+test('undoes and redoes a paragraph edit after leaving it', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('Replaced opening paragraph.');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /^Download · 1 edit/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByRole('button', { name: 'Download', exact: true })).toBeVisible();
+  let [first] = await pdfText(await download(page));
+  expect(squash(first!)).toContain('isenteredintoby');
+
+  await page.getByRole('button', { name: 'Redo' }).click();
+  await expect(page.getByRole('button', { name: /^Download · 1 edit/ })).toBeVisible();
+  [first] = await pdfText(await download(page));
+  expect(squash(first!)).toContain('Replacedopeningparagraph.');
 });
 
 test('finds text on every page', async ({ page }) => {

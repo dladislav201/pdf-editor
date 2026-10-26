@@ -232,7 +232,8 @@ export function Workspace({
   // ⌘F / Ctrl+F opens the document's own search instead of the browser's.
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f' && mode === 'edit') {
+      // By the key's place, so ⌘F works with any keyboard layout (it reports "а" on a Ukrainian one).
+      if ((event.metaKey || event.ctrlKey) && event.code === 'KeyF' && mode === 'edit') {
         event.preventDefault();
         openSearch();
       }
@@ -471,7 +472,7 @@ export function Workspace({
 
       <div className="bottom-center" hidden={mode === 'pages'}>
         {/* The tool's own options, above the tools. */}
-        {(drawing || tool === 'select') && (
+        {(drawing || tool === 'select' || tool === 'editText') && (
           <div className="bar">
             <div className="group">
               <button
@@ -479,6 +480,8 @@ export function Workspace({
                 className="pill pill--icon"
                 aria-label={w.undo}
                 disabled={!history.canUndo}
+                // Keep the caret in an open paragraph: typing goes on after undoing.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor?.undo()}
               >
                 <Icon name="undo" />
@@ -488,6 +491,8 @@ export function Workspace({
                 className="pill pill--icon"
                 aria-label={w.redo}
                 disabled={!history.canRedo}
+                // Keep the caret in an open paragraph: typing goes on after undoing.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor?.redo()}
               >
                 <Icon name="redo" />

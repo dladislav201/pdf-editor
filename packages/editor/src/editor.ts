@@ -4,6 +4,7 @@ import { Emitter } from './events';
 import { exportPdf, type ExportOptions } from './export';
 import { TEXT_ASCENT, TEXT_LINE_HEIGHT, hitTest, rectFromPoints, round, translate } from './geometry';
 import { History } from './history';
+import { shortcutKey } from './keys';
 import type { ScanInfo, ScanPatch } from './engine/pdfium-core';
 import { placeWords, type InvisibleWord } from './ocr/place';
 import { recognizeRaster } from './ocr/recognize';
@@ -186,6 +187,16 @@ interface ScanEdit {
   outlines: Map<string, ScanGlyph | null>;
 }
 
+/** Edited paragraphs as the undo history keeps them: the text of each (by paragraph id). */
+type TextState = ReadonlyMap<string, { paragraph: TextParagraph; chars: StyledChar[] }>;
+/** One step of the undo history: annotations and edited paragraphs together. */
+interface EditorState {
+  annotations: Annotation[];
+  texts: TextState;
+}
+
+const sameChars = (a: StyledChar[], b: StyledChar[]) => a === b || JSON.stringify(a) === JSON.stringify(b);
+
 const abortError = (message: string) => Object.assign(new Error(message), { name: 'AbortError' });
 
 const MESSAGES: EditorMessages = {
@@ -246,7 +257,9 @@ export class PdfEditor {
   private visible = new Set<PageView>();
   private annotations: Annotation[] = [];
   private initialAnnotations: Annotation[] | undefined;
-  private readonly history = new History<Annotation[]>();
+  private readonly history = new History<EditorState>();
+  /** The edited paragraphs, and the paragraph's text, when the open paragraph was opened: its undo step. */
+  private sessionStart: { texts: TextState; chars: StyledChar[] } | null = null;
   private selectedId: string | null = null;
   private textModels = new Map<number, Promise<PageText>>();
   /** Page text models that have arrived, for synchronous checks such as overlap. */
@@ -573,22 +586,37 @@ export class PdfEditor {
   }
 
   get canUndo(): boolean {
-    return this.history.canUndo;
+    return !!this.textSession?.canUndo || this.history.canUndo;
   }
 
   get canRedo(): boolean {
-    return this.history.canRedo;
+    return !!this.textSession?.canRedo || this.history.canRedo;
   }
 
+  /**
+   * Undoes the last step. In an open paragraph that is the last typing in it;
+   * otherwise the last change to an annotation or to a paragraph's text
+   * (every paragraph left after changing it is one step).
+   */
   undo(): void {
     this.commitTextEditor();
-    const previous = this.history.undo(this.annotations);
+    if (this.textSession?.canUndo) {
+      this.textSession.undo();
+      return;
+    }
+    this.endTextEdit();
+    const previous = this.history.undo(this.state());
     if (previous) this.restore(previous);
   }
 
   redo(): void {
     this.commitTextEditor();
-    const next = this.history.redo(this.annotations);
+    if (this.textSession?.canRedo) {
+      this.textSession.redo();
+      return;
+    }
+    this.endTextEdit();
+    const next = this.history.redo(this.state());
     if (next) this.restore(next);
   }
 
@@ -1227,15 +1255,25 @@ export class PdfEditor {
     }
   }
 
+  private textState(): TextState {
+    return new Map([...this.textEdits].map(([id, { paragraph, session }]) => [id, { paragraph, chars: session.styledChars }]));
+  }
+
+  private state(annotations = this.annotations): EditorState {
+    return { annotations, texts: this.textState() };
+  }
+
   private commit(next: Annotation[]): void {
-    this.history.push(this.annotations);
+    this.history.push(this.state());
     this.annotations = next;
     this.refresh();
     this.emitAnnotations();
     this.emitHistory();
   }
 
-  private restore(snapshot: Annotation[]): void {
+  private restore(state: EditorState): void {
+    this.restoreTexts(state.texts);
+    const snapshot = state.annotations;
     this.annotations = snapshot;
     if (this.selectedId && !snapshot.some((a) => a.id === this.selectedId)) {
       this.selectedId = null;
@@ -1437,11 +1475,15 @@ export class PdfEditor {
         : paragraph.recognized
           ? recognizedChars(paragraph, (font) => store.fallbackFor(font))
           : paragraphChars(paragraph, (style, char) => store.advance(style, char));
+    this.sessionStart = { texts: this.textState(), chars: initial };
     previous?.session.destroy();
     this.textEdits.delete(paragraph.id);
     if (scan) scan.painted = null;
     this.textSession = new TextEditSession(view, paragraph, paragraphFrame(paragraph, page.block), store, {
-      onChange: () => this.drawParagraphOutlines(paragraph),
+      onChange: () => {
+        this.drawParagraphOutlines(paragraph);
+        this.emitHistory();
+      },
       onExit: () => this.endTextEdit(),
       ...(scan ? { paint: (session: TextEditSession) => this.paintScan(session, scan) } : {}),
     }, initial);
@@ -1602,6 +1644,10 @@ export class PdfEditor {
     this.textSession = null;
     this.textDragging = false;
     delete this.root.dataset.editing;
+    // Leaving a paragraph after changing it is one step of the undo history.
+    const start = this.sessionStart;
+    this.sessionStart = null;
+    if (start && !sameChars(start.chars, session.styledChars)) this.history.push({ annotations: this.annotations, texts: start.texts });
     if (session.changed) {
       session.freeze();
       this.textEdits.set(session.paragraph.id, { paragraph: session.paragraph, session });
@@ -1610,6 +1656,60 @@ export class PdfEditor {
     }
     this.updateHidden(session.paragraph.pageIndex);
     this.drawParagraphOutlines(session.paragraph);
+    this.events.emit('textEditsChange', { edits: this.getTextEdits() });
+    this.emitHistory();
+    this.root.focus({ preventScroll: true });
+  }
+
+  /** Brings the edited paragraphs to a state from the undo history. */
+  private restoreTexts(target: TextState): void {
+    let changed = false;
+    for (const id of new Set([...this.textEdits.keys(), ...target.keys()])) {
+      const current = this.textEdits.get(id);
+      const wanted = target.get(id);
+      if (current?.session.styledChars === wanted?.chars) continue;
+      changed = true;
+      if (!wanted) {
+        // Back to the page's own text.
+        current!.session.destroy();
+        this.textEdits.delete(id);
+        this.updateHidden(current!.paragraph.pageIndex);
+        this.drawParagraphOutlines(current!.paragraph);
+      } else if (current) {
+        current.session.setChars(wanted.chars);
+      } else {
+        void this.reopenEdit(wanted.paragraph, wanted.chars).catch((error: unknown) => this.events.emit('error', { error }));
+      }
+    }
+    if (changed) this.events.emit('textEditsChange', { edits: this.getTextEdits() });
+  }
+
+  /** Shows an edit again (redo, or undo back to it) as a closed paragraph. Its glyphs were loaded when it was made. */
+  private async reopenEdit(paragraph: TextParagraph, chars: StyledChar[]): Promise<void> {
+    const view = this.views[paragraph.pageIndex];
+    if (!view) return;
+    const page = await this.getPageText(paragraph.pageIndex);
+    const scan = paragraph.recognized ? (this.scanEdits.get(paragraph.id) ?? null) : null;
+    const background = paragraph.recognized && !scan ? await this.scanPatch(paragraph).catch(() => null) : null;
+    if (this.textEdits.has(paragraph.id) || this.textSession?.paragraph.id === paragraph.id || this.views[paragraph.pageIndex] !== view) return;
+    if (scan) scan.painted = null;
+    const session = new TextEditSession(
+      view,
+      paragraph,
+      paragraphFrame(paragraph, page.block),
+      this.glyphs,
+      {
+        onChange: () => this.drawParagraphOutlines(paragraph),
+        onExit: () => undefined,
+        ...(scan ? { paint: (s: TextEditSession) => this.paintScan(s, scan) } : {}),
+      },
+      chars,
+    );
+    if (background) session.setBackground({ href: background.href, ...background.patch });
+    session.freeze();
+    this.textEdits.set(paragraph.id, { paragraph, session });
+    this.updateHidden(paragraph.pageIndex);
+    this.drawParagraphOutlines(paragraph);
     this.events.emit('textEditsChange', { edits: this.getTextEdits() });
     this.root.focus({ preventScroll: true });
   }
@@ -1846,7 +1946,7 @@ export class PdfEditor {
       case 'move':
       case 'resize':
         if (interaction.kind === 'move' ? interaction.moved : interaction.resized) {
-          this.history.push(interaction.before);
+          this.history.push(this.state(interaction.before));
           this.emitAnnotations();
           this.emitHistory();
         }
@@ -1973,11 +2073,12 @@ export class PdfEditor {
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
 
-    if (mod && key === 'z') {
+    const letter = shortcutKey(event);
+    if (mod && letter === 'z') {
       event.preventDefault();
       if (event.shiftKey) this.redo();
       else this.undo();
-    } else if (mod && key === 'y') {
+    } else if (mod && letter === 'y') {
       event.preventDefault();
       this.redo();
     } else if (mod && (key === '=' || key === '+')) {
@@ -2000,8 +2101,8 @@ export class PdfEditor {
       const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
       const dy = key === 'arrowdown' ? -step : key === 'arrowup' ? step : 0;
       this.commit(this.annotations.map((a) => (a.id === this.selectedId ? translate(a, dx, dy) : a)));
-    } else if (!mod && !event.altKey && SHORTCUTS[key]) {
-      this.setTool(SHORTCUTS[key]);
+    } else if (!mod && !event.altKey && SHORTCUTS[letter]) {
+      this.setTool(SHORTCUTS[letter]);
     }
   };
 

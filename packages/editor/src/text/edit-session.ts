@@ -1,3 +1,4 @@
+import { shortcutKey } from '../keys';
 import type { PageView } from '../page-view';
 import type { Point, Rect } from '../types';
 import { FALLBACK_FONT, type GlyphStore } from './glyph-store';
@@ -409,14 +410,29 @@ export class TextEditSession {
     this.render();
   }
 
-  private undo(): void {
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+
+  /** Puts different text in, as the editor's undo history does for a paragraph that was closed. */
+  setChars(chars: StyledChar[]): void {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.restore({ chars, caret: chars.length, anchor: chars.length });
+  }
+
+  undo(): void {
     const previous = this.undoStack.pop();
     if (!previous) return;
     this.redoStack.push(this.snapshot());
     this.restore(previous);
   }
 
-  private redo(): void {
+  redo(): void {
     const next = this.redoStack.pop();
     if (!next) return;
     this.undoStack.push(this.snapshot());
@@ -520,15 +536,16 @@ export class TextEditSession {
         event.preventDefault();
         return;
     }
-    if (mod && event.key.toLowerCase() === 'a') {
+    const key = shortcutKey(event);
+    if (mod && key === 'a') {
       event.preventDefault();
       this.anchor = 0;
       this.move(this.chars.length, true);
-    } else if (mod && event.key.toLowerCase() === 'z') {
+    } else if (mod && key === 'z') {
       event.preventDefault();
       if (event.shiftKey) this.redo();
       else this.undo();
-    } else if (mod && event.key.toLowerCase() === 'y' && !mac) {
+    } else if (mod && key === 'y' && !mac) {
       event.preventDefault();
       this.redo();
     }

@@ -52,6 +52,16 @@ npx wrangler login     # once per machine
 npm run deploy:demo    # builds the demo and uploads it
 ```
 
+## Undo
+
+`undo()` / `redo()` (⌘Z, ⇧⌘Z, Ctrl+Y) cover everything: in an open
+paragraph they step through the typing; otherwise through one history of
+annotation changes and paragraph edits, where each paragraph left after
+changing it (Escape, a click elsewhere) is one step, scanned paragraphs
+included. Shortcuts go by the key's place (`event.code`), so they work with
+any keyboard layout (⌘Z on a Ukrainian one reports "я"). The site shows Undo
+and Redo with the Edit text tool too, without taking the caret away.
+
 ## Search engines
 
 The site is built for search as well as for use (`apps/demo`):
@@ -501,8 +511,7 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
 - Text model: two plain text lines without spacing (e.g. from a .txt) read as one
   paragraph; bullets drawn as shapes are not part of the item's text; vertical
   and rotated text is skipped.
-- Text editing: no bold/italic toggles or font picker; text edits have their own
-  undo inside a paragraph but are outside the editor's undo history; the
+- Text editing: no bold/italic toggles or font picker; the
   live document isn't modified until save, so page text search/selection
   reflects the original until the file is reopened; a paragraph that grows
   overlaps content below instead of pushing it down; not yet checked in
