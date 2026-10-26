@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { PDFDocument, PDFName } from 'pdf-lib';
 import { readFormFields } from '../packages/editor/src/pdf/forms';
-import { downloadBytes, expectPainted, longPdf, openFile, openSample, pdfText } from './helpers';
+import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfText, waitForApp } from './helpers';
 
 /** Clicks a point of a page given as fractions of its width and height. */
 async function clickPage(page: Page, x: number, y: number, index = 0) {
@@ -18,7 +18,7 @@ async function download(page: Page): Promise<Uint8Array> {
 const squash = (text: string) => text.replace(/\s+/g, '');
 
 test('start page fits the screen', async ({ page }) => {
-  await page.goto('/');
+  await gotoApp(page, '/');
   await expect(page.getByRole('button', { name: 'A contract', exact: true })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
@@ -109,7 +109,7 @@ test('undoes and redoes a paragraph edit after leaving it', async ({ page }) => 
 
 test('opens a password-protected PDF after asking for its password', async ({ page }) => {
   const bytes = readFileSync(new URL('../packages/editor/test/fixtures/protected-user.pdf', import.meta.url));
-  await page.goto('/');
+  await gotoApp(page, '/');
   await page.locator('input[type=file]').setInputFiles({ name: 'Protected.pdf', mimeType: 'application/pdf', buffer: bytes });
   const dialog = page.getByRole('dialog', { name: 'This PDF is protected' });
   await expect(dialog).toBeVisible();
@@ -128,7 +128,7 @@ test('opens a password-protected PDF after asking for its password', async ({ pa
 
 test('asks for the password again after cancelling', async ({ page }) => {
   const bytes = readFileSync(new URL('../packages/editor/test/fixtures/protected-user.pdf', import.meta.url));
-  await page.goto('/');
+  await gotoApp(page, '/');
   await page.locator('input[type=file]').setInputFiles({ name: 'Protected.pdf', mimeType: 'application/pdf', buffer: bytes });
   const dialog = page.getByRole('dialog', { name: 'This PDF is protected' });
   await dialog.getByRole('button', { name: 'Cancel' }).click();
@@ -273,11 +273,11 @@ test('every page in the sitemap is plain HTML with its own title, heading and st
 
 test('a tool page opens its tool', async ({ page }) => {
   const bytes = await longPdf(1);
-  await page.goto('/compress-pdf');
+  await gotoApp(page, '/compress-pdf');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Compress a PDF.');
   await page.locator('input[type=file]').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
   await expect(page.getByRole('dialog', { name: 'Compress PDF' })).toBeVisible();
-  await page.goto('/sign-pdf');
+  await gotoApp(page, '/sign-pdf');
   await page.locator('input[type=file]').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
   await expect(page.getByRole('dialog', { name: 'Add your signature' })).toBeVisible();
 });
@@ -300,12 +300,14 @@ test('every language has its own pages, linked to each other, and a German page 
     const sitemap = await (await request.get('/sitemap.xml')).text();
     expect(sitemap.match(/<loc>/g)!.length).toBeGreaterThanOrEqual(70);
   }
-  await page.goto('/uk');
+  await gotoApp(page, '/uk');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Редагуйте будь-який PDF просто в браузері.');
   await page.getByRole('button', { name: 'Мова' }).click();
   await page.getByRole('menuitem', { name: 'Deutsch' }).click();
   await expect(page).toHaveURL(/\/de$/);
+  await waitForApp(page);
   await page.locator('input[type=file]').setInputFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
-  await expect(page.getByRole('navigation', { name: 'Werkzeuge' })).toBeVisible();
+  // Exactly: the start page's footer is "Alle Werkzeuge".
+  await expect(page.getByRole('navigation', { name: 'Werkzeuge', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Herunterladen/ })).toBeVisible();
 });

@@ -53,14 +53,27 @@ export async function expectPainted(page: Page, index = 0): Promise<void> {
   await expect.poll(() => ink(page, index), { message: `page ${index + 1} is drawn` }).toBeGreaterThan(0.002);
 }
 
+/**
+ * Waits until the app has replaced the prerendered page: before that, a
+ * click or a chosen file lands on markup React is about to swap out.
+ */
+export async function waitForApp(page: Page): Promise<void> {
+  await page.locator('html[data-app="ready"]').waitFor({ state: 'attached' });
+}
+
+export async function gotoApp(page: Page, path = '/'): Promise<void> {
+  await page.goto(path);
+  await waitForApp(page);
+}
+
 export async function openSample(page: Page, name: 'A contract' | 'A scanned invoice' | 'A form'): Promise<void> {
-  await page.goto('/');
+  await gotoApp(page);
   await page.getByRole('button', { name, exact: true }).click();
   await expectPainted(page);
 }
 
 export async function openFile(page: Page, name: string, bytes: Uint8Array): Promise<void> {
-  await page.goto('/');
+  await gotoApp(page);
   await page.locator('input[type=file]').setInputFiles({ name, mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
   await expectPainted(page);
 }

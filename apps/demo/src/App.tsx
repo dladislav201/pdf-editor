@@ -28,6 +28,10 @@ export function App() {
   useEffect(() => track(`view.${id}.${locale}`), [id, locale]);
 
   useEffect(() => applyTheme(theme), [theme]);
+  // From here on the page is the app, not the prerendered copy it replaced: tests wait for this.
+  useEffect(() => {
+    document.documentElement.dataset.app = 'ready';
+  }, []);
 
   // The browser's back button returns to the start page.
   useEffect(() => {
