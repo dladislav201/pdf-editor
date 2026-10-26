@@ -1,8 +1,9 @@
 // Generates scan-invoice.pdf: a made-up Ukrainian invoice "scanned" at 200 dpi —
 // slightly rotated, grey speckles, a blue stamp over the totals and a blue
 // signature, saved as one JPEG per page. With `en`, the same invoice in English
-// (scan-invoice-en.pdf, the site's sample). Run from packages/editor:
-//   node test/fixtures/make-scan.mjs [en]
+// (scan-invoice-en.pdf, the site's sample); with `de`, `nb` or `sv` in German,
+// Norwegian or Swedish (OCR tests). Run from packages/editor:
+//   node test/fixtures/make-scan.mjs [en|de|nb|sv]
 import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -14,8 +15,64 @@ const arimo = dirname(require.resolve('@expo-google-fonts/arimo/package.json'));
 GlobalFonts.registerFromPath(join(arimo, '400Regular', 'Arimo_400Regular.ttf'), 'Arimo');
 GlobalFonts.registerFromPath(join(arimo, '700Bold', 'Arimo_700Bold.ttf'), 'Arimo Bold');
 
+const LANGUAGES = {
+  de: {
+    title: 'Rechnung Nr. RE-2026-0042 vom 21. Oktober 2026',
+    supplier: 'Lieferant: Müller & Söhne GmbH, Hauptstraße 12, München',
+    customer: 'Kunde: Bäckerei Großmann KG, Köln',
+    contract: 'Vertrag: Nr. 17 vom 1. September 2026',
+    cells: [
+      ['Nr.', 'Artikel', 'Einh.', 'Menge', 'Preis', 'Betrag'],
+      ['1', 'Büropapier A4, 500 Blatt', 'Pck.', '12', '4,50', '54,00'],
+      ['2', 'Tonerkartusche HP 85A', 'Stk.', '3', '89,50', '268,50'],
+      ['3', 'Heftklammern Nr. 24', 'Pck.', '20', '1,80', '36,00'],
+    ],
+    total: 'Summe netto: 358,50 EUR',
+    words: 'Betrag in Worten: dreihundertachtundfünfzig Euro und fünfzig Cent.',
+    from: 'Für den Lieferanten ____________',
+    to: 'Erhalten von ____________',
+    stamp: [['MÜLLER & SÖHNE'], ['HRB 000000']],
+    file: './scan-invoice-de.pdf',
+  },
+  nb: {
+    title: 'Faktura nr. 2026-0042 datert 21. oktober 2026',
+    supplier: 'Leverandør: Bjørn Ødegård AS, Storgata 12, Tromsø',
+    customer: 'Kunde: Fjellstuen Kafé AS, Bergen',
+    contract: 'Avtale: nr. 17 av 1. september 2026',
+    cells: [
+      ['Nr.', 'Vare', 'Enhet', 'Antall', 'Pris', 'Beløp'],
+      ['1', 'Kopipapir A4, 500 ark', 'pk', '12', '45,00', '540,00'],
+      ['2', 'Tonerkassett HP 85A', 'stk', '3', '895,00', '2685,00'],
+      ['3', 'Stifter nr. 24', 'pk', '20', '18,00', '360,00'],
+    ],
+    total: 'Sum eks. mva.: kr 3585,00',
+    words: 'Beløp i ord: tre tusen fem hundre og åttifem kroner.',
+    from: 'For leverandøren ____________',
+    to: 'Mottatt av ____________',
+    stamp: [['ØDEGÅRD AS'], ['ORG.NR 000 000 000']],
+    file: './scan-invoice-nb.pdf',
+  },
+  sv: {
+    title: 'Faktura nr 2026-0042 daterad 21 oktober 2026',
+    supplier: 'Leverantör: Åkesson & Öberg AB, Storgatan 12, Göteborg',
+    customer: 'Kund: Kaffestugan i Väst AB, Malmö',
+    contract: 'Avtal: nr 17 av 1 september 2026',
+    cells: [
+      ['Nr', 'Artikel', 'Enhet', 'Antal', 'Pris', 'Belopp'],
+      ['1', 'Kopieringspapper A4, 500 ark', 'fp', '12', '49,00', '588,00'],
+      ['2', 'Tonerkassett HP 85A', 'st', '3', '949,00', '2847,00'],
+      ['3', 'Häftklamrar nr 24', 'fp', '20', '19,00', '380,00'],
+    ],
+    total: 'Summa exkl. moms: 3815,00 kr',
+    words: 'Belopp med bokstäver: tretusen åttahundrafemton kronor.',
+    from: 'För leverantören ____________',
+    to: 'Mottaget av ____________',
+    stamp: [['ÅKESSON & ÖBERG'], ['ORG.NR 000000-0000']],
+    file: './scan-invoice-sv.pdf',
+  },
+};
 const english = process.argv[2] === 'en';
-const T = english
+const T = LANGUAGES[process.argv[2]] ?? (english
   ? {
       title: 'Invoice No. INV-2026-0042 dated 21 October 2026',
       supplier: 'Supplier: Northwind Supplies Ltd, 12 Test Street, London',
@@ -58,7 +115,7 @@ const T = english
         ['ЄДРПОУ 00000000', 131],
       ],
       file: './scan-invoice.pdf',
-    };
+    });
 
 const DPI = 200;
 const W = Math.round(8.27 * DPI);
@@ -124,8 +181,10 @@ ctx.beginPath();
 ctx.arc(pt(170), pt(370), pt(36), 0, Math.PI * 2);
 ctx.stroke();
 ctx.font = `${pt(8)}px "Arimo Bold"`;
-ctx.fillText(T.stamp[0][0], pt(T.stamp[0][1]), pt(366));
-ctx.fillText(T.stamp[1][0], pt(T.stamp[1][1]), pt(380));
+// Stamp lines without a set place are centred in it.
+const stampLine = ([line, x], y) => ctx.fillText(line, x === undefined ? pt(170) - ctx.measureText(line).width / 2 : pt(x), pt(y));
+stampLine(T.stamp[0], 366);
+stampLine(T.stamp[1], 380);
 ctx.lineWidth = pt(1.2);
 ctx.beginPath();
 ctx.moveTo(pt(350), pt(385));

@@ -38,7 +38,7 @@ They stay. Only the black letters you change are erased and redrawn. If a blue s
 - **Scan at 200–300 dpi.** Low resolution scans have too few pixels per letter to read reliably.
 - **Keep the page flat and straight.** A slight tilt is corrected; a photo taken at an angle is not.
 - **Typed text only.** Handwriting isn’t recognized.
-- **Languages:** English and Ukrainian are recognized.
+- **Languages:** English, German, Norwegian, Swedish and Ukrainian are recognized. The English pages read English and Ukrainian; for the others, switch the site’s language at the top.
 - If you type a letter that doesn’t appear anywhere on the page, it’s drawn from a matching open font, so a rare letter may look a little cleaner than the rest.
 
 ## Is it private?

@@ -38,7 +38,7 @@ const coreDir = dirname(require.resolve('tesseract.js-core/package.json', { path
 for (const core of ['tesseract-core-lstm', 'tesseract-core-simd-lstm', 'tesseract-core-relaxedsimd-lstm']) {
   cpSync(join(coreDir, `${core}.wasm.js`), join(out, 'ocr', `${core}.wasm.js`));
 }
-for (const lang of ['ukr', 'eng']) {
+for (const lang of ['eng', 'ukr', 'deu', 'nor', 'swe']) {
   const data = dirname(require.resolve(`@tesseract.js-data/${lang}/package.json`));
   cpSync(join(data, '4.0.0_best_int', `${lang}.traineddata.gz`), join(out, 'ocr', 'lang', `${lang}.traineddata.gz`));
 }

@@ -9,3 +9,4 @@ Real PDFs from different producers, used by the text-model tests.
 | `scan-invoice.pdf` | A made-up Ukrainian invoice "scanned" at 200 dpi: one JPEG per page, rotated 0.6°, speckles, a blue stamp and signature | `node test/fixtures/make-scan.mjs` |
 | `scan-invoice-en.pdf` | The same invoice in English, with a blue stamp over "For the supplier"; the site's scanned sample | `node test/fixtures/make-scan.mjs en` |
 | `protected-user.pdf`, `protected-owner.pdf` | `chrome-contract.pdf` saved by macOS PDFKit (RC4-128) with a password to open (`secret`), and with an owner password only | `PDFDocument.write(to:withOptions:)` with `userPasswordOption` / `ownerPasswordOption` |
+| `scan-invoice-de.pdf`, `scan-invoice-nb.pdf`, `scan-invoice-sv.pdf` | The same scanned invoice in German, Norwegian and Swedish (umlauts, ß, å, æ, ø), for the OCR language tests | `node test/fixtures/make-scan.mjs de` (`nb`, `sv`) |

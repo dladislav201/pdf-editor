@@ -10,7 +10,7 @@ files are never uploaded anywhere.
 | `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (PDFium WebAssembly in a Web Worker), annotation tools, undo/redo, PDF annotation read/write (pdf-lib) |
 | `packages/react` | `@pdfsdk/react` — `<PdfEditor />` component |
 | `apps/demo` | The web service (Vite + React): start page with drop zone and tools, and the editor with floating pill toolbars (the editor's built-in toolbar is off). Name and domain to come |
-| `scripts/copy-engine-assets.mjs` | Copies `pdfium.wasm`, `harfbuzz-subset.wasm`, the fallback fonts and the OCR assets (Tesseract worker, cores, Ukrainian and English models) next to the bundle |
+| `scripts/copy-engine-assets.mjs` | Copies `pdfium.wasm`, `harfbuzz-subset.wasm`, the fallback fonts and the OCR assets (Tesseract worker, cores, English, Ukrainian, German, Norwegian and Swedish models) next to the bundle |
 
 ## Run
 
@@ -51,6 +51,21 @@ response headers: `apps/demo/public/_headers`.
 npx wrangler login     # once per machine
 npm run deploy:demo    # builds the demo and uploads it
 ```
+
+## Scan languages
+
+Tesseract models for English, Ukrainian, German, Norwegian (Bokmål) and
+Swedish ship in `dist/engine/ocr/lang` (1.3–3 MB each, loaded on first use).
+The editor reads scans in the `ocrLanguages` option (default `ukr` +
+`eng`); every language added costs time per page. The site reads the
+page's language with English: `deu`, `nor`, `swe` on the German, Norwegian
+and Swedish pages, `ukr` + `eng` on the English and Ukrainian ones. The
+Cyrillic clean-ups (Latin look-alikes, "Ne 17" → "№ 17") only apply with
+Ukrainian among the languages. `test/fixtures/scan-invoice-{de,nb,sv}.pdf`
+are the synthetic invoice in those languages (`make-scan.mjs de|nb|sv`);
+`src/ocr/languages.test.ts` reads them: with its own model the German scan
+gives "Müller & Söhne, Hauptstraße, München", with English alone "Miller &
+S6hne, Munchen".
 
 ## Protected PDFs
 
@@ -539,8 +554,7 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
   may draw the edited piece a fraction of a pixel off the page image; the
   image work (ink, skew, cells) runs on the main thread between Tesseract
   calls (about 0.1 s a page on the sample); handwriting and photographed
-  (perspective) pages are not handled; only Ukrainian and English models
-  ship.
+  (perspective) pages are not handled.
 - Phones: reordering pages relies on HTML drag and drop (iOS 15+ after a
   long press; not yet checked on a real device); the theme switch and zoom
   buttons are hidden (pinch to zoom).

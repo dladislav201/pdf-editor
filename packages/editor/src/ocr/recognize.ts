@@ -13,6 +13,8 @@ export interface OcrEngine {
    * as one block of text; `numeric` restricts it to digits and separators.
    */
   recognize(image: Raster, mode: { layout: 'page' | 'block'; numeric?: boolean }): Promise<RecognizedWord[]>;
+  /** Tesseract codes of the languages read; Cyrillic clean-ups apply only with Ukrainian among them. */
+  readonly languages?: readonly string[];
 }
 
 export interface RasterResult {
@@ -146,6 +148,8 @@ function hasInk(image: Raster): boolean {
  * the cell pass, for when only the page's letters are wanted.
  */
 export async function recognizeRaster(source: Raster, engine: OcrEngine, options: { cells?: boolean } = {}): Promise<RasterResult> {
+  // Look-alike and "№" fixes are for Cyrillic documents: a German "No 17" stays.
+  const cyrillic = engine.languages?.includes('ukr') ?? true;
   const clean: Raster = { width: source.width, height: source.height, rgba: new Uint8ClampedArray(source.rgba) };
   const colored = new Uint8Array(source.width * source.height);
   removeColoredInk(clean, undefined, colored);
@@ -197,7 +201,7 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine, options
   const up: [number, number] = [Math.sin(angle), -Math.cos(angle)];
   for (const [, lineWords] of [...byLine].sort((a, b) => a[0] - b[0])) {
     lineWords.sort((a, b) => a.box.x0 - b.box.x0);
-    const texts = fixLine(lineWords.map((w) => w.text));
+    const texts = cyrillic ? fixLine(lineWords.map((w) => w.text)) : lineWords.map((w) => w.text);
     const color = lineColor(
       lineWords.map((w) => inkColor(source, straight === clean ? w.box : unrotateBox(w.box, angle, source.width, source.height))),
     );

@@ -9,7 +9,7 @@ import { reportError, track } from './telemetry';
 import { CompressDialog, ImagesDialog } from './ExportDialogs';
 import { FeedbackDialog } from './FeedbackDialog';
 import { PasswordDialog } from './PasswordDialog';
-import { useI18n } from './i18n';
+import { useI18n, type Locale } from './i18n';
 
 const TOOLS: { tool: 'select' | 'editText' | 'highlight' | 'ink' | 'rectangle' | 'text'; icon: IconName; key: string }[] = [
   { tool: 'select', icon: 'cursor', key: 'V' },
@@ -19,6 +19,14 @@ const TOOLS: { tool: 'select' | 'editText' | 'highlight' | 'ink' | 'rectangle' |
   { tool: 'rectangle', icon: 'shapes', key: 'R' },
   { tool: 'text', icon: 'text', key: 'T' },
 ];
+/** Scans are read in the page's language and English (the English pages keep Ukrainian, as before). */
+const OCR_LANGUAGES: Record<Locale, string[]> = {
+  en: ['ukr', 'eng'],
+  uk: ['ukr', 'eng'],
+  de: ['deu', 'eng'],
+  nb: ['nor', 'eng'],
+  sv: ['swe', 'eng'],
+};
 const COLORS = ['#facc15', '#ef4444', '#22c55e', '#2f6fed', '#191918'];
 const MAX_FIT_ZOOM = 1.25;
 
@@ -83,7 +91,7 @@ export function Workspace({
   onToggleTheme: () => void;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const w = t.workspace;
   const editorRef = useRef<PdfEditorInstance | null>(null);
   const [editor, setEditor] = useState<PdfEditorInstance | null>(null);
@@ -279,6 +287,7 @@ export function Workspace({
           fontUrl="/fonts/DejaVuSans.ttf"
           licenseKey={DEMO_LICENSE_KEY}
           messages={t.editor}
+          ocrLanguages={OCR_LANGUAGES[locale]}
           getPassword={getPassword}
           onReady={setEditor}
           onError={reportError}

@@ -241,6 +241,7 @@ export class PdfEditor {
   private readonly fallbackFontsUrl: string;
   private readonly ocrUrl: string;
   private readonly recognizeOnEdit: boolean;
+  private readonly ocrLanguages: string[];
   private readonly getPassword: EditorOptions['getPassword'];
   private readonly messages: EditorMessages;
   private readonly license: Promise<LicenseInfo>;
@@ -332,6 +333,7 @@ export class PdfEditor {
     this.fallbackFontsUrl = withTrailingSlash(options.fallbackFontsUrl ?? `${this.assetsUrl}fonts/`);
     this.ocrUrl = withTrailingSlash(options.ocrUrl ?? `${this.assetsUrl}ocr/`);
     this.recognizeOnEdit = options.recognizeOnEdit ?? true;
+    this.ocrLanguages = options.ocrLanguages ?? ['ukr', 'eng'];
     this.getPassword = options.getPassword;
     this.messages = { ...MESSAGES, ...options.messages };
     const { workerUrl } = options;
@@ -1033,7 +1035,7 @@ export class PdfEditor {
       }
       check();
 
-      const engine = this.ocrEngine(options.languages ?? ['ukr', 'eng']);
+      const engine = this.ocrEngine(options.languages ?? this.ocrLanguages);
 
       const results: OcrPage[] = [];
       const layers: { page: number; words: InvisibleWord[] }[] = [];
@@ -1142,7 +1144,7 @@ export class PdfEditor {
     const height = Math.round(geometry.height);
     const rgba = await this.engine.raster(docId, pageIndex, width, height);
     // Only the letters are wanted: the page's text is already there, so table cells aren't re-read.
-    const result = await recognizeRaster({ width, height, rgba }, this.ocrEngine(this.ocr?.languages.split('+') ?? ['ukr', 'eng']), {
+    const result = await recognizeRaster({ width, height, rgba }, this.ocrEngine(this.ocr?.languages.split('+') ?? this.ocrLanguages), {
       cells: false,
     });
     return { font: ScanFont.fromPage(result.straight.image, result.straight.words), geometry, angle: result.angle };

@@ -134,6 +134,13 @@ export interface EditorOptions {
    * document — and what is saved — has no password or restrictions.
    */
   getPassword?: (request: { fileName: string; incorrect: boolean }) => Promise<string | null>;
+  /**
+   * Languages scans are read in (Tesseract codes, the most likely first):
+   * `eng`, `ukr`, `deu`, `nor` and `swe` ship in `dist/engine/ocr/lang`.
+   * Each one costs time per page, so name only the ones the documents use.
+   * Default `['ukr', 'eng']`.
+   */
+  ocrLanguages?: string[];
   /** The editor's own words, for other languages. */
   messages?: Partial<EditorMessages>;
   /**
@@ -211,7 +218,7 @@ export interface PageSource {
 export interface RecognizeOptions {
   /** Pages to read (0-based). Default: every scanned page without recognized text. */
   pages?: number[];
-  /** Tesseract language codes; models are loaded from `ocrUrl`. Default `['ukr', 'eng']`. */
+  /** Tesseract language codes; models are loaded from `ocrUrl`. Default: the `ocrLanguages` option. */
   languages?: string[];
   /** Resolution pages are read at. Default 300. */
   dpi?: number;

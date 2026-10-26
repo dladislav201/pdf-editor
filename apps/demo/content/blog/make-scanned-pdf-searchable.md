@@ -31,7 +31,7 @@ The recognized text goes in as an **invisible layer** under the scan, the way Ac
 - **Straight pages.** A slight tilt is corrected automatically; pages photographed at an angle are not.
 - **Tables are read cell by cell**, so numbers next to table borders aren’t lost.
 - **Stamps and coloured signatures are ignored** while reading, so the text under them is still found.
-- **Languages:** English and Ukrainian. Handwriting isn’t recognized.
+- **Languages:** English, German, Norwegian, Swedish and Ukrainian. The English pages read English and Ukrainian; for the others, switch the site’s language at the top. Handwriting isn’t recognized.
 
 ## Why do it in the browser?
 

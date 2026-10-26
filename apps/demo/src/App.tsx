@@ -1,14 +1,21 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import scanSampleUrl from '../../../packages/editor/test/fixtures/scan-invoice-en.pdf?url';
+import scanDe from '../../../packages/editor/test/fixtures/scan-invoice-de.pdf?url';
+import scanEn from '../../../packages/editor/test/fixtures/scan-invoice-en.pdf?url';
+import scanNb from '../../../packages/editor/test/fixtures/scan-invoice-nb.pdf?url';
+import scanSv from '../../../packages/editor/test/fixtures/scan-invoice-sv.pdf?url';
+import scanUk from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url';
 import type { PageImage } from '@pdfsdk/editor';
 import { Home, type OpenRequest } from './Home';
-import { useI18n } from './i18n';
+import { useI18n, type Locale } from './i18n';
 import { routeOf } from './site';
 import { track } from './telemetry';
 import { applyTheme, initialTheme, type Theme } from './theme';
 
 // The editor, PDFium and pdf-lib load when a file is opened, so the start page stays light.
 const Workspace = lazy(() => import('./Workspace').then((m) => ({ default: m.Workspace })));
+
+/** The scanned sample invoice in the page's language, so it's read with the language the page reads scans in. */
+const SCAN_SAMPLES: Record<Locale, string> = { en: scanEn, de: scanDe, nb: scanNb, sv: scanSv, uk: scanUk };
 
 /** Which start-page tool a file was opened with, for the usage counts. */
 function openedWith(request: OpenRequest): string {
@@ -55,7 +62,7 @@ export function App() {
       const bytes = await createSamplePdf();
       show({ file: new File([bytes as BlobPart], 'Services agreement.pdf', { type: 'application/pdf' }), tool: 'editText' });
     } else {
-      const bytes = await (await fetch(scanSampleUrl)).arrayBuffer();
+      const bytes = await (await fetch(SCAN_SAMPLES[locale])).arrayBuffer();
       show({ file: new File([bytes], 'Scanned invoice.pdf', { type: 'application/pdf' }), tool: 'editText' });
     }
   };

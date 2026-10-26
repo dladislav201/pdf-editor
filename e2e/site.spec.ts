@@ -232,6 +232,20 @@ test('reads a scan when Edit text clicks on it and opens the line', async ({ pag
   await expect(page.getByText(/words recognized/)).toBeVisible();
 });
 
+test('reads a German scan in German', async ({ page }) => {
+  test.setTimeout(120_000);
+  await gotoApp(page, '/de');
+  await page.getByRole('button', { name: 'Eine gescannte Rechnung' }).click();
+  await expectPainted(page);
+  await page.getByRole('button', { name: 'Text erkennen' }).click();
+  await expect(page.getByText(/Wörter erkannt/)).toBeVisible({ timeout: 90_000 });
+  await page.getByRole('button', { name: /^Im Dokument suchen/ }).click();
+  for (const word of ['Müller', 'Hauptstraße', 'Bäckerei Großmann']) {
+    await page.getByRole('textbox', { name: 'Im Dokument suchen' }).fill(word);
+    await expect(page.getByText('1 von 1')).toBeVisible();
+  }
+});
+
 test('opens a 300-page document quickly and reaches its end', async ({ page }, info) => {
   test.setTimeout(120_000);
   const bytes = await longPdf(300);

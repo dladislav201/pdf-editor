@@ -42,7 +42,7 @@ export class TesseractEngine implements OcrEngine {
     private readonly load: () => Promise<TesseractModule>,
     private readonly encode: EncodeImage,
     private readonly paths: TesseractPaths,
-    private readonly languages: string[] = ['ukr', 'eng'],
+    readonly languages: string[] = ['ukr', 'eng'],
   ) {}
 
   private start(): Promise<Worker> {
