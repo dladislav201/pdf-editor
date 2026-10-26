@@ -1,4 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
+import { FeedbackDialog } from './FeedbackDialog';
 import type { ToolName } from '@pdfsdk/editor';
 import { Icon, type IconName } from './icons';
 
@@ -46,6 +47,7 @@ export function Home({
   const input = useRef<HTMLInputElement>(null);
   const pending = useRef<Omit<OpenRequest, 'file'>>({});
   const [over, setOver] = useState(false);
+  const [feedback, setFeedback] = useState(false);
 
   const choose = (options: Omit<OpenRequest, 'file'> = {}) => {
     pending.current = options;
@@ -87,9 +89,14 @@ export function Home({
             </button>
           </div>
         </nav>
-        <button type="button" className="float home__theme" onClick={onToggleTheme} aria-label="Switch theme">
-          <Icon name={theme === 'dark' ? 'moon' : 'sun'} />
-        </button>
+        <div className="home__corner">
+          <button type="button" className="float" onClick={() => setFeedback(true)} aria-label="Send feedback" title="Send feedback">
+            <Icon name="feedback" />
+          </button>
+          <button type="button" className="float" onClick={onToggleTheme} aria-label="Switch theme">
+            <Icon name={theme === 'dark' ? 'moon' : 'sun'} />
+          </button>
+        </div>
       </div>
 
       <section className="home__hero">
@@ -144,6 +151,10 @@ export function Home({
           </button>
         </div>
       </div>
+      <p className="home__privacy">
+        No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.
+      </p>
+      {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
     </main>
   );
 }

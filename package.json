@@ -13,7 +13,10 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "deploy:demo": "npm run deploy --workspace=apps/demo",
     "test": "npm run test --workspaces --if-present",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "stats": "npm run stats -w apps/demo --silent",
+    "errors": "npm run errors -w apps/demo --silent",
+    "feedback": "npm run feedback -w apps/demo --silent"
   },
   "engines": {
     "node": ">=22.13"

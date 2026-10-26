@@ -1,0 +1,92 @@
+import { describe, expect, it } from 'vitest';
+import { browserFamily, cleanError, handle, type Store } from './api';
+
+const SITE = 'https://pdf.example';
+const NOW = new Date('2026-10-25T12:00:00Z');
+
+function memory() {
+  const counts = new Map<string, number>();
+  const errors: string[] = [];
+  const feedback: Parameters<Store['feedback']>[0][] = [];
+  const store: Store = {
+    async count(day, names) {
+      for (const [name, n] of names) counts.set(`${day} ${name}`, (counts.get(`${day} ${name}`) ?? 0) + n);
+    },
+    async error(day, message) {
+      errors.push(`${day} ${message}`);
+    },
+    async feedback(entry) {
+      feedback.push(entry);
+    },
+  };
+  return { store, counts, errors, feedback };
+}
+
+const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+  new Request(`${SITE}${path}`, {
+    method: 'POST',
+    headers: { origin: SITE, 'content-type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+
+describe('site API', () => {
+  it('leaves other paths to the static site', async () => {
+    expect(await handle(new Request(`${SITE}/`), memory().store, NOW)).toBeNull();
+  });
+
+  it('counts events per day and name', async () => {
+    const { store, counts } = memory();
+    const response = await handle(post('/api/events', { names: ['open.file', 'tool.editText', 'open.file'] }), store, NOW);
+    expect(response!.status).toBe(204);
+    expect(Object.fromEntries(counts)).toEqual({ '2026-10-25 open.file': 2, '2026-10-25 tool.editText': 1 });
+  });
+
+  it('turns away bad names, other sites and other methods', async () => {
+    const { store, counts } = memory();
+    expect((await handle(post('/api/events', { names: ['Contract.pdf opened'] }), store, NOW))!.status).toBe(400);
+    expect((await handle(post('/api/events', { names: ['open.file'] }, { origin: 'https://evil.example' }), store, NOW))!.status).toBe(
+      403,
+    );
+    expect((await handle(new Request(`${SITE}/api/events`), store, NOW))!.status).toBe(405);
+    expect((await handle(post('/api/events', 'not json'), store, NOW))!.status).toBe(400);
+    expect(counts.size).toBe(0);
+  });
+
+  it('keeps errors without links', async () => {
+    const { store, errors } = memory();
+    await handle(post('/api/errors', { message: 'Could not load  blob:https://pdf.example/1234 \n at line 3' }), store, NOW);
+    expect(errors).toEqual(['2026-10-25 Could not load <url> at line 3']);
+    expect(cleanError('x'.repeat(500))).toHaveLength(300);
+  });
+
+  it('stores feedback with a browser family only', async () => {
+    const { store, feedback } = memory();
+    const agent =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+    const response = await handle(
+      post('/api/feedback', { message: '  Love it  ', email: 'jane@example.com' }, { 'user-agent': agent }),
+      store,
+      NOW,
+    );
+    expect(response!.status).toBe(204);
+    expect(feedback).toEqual([{ at: NOW.toISOString(), message: 'Love it', email: 'jane@example.com', browser: 'Safari on iOS' }]);
+  });
+
+  it('drops bots and refuses empty or bad feedback', async () => {
+    const { store, feedback } = memory();
+    expect((await handle(post('/api/feedback', { message: 'Buy now', website: 'spam.example' }), store, NOW))!.status).toBe(204);
+    expect((await handle(post('/api/feedback', { message: '   ' }), store, NOW))!.status).toBe(400);
+    expect((await handle(post('/api/feedback', { message: 'Hi', email: 'not an email' }), store, NOW))!.status).toBe(400);
+    expect(feedback).toEqual([]);
+  });
+
+  it('names browser families', () => {
+    expect(browserFamily('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/141.0 Safari/537.36 Edg/141.0')).toBe(
+      'Edge on Windows',
+    );
+    expect(browserFamily('Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:144.0) Gecko/20100101 Firefox/144.0')).toBe('Firefox on macOS');
+    expect(browserFamily('Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36')).toBe(
+      'Chrome on Android',
+    );
+  });
+});

@@ -37,6 +37,8 @@ const PATHS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
   form: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h4"/><path d="M7 14h10"/><rect x="14" y="7.5" width="3" height="3" rx="0.5"/>',
+  send: '<path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/>',
+  feedback: '<path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M8 10h8"/><path d="M8 13h5"/>',
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
 } as const;
 

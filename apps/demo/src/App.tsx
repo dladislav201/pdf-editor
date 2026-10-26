@@ -4,6 +4,7 @@ import { Home, type OpenRequest } from './Home';
 import { imagesToPdf, type PageImage } from '@pdfsdk/editor';
 import { createSampleForm } from './sample-form';
 import { createSamplePdf } from './sample-pdf';
+import { track } from './telemetry';
 import { Workspace } from './Workspace';
 
 type Theme = 'light' | 'dark';
@@ -16,6 +17,15 @@ function initialTheme(): Theme {
     // Storage can be blocked; follow the system then.
   }
   return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/** Which start-page tool a file was opened with, for the usage counts. */
+function openedWith(request: OpenRequest): string {
+  if (request.tool) return `open.file.${request.tool}`;
+  if (request.pages) return 'open.file.pages';
+  if (request.sign) return 'open.file.sign';
+  if (request.dialog) return `open.file.${request.dialog}`;
+  return 'open.file';
 }
 
 export function App() {
@@ -43,6 +53,7 @@ export function App() {
   };
 
   const sample = async (kind: 'contract' | 'scan' | 'form') => {
+    track(`open.sample.${kind}`);
     if (kind === 'form') {
       const bytes = await createSampleForm();
       show({ file: new File([bytes as BlobPart], 'Membership application.pdf', { type: 'application/pdf' }) });
@@ -57,6 +68,7 @@ export function App() {
 
   /** Photos become a PDF (one page each), opened for editing. WebP goes through a canvas to PNG. */
   const pictures = async (files: File[]) => {
+    track('open.pictures');
     const images: PageImage[] = [];
     for (const file of files) {
       if (file.type === 'image/jpeg') images.push({ bytes: new Uint8Array(await file.arrayBuffer()), type: 'jpeg' });
@@ -90,6 +102,15 @@ export function App() {
       onClose={() => history.back()}
     />
   ) : (
-    <Home onOpen={show} onPictures={(files) => void pictures(files)} onSample={(kind) => void sample(kind)} theme={theme} onToggleTheme={toggleTheme} />
+    <Home
+      onOpen={(request) => {
+        track(openedWith(request));
+        show(request);
+      }}
+      onPictures={(files) => void pictures(files)}
+      onSample={(kind) => void sample(kind)}
+      theme={theme}
+      onToggleTheme={toggleTheme}
+    />
   );
 }

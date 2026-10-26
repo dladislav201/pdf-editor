@@ -5,7 +5,9 @@ import { Icon, type IconName } from './icons';
 import { DEMO_LICENSE_KEY } from './license';
 import { Pages } from './Pages';
 import { SignDialog } from './SignDialog';
+import { reportError, track } from './telemetry';
 import { CompressDialog, ImagesDialog } from './ExportDialogs';
+import { FeedbackDialog } from './FeedbackDialog';
 
 const TOOLS: { tool: ToolName; icon: IconName; label: string; key: string }[] = [
   { tool: 'select', icon: 'cursor', label: 'Select', key: 'V' },
@@ -73,11 +75,15 @@ export function Workspace({
   });
   const searchInput = useRef<HTMLInputElement>(null);
   const wantDialog = useRef(startDialog);
+  // Filling a form counts once per document, not per keystroke.
+  const formTracked = useRef(false);
+  const [feedback, setFeedback] = useState(false);
 
   // Keep the editor in step with the site's theme.
   useEffect(() => editor?.setTheme(theme), [editor, theme]);
 
   const read = useCallback(async () => {
+    track('ocr.run');
     try {
       const pages = await editorRef.current?.recognizeText();
       setScan({ kind: 'done', words: pages?.reduce((n, p) => n + p.words.length, 0) ?? 0 });
@@ -144,6 +150,7 @@ export function Workspace({
   }, [message]);
 
   const openSearch = useCallback(() => {
+    track('search.open');
     setSearch((s) => ({ ...s, open: true }));
     requestAnimationFrame(() => searchInput.current?.select());
   }, []);
@@ -207,6 +214,11 @@ export function Workspace({
           fontUrl="/fonts/DejaVuSans.ttf"
           licenseKey={DEMO_LICENSE_KEY}
           onReady={setEditor}
+          onError={reportError}
+          onFormChange={() => {
+            if (!formTracked.current) track('form.fill');
+            formTracked.current = true;
+          }}
         />
       </div>
 
@@ -278,7 +290,10 @@ export function Workspace({
               className="pill"
               aria-pressed={mode === 'pages'}
               disabled={!loaded}
-              onClick={() => setMode('pages')}
+              onClick={() => {
+                track('pages.open');
+                setMode('pages');
+              }}
             >
               <Icon name="grid" /> Pages
             </button>
@@ -342,7 +357,10 @@ export function Workspace({
             type="button"
             className="pill pill--ink"
             aria-label={`Download${edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}`}
-            onClick={() => void editor?.download(file.name).catch(() => undefined)}
+            onClick={() => {
+              track('download.pdf');
+              void editor?.download(file.name).catch(reportError);
+            }}
           >
             <Icon name="download" />
             <span className="wide-only">Download{edits ? ` · ${edits} edit${edits > 1 ? 's' : ''}` : ''}</span>
@@ -363,7 +381,8 @@ export function Workspace({
                 role="menuitem"
                 onClick={() => {
                   setMenu(false);
-                  void editor?.download(file.name).catch(() => undefined);
+                  track('download.pdf');
+                  void editor?.download(file.name).catch(reportError);
                 }}
               >
                 <Icon name="file" />{' '}
@@ -471,7 +490,10 @@ export function Workspace({
                 aria-pressed={tool === t}
                 title={`${label} (${key})`}
                 aria-label={label}
-                onClick={() => editor?.setTool(t)}
+                onClick={() => {
+                  track(`tool.${t}`);
+                  editor?.setTool(t);
+                }}
               >
                 <Icon name={icon} />
                 {t !== 'select' && <span className="wide-only">{label}</span>}
@@ -490,10 +512,16 @@ export function Workspace({
       {editor && dialog === 'compress' && <CompressDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
       {editor && dialog === 'images' && <ImagesDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
 
+      <button type="button" className="float feedback-button" hidden={mode === 'pages'} onClick={() => setFeedback(true)} aria-label="Send feedback" title="Send feedback">
+        <Icon name="feedback" />
+      </button>
+      {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
+
       {signing && (
         <SignDialog
           onClose={() => setSigning(false)}
           onPlace={(signature) => {
+            track('sign.place');
             setSigning(false);
             editor?.placeImage({ ...signature, kind: 'signature' });
           }}

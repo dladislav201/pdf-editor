@@ -2,6 +2,7 @@ import type { ArrangedPage, PageSource } from '@pdfsdk/editor';
 import type { PdfEditorInstance } from '@pdfsdk/react';
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { Icon } from './icons';
+import { track } from './telemetry';
 
 /** A page in the arrangement: where it comes from and how far it is turned. */
 interface Item extends ArrangedPage {
@@ -160,6 +161,7 @@ export function Pages({
   const extract = async () => {
     setBusy('Preparing…');
     try {
+      track('pages.extract');
       const bytes = await editor.arrangePages(plan(targets), others());
       const numbers = targets.map((t) => items.indexOf(t) + 1);
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
@@ -179,6 +181,7 @@ export function Pages({
     if (!changed) return onClose();
     setBusy('Applying…');
     try {
+      track('pages.apply');
       await editor.applyPageArrangement(plan(items), others());
       onClose();
     } catch (error) {

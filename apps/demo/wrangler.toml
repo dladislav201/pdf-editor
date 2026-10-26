@@ -1,8 +1,19 @@
-# Public demo, served as static assets on Cloudflare Workers (the successor of
-# Pages). Deploy with `npm run deploy:demo` from the repo root.
+# Public site, served as static assets on Cloudflare Workers (the successor of
+# Pages), with a small API under /api for anonymous usage counts and
+# feedback. Deploy with `npm run deploy:demo` from the repo root.
 name = "pdf-sdk-demo"
 compatibility_date = "2026-10-01"
+main = "worker/index.ts"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
+# Only the API runs the Worker; every other request is a static file.
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pdf-sdk-site"
+database_id = "aaa330ba-8c43-4a98-a903-82f5d5e3309e"
+migrations_dir = "migrations"

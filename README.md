@@ -52,6 +52,31 @@ npx wrangler login     # once per machine
 npm run deploy:demo    # builds the demo and uploads it
 ```
 
+## Usage counts and feedback
+
+The site's Worker (`apps/demo/worker/`) serves the static files and, under
+`/api`, takes anonymous usage counts, error reports and feedback into a D1
+database (`pdf-sdk-site`, schema in `apps/demo/migrations/`). Nothing can
+identify a person or a file: no cookies or ids, counts are per day and
+event name (`open.sample.scan`, `tool.editText`, `download.compressed.strong`,
+`pages.apply`, `ocr.run`…), errors per day and message (links stripped),
+feedback keeps the message, an optional email and the browser family only
+("Safari on iOS"). Only same-origin posts are taken; a hidden field catches
+form bots. The site batches counts (`src/telemetry.ts`, sent every 5 s and
+when the page is hidden) and stays quiet in development. The start page says
+so in one line.
+
+```bash
+npm run stats      # uses per event, last 30 days
+npm run errors     # errors seen, last 30 days
+npm run feedback   # latest 50 notes
+```
+
+`npm run deploy:demo` applies new migrations before deploying. Locally,
+`npx wrangler dev --local` in `apps/demo` (after a build and
+`wrangler d1 migrations apply pdf-sdk-site --local`) runs the same Worker
+with a local database.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull

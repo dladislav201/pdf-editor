@@ -9,8 +9,12 @@
     "prebuild": "npm run assets",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "deploy": "npm run build && wrangler deploy"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
+    "deploy": "npm run build && wrangler d1 migrations apply pdf-sdk-site --remote && wrangler deploy",
+    "test": "vitest run worker",
+    "stats": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT name, SUM(count) AS uses FROM counts WHERE day >= date('now', '-30 day') GROUP BY name ORDER BY uses DESC\"",
+    "errors": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT message, SUM(count) AS times, MAX(day) AS last FROM errors WHERE day >= date('now', '-30 day') GROUP BY message ORDER BY times DESC LIMIT 50\"",
+    "feedback": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT at, browser, email, message FROM feedback ORDER BY id DESC LIMIT 50\""
   },
   "dependencies": {
     "@pdfsdk/editor": "0.1.0",
@@ -20,6 +24,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.2",

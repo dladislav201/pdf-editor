@@ -2,6 +2,7 @@ import type { CompressLevel } from '@pdfsdk/editor';
 import type { PdfEditorInstance } from '@pdfsdk/react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Icon } from './icons';
+import { reportError, track } from './telemetry';
 import { saveBlob, zip } from './zip';
 
 const baseName = (fileName: string) => fileName.replace(/\.pdf$/i, '');
@@ -13,7 +14,7 @@ export function formatSize(bytes: number): string {
 }
 
 /** A small centred card on a dimmed page. */
-function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
     addEventListener('keydown', close);
@@ -68,6 +69,7 @@ export function CompressDialog({
     try {
       setResult({ level, ...(await editor.compress(level)) });
     } catch (e) {
+      reportError(e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -110,12 +112,13 @@ export function CompressDialog({
           <button
             type="button"
             className="pill pill--ink"
-            onClick={() =>
+            onClick={() => {
+              track(`download.compressed.${current.level}`);
               saveBlob(
                 new Blob([current.bytes as BlobPart], { type: 'application/pdf' }),
                 `${baseName(fileName)} (compressed).pdf`,
-              )
-            }
+              );
+            }}
           >
             <Icon name="download" /> Download
           </button>
@@ -169,6 +172,7 @@ export function ImagesDialog({
             bytes: new Uint8Array(await blob.arrayBuffer()),
           });
         }
+        track(`download.pictures.${format}`);
         if (files.length === 1) saveBlob(new Blob([files[0]!.bytes as BlobPart], { type: `image/${format}` }), files[0]!.name);
         else saveBlob(zip(files), `${baseName(fileName)} (pages).zip`);
         onClose();
@@ -176,6 +180,7 @@ export function ImagesDialog({
         source.close();
       }
     } catch (e) {
+      reportError(e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
