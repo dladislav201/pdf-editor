@@ -208,6 +208,7 @@ export class PdfEditor {
   private readonly assetsUrl: string;
   private readonly fallbackFontsUrl: string;
   private readonly ocrUrl: string;
+  private readonly recognizeOnEdit: boolean;
   private readonly license: Promise<LicenseInfo>;
   private ocr: { engine: TesseractEngine; languages: string } | null = null;
   private recognizing = false;
@@ -294,6 +295,7 @@ export class PdfEditor {
     this.assetsUrl = withTrailingSlash(options.assetsUrl ?? defaultAssetsUrl());
     this.fallbackFontsUrl = withTrailingSlash(options.fallbackFontsUrl ?? `${this.assetsUrl}fonts/`);
     this.ocrUrl = withTrailingSlash(options.ocrUrl ?? `${this.assetsUrl}ocr/`);
+    this.recognizeOnEdit = options.recognizeOnEdit ?? true;
     const { workerUrl } = options;
     this.engine = new EngineClient(
       () =>
@@ -1252,6 +1254,26 @@ export class PdfEditor {
     };
   }
 
+  /**
+   * A click with Edit text on a scan that has no text yet: reads the page,
+   * then opens the paragraph that was clicked (if the click was on one).
+   */
+  private async recognizeAndEdit(view: PageView, point: Point, event: PointerEvent): Promise<void> {
+    if (this.recognizing) return;
+    const info = await this.getScanInfo(view.index);
+    if (!info.scanned || info.recognized) return;
+    const token = this.loadToken;
+    try {
+      await this.recognizeText({ pages: [view.index] });
+    } catch {
+      return; // Reported through the error event.
+    }
+    if (token !== this.loadToken || this.tool !== 'editText' || this.textSession) return;
+    const paragraph = await this.paragraphAt(view, point);
+    this.selectParagraph(paragraph);
+    if (paragraph?.editable) await this.startTextEdit(paragraph, point, event);
+  }
+
   private async paragraphAt(view: PageView, point: Point): Promise<TextParagraph | null> {
     // Edited paragraphs may have grown or moved: their sessions know the current extent.
     for (const session of [this.textSession, ...[...this.textEdits.values()].map((e) => e.session)]) {
@@ -1649,6 +1671,7 @@ export class PdfEditor {
           (paragraph) => {
             this.selectParagraph(paragraph);
             if (paragraph?.editable) return this.startTextEdit(paragraph, point, event);
+            if (!paragraph && this.recognizeOnEdit) return this.recognizeAndEdit(view, point, event);
           },
           (error: unknown) => this.events.emit('error', { error }),
         );

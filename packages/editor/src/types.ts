@@ -117,6 +117,12 @@ export interface EditorOptions {
    * and English. Defaults to `ocr/` under `assetsUrl`.
    */
   ocrUrl?: string;
+  /**
+   * With the Edit text tool, a click on a scanned page whose text isn't
+   * recognized yet reads that page (as `recognizeText` does) and then opens
+   * the paragraph under the click, as Acrobat does. Default `true`.
+   */
+  recognizeOnEdit?: boolean;
   /** Show the built-in toolbar. Default `true`. */
   toolbar?: boolean;
   /** Default `'fit-width'`. */

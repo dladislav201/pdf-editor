@@ -135,6 +135,16 @@ test('recognizes the text of a scan', async ({ page }) => {
   await expect(page.getByText('1 of 1')).toBeVisible();
 });
 
+test('reads a scan when Edit text clicks on it and opens the line', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openSample(page, 'A scanned invoice');
+  await expect(page.getByText(/Click any line on the scan/)).toBeVisible();
+  // "Supplier: Northwind Supplies Ltd, …" (below the notices on a phone), without pressing Recognize text first.
+  await clickPage(page, 0.25, 0.134);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1, { timeout: 90_000 });
+  await expect(page.getByText(/words recognized/)).toBeVisible();
+});
+
 test('opens a 300-page document quickly and reaches its end', async ({ page }, info) => {
   test.setTimeout(120_000);
   const bytes = await longPdf(300);

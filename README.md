@@ -289,6 +289,11 @@ Per page (all in the browser, Tesseract.js 7 LSTM `best_int` models):
    included, at the size it appears in (from the height of its ink), bold
    where its strokes are thick for that size, in the colour of its ink.
 
+With the Edit text tool, a click on a scanned page that has no text yet
+reads that page first and then opens the paragraph under the click, as
+Acrobat does (`recognizeOnEdit`, on by default); the site says so while
+Edit text is on a scan.
+
 ### Editing a scan
 
 Recognized text is edited like any text, with the Edit text tool (as in

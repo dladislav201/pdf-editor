@@ -105,6 +105,11 @@ export function Workspace({
       editor.on('ocrProgress', ({ pageIndex, done, total }) => {
         if (pageIndex >= 0) setScan({ kind: 'reading', done, total });
       }),
+      // Also when a click with Edit text started it.
+      editor.on('textRecognized', ({ pages }) => {
+        track('ocr.done');
+        setScan({ kind: 'done', words: pages.reduce((n, p) => n + p.words.length, 0) });
+      }),
       editor.on('error', ({ error }) => {
         if ((error as Error)?.name !== 'AbortError') setMessage(error instanceof Error ? error.message : String(error));
       }),
@@ -476,7 +481,15 @@ export function Workspace({
             )}
           </div>
         )}
-        {tool === 'editText' && <div className="notice notice--plain">Click a paragraph to edit it. Esc to finish.</div>}
+        {tool === 'editText' && (
+          <div className="notice notice--plain">
+            {scan.kind === 'scanned'
+              ? 'Click any line on the scan: its text is read first, then you can edit it.'
+              : scan.kind === 'reading'
+                ? 'Reading the scan… the line you clicked opens when it’s done.'
+                : 'Click a paragraph to edit it. Esc to finish.'}
+          </div>
+        )}
         {tool === 'image' && (
           <div className="notice notice--plain">Click where your signature goes. Then drag it, or resize it from the corner.</div>
         )}
