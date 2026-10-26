@@ -182,6 +182,8 @@ export const sv: Messages = {
     note: 'Lösenordet används bara på din enhet. Kopian du laddar ner frågar inte efter det.',
     cancel: 'Avbryt',
     open: 'Öppna',
+    locked: 'Den här PDF-filen är skyddad.',
+    enter: 'Ange lösenord',
   },
   dialog: { close: 'Stäng' },
   editor: {

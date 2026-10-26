@@ -125,6 +125,8 @@ export function Workspace({
     answer: (password: string | null) => void;
   } | null>(null);
   const attempts = useRef(0);
+  // The password was asked and not given: the file stays closed until it is.
+  const [locked, setLocked] = useState(false);
   const getPassword = useCallback(
     (request: { fileName: string; incorrect: boolean }) =>
       new Promise<string | null>((resolve) => setPasswordAsk({ ...request, attempt: ++attempts.current, answer: resolve })),
@@ -396,6 +398,22 @@ export function Workspace({
             <strong>{w.fields(fields)}</strong>&nbsp;{w.fieldsHint}
           </div>
         )}
+        {locked && !passwordAsk && (
+          <div className="notice">
+            <span>{t.password.locked}</span>
+            <button
+              type="button"
+              className="pill pill--ink"
+              onClick={() => {
+                setLocked(false);
+                // Opening it again asks for the password again.
+                void editor?.load(file);
+              }}
+            >
+              <Icon name="lock" /> {t.password.enter}
+            </button>
+          </div>
+        )}
         {message && <div className="notice notice--plain">{message}</div>}
       </div>
 
@@ -589,6 +607,7 @@ export function Workspace({
           onAnswer={(password) => {
             passwordAsk.answer(password);
             setPasswordAsk(null);
+            setLocked(password === null);
           }}
         />
       )}

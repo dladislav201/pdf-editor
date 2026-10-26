@@ -197,6 +197,8 @@ export const en = {
     note: 'The password is used only on your device. The copy you download won’t ask for it.',
     cancel: 'Cancel',
     open: 'Open',
+    locked: 'This PDF is protected.',
+    enter: 'Enter password',
   },
   dialog: { close: 'Close' },
   /** The editor's own words (see EditorMessages). */

@@ -182,6 +182,8 @@ export const de: Messages = {
     note: 'Das Passwort wird nur auf Ihrem Gerät verwendet. Die heruntergeladene Kopie fragt nicht mehr danach.',
     cancel: 'Abbrechen',
     open: 'Öffnen',
+    locked: 'Dieses PDF ist geschützt.',
+    enter: 'Passwort eingeben',
   },
   dialog: { close: 'Schließen' },
   editor: {

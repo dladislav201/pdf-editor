@@ -126,6 +126,20 @@ test('opens a password-protected PDF after asking for its password', async ({ pa
   expect(squash((await pdfText(saved))[0]!)).toContain('SoftwareServicesAgreement');
 });
 
+test('asks for the password again after cancelling', async ({ page }) => {
+  const bytes = readFileSync(new URL('../packages/editor/test/fixtures/protected-user.pdf', import.meta.url));
+  await page.goto('/');
+  await page.locator('input[type=file]').setInputFiles({ name: 'Protected.pdf', mimeType: 'application/pdf', buffer: bytes });
+  const dialog = page.getByRole('dialog', { name: 'This PDF is protected' });
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole('button', { name: 'Enter password' }).click();
+  await dialog.getByLabel('Password').fill('secret');
+  await dialog.getByRole('button', { name: 'Open' }).click();
+  await expectPainted(page);
+  await expect(page.getByRole('button', { name: 'Enter password' })).toHaveCount(0);
+});
+
 test('opens a PDF with only an owner password without asking, and saves it', async ({ page }) => {
   const bytes = readFileSync(new URL('../packages/editor/test/fixtures/protected-owner.pdf', import.meta.url));
   await openFile(page, 'Restricted.pdf', bytes);

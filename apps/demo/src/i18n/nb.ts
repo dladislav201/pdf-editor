@@ -182,6 +182,8 @@ export const nb: Messages = {
     note: 'Passordet brukes bare på enheten din. Kopien du laster ned, ber ikke om det.',
     cancel: 'Avbryt',
     open: 'Åpne',
+    locked: 'Denne PDF-en er beskyttet.',
+    enter: 'Skriv inn passord',
   },
   dialog: { close: 'Lukk' },
   editor: {
