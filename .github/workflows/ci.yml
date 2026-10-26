@@ -30,10 +30,14 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # The two engines most people use, Chromium and an iPhone's WebKit, on every push.
+  # Firefox and desktop Safari run nightly (nightly.yml) so they don't hold up deploys.
   e2e:
-    name: Site in Chromium, Firefox, WebKit, iPhone
+    name: Site in Chromium and iPhone
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    # Browsers and their system libraries come preinstalled (same version as @playwright/test).
+    container: mcr.microsoft.com/playwright:v1.57.0-noble
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -41,8 +45,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox webkit
-      - run: npm run e2e
+      - run: npm run e2e -- --project=chromium --project=iphone
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

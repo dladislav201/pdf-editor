@@ -158,8 +158,11 @@ with a local database.
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull
 request: `npm ci`, typecheck, all tests (PDFium, HarfBuzz and Tesseract run
-in Node) and the build, and in a second job the browser checks in Chromium,
-Firefox, WebKit and the iPhone profile. On `main`, once the checks pass, it deploys the demo
+in Node) and the build, and in a second job the browser checks in Chromium
+and the iPhone profile, inside Playwright's image (browsers preinstalled,
+so no download step). `nightly.yml` runs them in every profile, Firefox and
+desktop WebKit included, each night and on demand (Actions › Nightly
+browsers › Run workflow). On `main`, once the checks pass, it deploys the demo
 too, provided the repository has a `CLOUDFLARE_API_TOKEN` secret (a
 Cloudflare API token with the "Edit Cloudflare Workers" template); without it
 that job only leaves a notice.
