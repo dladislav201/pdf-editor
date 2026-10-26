@@ -52,6 +52,19 @@ npx wrangler login     # once per machine
 npm run deploy:demo    # builds the demo and uploads it
 ```
 
+## Protected PDFs
+
+A file with an encryption dictionary is decrypted once, when it opens: the
+engine worker opens it in PDFium (empty password first, which opens files
+with only an owner password, i.e. editing restrictions) and saves a copy
+with `FPDF_REMOVE_SECURITY`; everything after (annotations, forms, pdf-lib,
+export) works on that plain copy. When the file needs a password to open,
+the editor calls the `getPassword({ fileName, incorrect })` option and tries
+again until it's right or the answer is null (then the file doesn't open).
+`documentUnlocked` tells the app; the site asks in a dialog and says the
+downloaded copy won't ask for the password. Merging (Add PDF) goes the same
+way. Saving with a password isn't possible yet.
+
 ## Undo
 
 `undo()` / `redo()` (⌘Z, ⇧⌘Z, Ctrl+Y) cover everything: in an open
@@ -530,7 +543,7 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
   buttons are hidden (pinch to zoom).
 - Forms: no JavaScript (calculated fields, formatting, validation), no
   XFA-only forms, comb fields and rich text are filled as plain text;
-  signature fields are left to Sign. No password prompt yet.
+  signature fields are left to Sign.
 - Licence keys are issued by hand with `scripts/license.mjs`; the customer
   dashboard (WorkOS sign-in, self-serve keys, billing) doesn't exist yet. Like
   any client-side check, the watermark can be removed by someone patching the

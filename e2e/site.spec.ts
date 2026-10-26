@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { PDFDocument, PDFName } from 'pdf-lib';
 import { readFormFields } from '../packages/editor/src/pdf/forms';
@@ -104,6 +105,32 @@ test('undoes and redoes a paragraph edit after leaving it', async ({ page }) => 
   await expect(page.getByRole('button', { name: /^Download · 1 edit/ })).toBeVisible();
   [first] = await pdfText(await download(page));
   expect(squash(first!)).toContain('Replacedopeningparagraph.');
+});
+
+test('opens a password-protected PDF after asking for its password', async ({ page }) => {
+  const bytes = readFileSync(new URL('../packages/editor/test/fixtures/protected-user.pdf', import.meta.url));
+  await page.goto('/');
+  await page.locator('input[type=file]').setInputFiles({ name: 'Protected.pdf', mimeType: 'application/pdf', buffer: bytes });
+  const dialog = page.getByRole('dialog', { name: 'This PDF is protected' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Password').fill('wrong');
+  await dialog.getByRole('button', { name: 'Open' }).click();
+  await expect(dialog.getByText('That password isn’t right. Try again.')).toBeVisible();
+  await dialog.getByLabel('Password').fill('secret');
+  await dialog.getByRole('button', { name: 'Open' }).click();
+  await expectPainted(page);
+  await expect(page.getByText(/Opened with its password/)).toBeVisible();
+  // The copy has no password: pdf-lib (which refuses encrypted files) reads it.
+  const saved = await download(page);
+  expect((await PDFDocument.load(saved)).getPageCount()).toBe(1);
+  expect(squash((await pdfText(saved))[0]!)).toContain('SoftwareServicesAgreement');
+});
+
+test('opens a PDF with only an owner password without asking, and saves it', async ({ page }) => {
+  const bytes = readFileSync(new URL('../packages/editor/test/fixtures/protected-owner.pdf', import.meta.url));
+  await openFile(page, 'Restricted.pdf', bytes);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect((await PDFDocument.load(await download(page))).getPageCount()).toBe(1);
 });
 
 test('finds text on every page', async ({ page }) => {

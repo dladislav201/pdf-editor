@@ -127,6 +127,13 @@ export interface EditorOptions {
    * and English. Defaults to `ocr/` under `assetsUrl`.
    */
   ocrUrl?: string;
+  /**
+   * Asked when a file needs a password to open (again with `incorrect` after
+   * a wrong one); resolve with the password, or null to give up. Without it,
+   * such files don't open. Files are decrypted once on opening, so the
+   * document — and what is saved — has no password or restrictions.
+   */
+  getPassword?: (request: { fileName: string; incorrect: boolean }) => Promise<string | null>;
   /** The editor's own words, for other languages. */
   messages?: Partial<EditorMessages>;
   /**
@@ -177,6 +184,8 @@ export interface EditorEventMap {
   paragraphSelect: { paragraph: TextParagraph | null };
   /** A paragraph opened for typing with the Edit text tool, or the open one was left (`paragraph` null). */
   textEditing: { paragraph: TextParagraph | null };
+  /** A protected file was opened (after its password, if `password`): the document has no protection now. */
+  documentUnlocked: { password: boolean };
   /** Page text was edited (fires when an edit session ends). */
   textEditsChange: { edits: { paragraphId: string; pageIndex: number; text: string }[] };
   /** Text recognition is reading `pageIndex` (after `done` of `total` pages); `pageIndex` is -1 once it has stopped. */

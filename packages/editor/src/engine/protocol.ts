@@ -11,6 +11,8 @@ export type EngineRequest =
   | { id: number; type: 'open'; data: ArrayBuffer; keep?: boolean }
   | { id: number; type: 'render'; docId: number; page: number; width: number; height: number; hidden?: number[] }
   | { id: number; type: 'text'; docId: number; page: number }
+  /** Opens a protected file with `password` and returns a copy without its protection; PasswordException if it's wrong. */
+  | { id: number; type: 'unlock'; data: ArrayBuffer; password: string }
   /** Searches pages in the worker, so only the matches cross over (text models of a long document are large). */
   | { id: number; type: 'search'; docId: number; pages: number[]; query: string; options: SearchOptions }
   | { id: number; type: 'glyphs'; docId: number; page: number; object: number; chars: string[] }

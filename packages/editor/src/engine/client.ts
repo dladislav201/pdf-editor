@@ -69,6 +69,13 @@ export class EngineClient {
     return (await this.send({ type: 'open', data: buffer, ...(keep ? { keep } : {}) }, [buffer]).promise) as OpenResult;
   }
 
+  /** A copy of a protected file without its protection, opened with `password` (PasswordException if wrong). */
+  async unlock(bytes: Uint8Array, password: string): Promise<Uint8Array> {
+    await this.ready;
+    const buffer = bytes.slice().buffer as ArrayBuffer;
+    return (await this.send({ type: 'unlock', data: buffer, password }, [buffer]).promise) as Uint8Array;
+  }
+
   render(docId: number, page: number, width: number, height: number, hidden?: number[]): RenderHandle {
     const { id, promise } = this.send({ type: 'render', docId, page, width, height, ...(hidden?.length ? { hidden } : {}) });
     return {

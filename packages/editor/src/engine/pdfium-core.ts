@@ -65,6 +65,8 @@ const FPDF_ERR_PASSWORD = 4;
 const FPDF_ERR_SECURITY = 5;
 const FPDF_ANNOT = 0x01;
 const FPDF_REVERSE_BYTE_ORDER = 0x10;
+// fpdf_save.h
+const FPDF_REMOVE_SECURITY = 3;
 // fpdf_formfill.h: FPDF_FORMFILLINFO version 1 is an int and 16 callback pointers; all left empty.
 const FORM_INFO_SIZE = 4 + 16 * 4;
 const FORMTYPE_NONE = 0;
@@ -121,15 +123,17 @@ export class PdfiumDocument {
   private readonly pages = new Map<number, number>();
   private closed = false;
 
+  /** `password` opens a protected file (its user or owner password); unprotected files ignore it. */
   constructor(
     private readonly lib: WrappedPdfiumModule,
     bytes: Uint8Array,
+    password = '',
   ) {
     const { wasmExports } = lib.pdfium;
     this.dataPtr = wasmExports.malloc(bytes.length);
     if (!this.dataPtr) throw new EngineError('EngineError', 'Not enough memory to open the PDF.');
     heapU8(lib).set(bytes, this.dataPtr);
-    this.handle = lib.FPDF_LoadMemDocument(this.dataPtr, bytes.length, '');
+    this.handle = lib.FPDF_LoadMemDocument(this.dataPtr, bytes.length, password);
     if (!this.handle) {
       const error = loadError(lib.FPDF_GetLastError());
       wasmExports.free(this.dataPtr);
@@ -784,11 +788,13 @@ export class PdfiumDocument {
   }
 
   /** The document as a PDF file, including changes made through the engine. */
-  save(): Uint8Array {
+  /** The file as it is now; `decrypt` leaves its password and restrictions out. */
+  save({ decrypt = false } = {}): Uint8Array {
     const lib = this.lib;
     const writer = lib.PDFiumExt_OpenFileWriter();
     try {
-      if (!lib.PDFiumExt_SaveAsCopy(this.handle, writer)) throw new EngineError('EngineError', 'Could not save the PDF.');
+      const saved = decrypt ? lib.FPDF_SaveAsCopy(this.handle, writer, FPDF_REMOVE_SECURITY) : lib.PDFiumExt_SaveAsCopy(this.handle, writer);
+      if (!saved) throw new EngineError('EngineError', 'Could not save the PDF.');
       const size = lib.PDFiumExt_GetFileWriterSize(writer);
       const ptr = lib.pdfium.wasmExports.malloc(size);
       try {

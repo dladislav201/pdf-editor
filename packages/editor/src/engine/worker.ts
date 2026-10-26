@@ -188,6 +188,20 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
         fail(request.id, error);
       }
       return;
+    case 'unlock': {
+      let doc: PdfiumDocument | null = null;
+      try {
+        if (!library) throw new EngineError('EngineError', 'The engine is not initialised.');
+        doc = new PdfiumDocument(await library, new Uint8Array(request.data), request.password);
+        const plain = doc.save({ decrypt: true });
+        reply({ id: request.id, ok: true, result: plain }, [plain.buffer]);
+      } catch (error) {
+        fail(request.id, error);
+      } finally {
+        doc?.close();
+      }
+      return;
+    }
     case 'search':
       try {
         const doc = openDoc(request.docId);

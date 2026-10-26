@@ -97,6 +97,7 @@ export const en = {
     tools: 'Tools',
     tool: { select: 'Select', editText: 'Edit text', highlight: 'Highlight', ink: 'Draw', rectangle: 'Shape', text: 'Note' },
     sign: 'Sign',
+    unlocked: 'Opened with its password. The PDF you download won’t ask for one.',
     feedback: 'Send feedback',
   },
   pages: {
@@ -187,6 +188,15 @@ export const en = {
     done: 'Done',
     invalid: 'Please check the message and email.',
     failed: 'Could not send it. Try again later.',
+  },
+  password: {
+    title: 'This PDF is protected',
+    text: (name: string) => `Enter the password to open “${name}”.`,
+    label: 'Password',
+    incorrect: 'That password isn’t right. Try again.',
+    note: 'The password is used only on your device. The copy you download won’t ask for it.',
+    cancel: 'Cancel',
+    open: 'Open',
   },
   dialog: { close: 'Close' },
   /** The editor's own words (see EditorMessages). */

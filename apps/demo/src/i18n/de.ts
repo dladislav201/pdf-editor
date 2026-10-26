@@ -82,6 +82,7 @@ export const de: Messages = {
     tools: 'Werkzeuge',
     tool: { select: 'Auswählen', editText: 'Text bearbeiten', highlight: 'Markieren', ink: 'Zeichnen', rectangle: 'Form', text: 'Notiz' },
     sign: 'Unterschreiben',
+    unlocked: 'Mit Passwort geöffnet. Das heruntergeladene PDF fragt nicht mehr danach.',
     feedback: 'Feedback senden',
   },
   pages: {
@@ -172,6 +173,15 @@ export const de: Messages = {
     done: 'Fertig',
     invalid: 'Bitte prüfen Sie Nachricht und E-Mail.',
     failed: 'Senden fehlgeschlagen. Bitte später erneut versuchen.',
+  },
+  password: {
+    title: 'Dieses PDF ist geschützt',
+    text: (name) => `Geben Sie das Passwort ein, um „${name}“ zu öffnen.`,
+    label: 'Passwort',
+    incorrect: 'Das Passwort stimmt nicht. Bitte erneut versuchen.',
+    note: 'Das Passwort wird nur auf Ihrem Gerät verwendet. Die heruntergeladene Kopie fragt nicht mehr danach.',
+    cancel: 'Abbrechen',
+    open: 'Öffnen',
   },
   dialog: { close: 'Schließen' },
   editor: {

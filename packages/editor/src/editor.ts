@@ -131,6 +131,18 @@ function defaultAssetsUrl(): string {
   return new URL('engine/', base).href;
 }
 
+const ENCRYPT = new TextEncoder().encode('/Encrypt');
+
+/** Whether a PDF is protected (has an encryption dictionary): a quick look for its key. */
+function hasEncryption(bytes: Uint8Array): boolean {
+  const first = ENCRYPT[0]!;
+  outer: for (let i = bytes.indexOf(first); i >= 0 && i <= bytes.length - ENCRYPT.length; i = bytes.indexOf(first, i + 1)) {
+    for (let k = 1; k < ENCRYPT.length; k++) if (bytes[i + k] !== ENCRYPT[k]) continue outer;
+    return true;
+  }
+  return false;
+}
+
 function withTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
 }
@@ -229,6 +241,7 @@ export class PdfEditor {
   private readonly fallbackFontsUrl: string;
   private readonly ocrUrl: string;
   private readonly recognizeOnEdit: boolean;
+  private readonly getPassword: EditorOptions['getPassword'];
   private readonly messages: EditorMessages;
   private readonly license: Promise<LicenseInfo>;
   private ocr: { engine: TesseractEngine; languages: string } | null = null;
@@ -319,6 +332,7 @@ export class PdfEditor {
     this.fallbackFontsUrl = withTrailingSlash(options.fallbackFontsUrl ?? `${this.assetsUrl}fonts/`);
     this.ocrUrl = withTrailingSlash(options.ocrUrl ?? `${this.assetsUrl}ocr/`);
     this.recognizeOnEdit = options.recognizeOnEdit ?? true;
+    this.getPassword = options.getPassword;
     this.messages = { ...MESSAGES, ...options.messages };
     const { workerUrl } = options;
     this.engine = new EngineClient(
@@ -402,13 +416,37 @@ export class PdfEditor {
 
   // -------------------------------------------------------------- document
 
+  /**
+   * A file's bytes, protection removed: protected files are opened once in the
+   * engine (with the password `getPassword` gives, asked again while wrong)
+   * and saved without it, so everything after works on a plain PDF.
+   */
+  private async readUnlocked(source: DocumentSource): Promise<{ bytes: Uint8Array; name: string; unlocked?: 'password' | 'owner' }> {
+    const file = await readSource(source);
+    if (!hasEncryption(file.bytes)) return file;
+    let password = '';
+    let asked = 0;
+    for (;;) {
+      try {
+        const bytes = await this.engine.unlock(file.bytes, password);
+        return { ...file, bytes, unlocked: asked ? 'password' : 'owner' };
+      } catch (error) {
+        if ((error as Error).name !== 'PasswordException' || !this.getPassword) throw error;
+        const given = await this.getPassword({ fileName: file.name, incorrect: asked > 0 });
+        if (given === null) throw error;
+        password = given;
+        asked++;
+      }
+    }
+  }
+
   /** Opens a PDF, replacing the current one. Annotations are reset. */
   async load(source: DocumentSource): Promise<void> {
     const token = ++this.loadToken;
     this.commitTextEditor();
     this.showMessage(this.messages.loading);
     try {
-      const file = await readSource(source);
+      const file = await this.readUnlocked(source);
       if (token !== this.loadToken) return;
       // Editable annotations come out of the file into the editor; the stripped
       // file is what the engine renders and what export writes them back into.
@@ -458,6 +496,7 @@ export class PdfEditor {
       this.viewportEl.scrollTo(0, 0);
 
       this.events.emit('documentLoaded', { pageCount: pages.length });
+      if (file.unlocked) this.events.emit('documentUnlocked', { password: file.unlocked === 'password' });
       this.events.emit('textEditsChange', { edits: [] });
       this.emitAnnotations();
       this.emitHistory();
@@ -706,7 +745,7 @@ export class PdfEditor {
    * merge its pages in). Close it when done.
    */
   async openPages(source: DocumentSource): Promise<PageSource & { bytes: Uint8Array; name: string }> {
-    const file = await readSource(source);
+    const file = await this.readUnlocked(source);
     const { docId, pages } = await this.engine.open(file.bytes.slice(), true);
     const geometries = pages.map((info) => new PageGeometry(info.box, info.rotation));
     return { ...this.pageSource(docId, geometries, () => void this.engine.close(docId)), bytes: file.bytes, name: file.name };

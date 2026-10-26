@@ -82,6 +82,7 @@ export const sv: Messages = {
     tools: 'Verktyg',
     tool: { select: 'Markera', editText: 'Redigera text', highlight: 'Överstryk', ink: 'Rita', rectangle: 'Form', text: 'Anteckning' },
     sign: 'Signera',
+    unlocked: 'Öppnad med lösenord. PDF-filen du laddar ner frågar inte efter något lösenord.',
     feedback: 'Skicka feedback',
   },
   pages: {
@@ -172,6 +173,15 @@ export const sv: Messages = {
     done: 'Klar',
     invalid: 'Kontrollera meddelandet och e-postadressen.',
     failed: 'Det gick inte att skicka. Försök igen senare.',
+  },
+  password: {
+    title: 'Den här PDF-filen är skyddad',
+    text: (name) => `Ange lösenordet för att öppna ”${name}”.`,
+    label: 'Lösenord',
+    incorrect: 'Lösenordet stämmer inte. Försök igen.',
+    note: 'Lösenordet används bara på din enhet. Kopian du laddar ner frågar inte efter det.',
+    cancel: 'Avbryt',
+    open: 'Öppna',
   },
   dialog: { close: 'Stäng' },
   editor: {

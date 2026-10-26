@@ -8,6 +8,7 @@ import { SignDialog } from './SignDialog';
 import { reportError, track } from './telemetry';
 import { CompressDialog, ImagesDialog } from './ExportDialogs';
 import { FeedbackDialog } from './FeedbackDialog';
+import { PasswordDialog } from './PasswordDialog';
 import { useI18n } from './i18n';
 
 const TOOLS: { tool: 'select' | 'editText' | 'highlight' | 'ink' | 'rectangle' | 'text'; icon: IconName; key: string }[] = [
@@ -116,6 +117,19 @@ export function Workspace({
   // Filling a form counts once per document, not per keystroke.
   const formTracked = useRef(false);
   const [feedback, setFeedback] = useState(false);
+  // A protected file waiting for its password: answering resolves the editor's question.
+  const [passwordAsk, setPasswordAsk] = useState<{
+    fileName: string;
+    incorrect: boolean;
+    attempt: number;
+    answer: (password: string | null) => void;
+  } | null>(null);
+  const attempts = useRef(0);
+  const getPassword = useCallback(
+    (request: { fileName: string; incorrect: boolean }) =>
+      new Promise<string | null>((resolve) => setPasswordAsk({ ...request, attempt: ++attempts.current, answer: resolve })),
+    [],
+  );
 
   // Keep the editor in step with the site's theme.
   useEffect(() => editor?.setTheme(theme), [editor, theme]);
@@ -141,6 +155,10 @@ export function Workspace({
       editor.on('pageChange', ({ pageIndex }) => setPage((p) => ({ ...p, index: pageIndex }))),
       editor.on('textEditsChange', ({ edits }) => setEdits(edits.length)),
       editor.on('textEditing', ({ paragraph }) => setTyping(!!paragraph)),
+      editor.on('documentUnlocked', ({ password }) => {
+        track(password ? 'open.unlocked.password' : 'open.unlocked.owner');
+        if (password) setMessage(w.unlocked);
+      }),
       editor.on('ocrProgress', ({ pageIndex, done, total }) => {
         if (pageIndex >= 0) setScan({ kind: 'reading', done, total });
       }),
@@ -259,6 +277,7 @@ export function Workspace({
           fontUrl="/fonts/DejaVuSans.ttf"
           licenseKey={DEMO_LICENSE_KEY}
           messages={t.editor}
+          getPassword={getPassword}
           onReady={setEditor}
           onError={reportError}
           onFormChange={() => {
@@ -562,6 +581,17 @@ export function Workspace({
         <Icon name="feedback" />
       </button>
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
+      {passwordAsk && (
+        <PasswordDialog
+          key={passwordAsk.attempt}
+          fileName={passwordAsk.fileName}
+          incorrect={passwordAsk.incorrect}
+          onAnswer={(password) => {
+            passwordAsk.answer(password);
+            setPasswordAsk(null);
+          }}
+        />
+      )}
 
       {signing && (
         <SignDialog

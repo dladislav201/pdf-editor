@@ -82,6 +82,7 @@ export const nb: Messages = {
     tools: 'Verktøy',
     tool: { select: 'Velg', editText: 'Rediger tekst', highlight: 'Marker', ink: 'Tegn', rectangle: 'Form', text: 'Notat' },
     sign: 'Signer',
+    unlocked: 'Åpnet med passord. PDF-en du laster ned, ber ikke om passord.',
     feedback: 'Send tilbakemelding',
   },
   pages: {
@@ -172,6 +173,15 @@ export const nb: Messages = {
     done: 'Ferdig',
     invalid: 'Sjekk meldingen og e-postadressen.',
     failed: 'Kunne ikke sende. Prøv igjen senere.',
+  },
+  password: {
+    title: 'Denne PDF-en er beskyttet',
+    text: (name) => `Skriv inn passordet for å åpne «${name}».`,
+    label: 'Passord',
+    incorrect: 'Passordet stemmer ikke. Prøv igjen.',
+    note: 'Passordet brukes bare på enheten din. Kopien du laster ned, ber ikke om det.',
+    cancel: 'Avbryt',
+    open: 'Åpne',
   },
   dialog: { close: 'Lukk' },
   editor: {
