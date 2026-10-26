@@ -74,6 +74,16 @@ The site is built for search as well as for use (`apps/demo`):
 - **Icons and a preview picture**: `public/favicon.svg`, PNG icons and
   `public/og.png` (1200×630), drawn by `scripts/make-images.mjs`.
 
+**Guides** (`/blog`): step-by-step articles for the longer searches people
+make ("how to edit a scanned PDF", "compress a PDF for email"…), each
+leading to its tool page. A guide is a Markdown file in
+`apps/demo/content/blog/` with a front matter block (`title`, `description`,
+`date`, `tool`, `toolName`, optional `draft: true`); the build turns it into
+a static page with `Article` structured data and adds it to the sitemap.
+Drafts show with `npm run dev` (at `/blog`) and in `DRAFTS=1` builds, not on
+the live site; the footer links to the guides only once one is published.
+To publish, remove the draft line and push.
+
 The name and address are placeholders in `src/site.ts` (`SITE`): a custom
 domain, set there and added to the Worker in Cloudflare, is the next step,
 then Google Search Console and Bing Webmaster Tools with the sitemap.

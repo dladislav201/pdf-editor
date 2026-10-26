@@ -4,21 +4,10 @@ import type { PageImage } from '@pdfsdk/editor';
 import { Home, type OpenRequest } from './Home';
 import { landingFor, LANDINGS } from './site';
 import { track } from './telemetry';
+import { applyTheme, initialTheme, type Theme } from './theme';
 
 // The editor, PDFium and pdf-lib load when a file is opened, so the start page stays light.
 const Workspace = lazy(() => import('./Workspace').then((m) => ({ default: m.Workspace })));
-
-type Theme = 'light' | 'dark';
-
-function initialTheme(): Theme {
-  try {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light' || saved === 'dark') return saved;
-  } catch {
-    // Storage can be blocked; follow the system then.
-  }
-  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
 
 /** Which start-page tool a file was opened with, for the usage counts. */
 function openedWith(request: OpenRequest): string {
@@ -36,14 +25,7 @@ export function App() {
   const [page] = useState(() => landingFor(location.pathname) ?? LANDINGS[0]!);
   useEffect(() => track(`view.${page.path === '/' ? 'home' : page.path.slice(1)}`), [page]);
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem('theme', theme);
-    } catch {
-      // Not remembered; fine.
-    }
-  }, [theme]);
+  useEffect(() => applyTheme(theme), [theme]);
 
   // The browser's back button returns to the start page.
   useEffect(() => {

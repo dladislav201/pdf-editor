@@ -19,6 +19,7 @@
   "dependencies": {
     "@pdfsdk/editor": "0.1.0",
     "@pdfsdk/react": "0.1.0",
+    "marked": "^15.0.12",
     "pdf-lib": "^1.17.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

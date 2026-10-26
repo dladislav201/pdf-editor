@@ -2,7 +2,8 @@ import { useRef, useState, type DragEvent } from 'react';
 import { FeedbackDialog } from './FeedbackDialog';
 import type { ToolName } from '@pdfsdk/editor';
 import { Icon, type IconName } from './icons';
-import { LANDINGS, type Landing } from './site';
+import { Footer } from './Footer';
+import type { Landing } from './site';
 
 export interface OpenRequest {
   file: File;
@@ -174,16 +175,7 @@ export function Home({
         </dl>
       </section>
 
-      <footer className="footer">
-        <nav aria-label="All tools">
-          {LANDINGS.map((landing) => (
-            <a key={landing.path} href={landing.path} aria-current={landing.path === page.path ? 'page' : undefined}>
-              {landing.name}
-            </a>
-          ))}
-        </nav>
-        <p>No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.</p>
-      </footer>
+      <Footer current={page.path} />
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
     </main>
   );
