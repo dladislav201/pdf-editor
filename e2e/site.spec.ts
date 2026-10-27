@@ -242,7 +242,7 @@ test('marks a whole word with a double click, and text that runs up the page alo
   await openSample(page, 'A contract');
   await page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'Highlight' }).click();
   const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
-  // "Services" in the opening paragraph.
+  // "Services" in the opening paragraph, right after picking the tool: on a slow machine before the page's text is read.
   await page.mouse.dblclick(box.x + box.width * 0.262, box.y + box.height * 0.2015);
   const [word] = await marks(await download(page));
   const [topStart, topEnd, bottomStart] = word!.quads[0]!;

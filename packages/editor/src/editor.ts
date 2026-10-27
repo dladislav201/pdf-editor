@@ -105,6 +105,10 @@ type Interaction =
       focus: TextPosition | null;
       /** A word marked by a double click: it stays whole unless the pointer moves off the spot. */
       word?: boolean;
+      /** The second press of a double click, made before the page's text was read: it marks the word once it is. */
+      double?: boolean;
+      /** Let go before the page's text was read: finished once it is. */
+      released?: boolean;
     }
   | { kind: 'ink'; view: PageView; points: Point[] }
   | { kind: 'move'; view: PageView; id: string; start: Point; before: Annotation[]; moved: boolean }
@@ -2141,7 +2145,7 @@ export class PdfEditor {
           this.interaction = { kind: 'shape', view, tool: 'highlight', start: point, current: point };
           break;
         }
-        const interaction: Interaction = { kind: 'markup', view, tool: this.tool, start: point, current: point, lines, anchor, focus: anchor };
+        const interaction: Interaction = { kind: 'markup', view, tool: this.tool, start: point, current: point, lines, anchor, focus: anchor, double };
         this.interaction = interaction;
         // The page's text isn't read yet: the drag goes on once it is.
         if (!lines) {
@@ -2218,6 +2222,7 @@ export class PdfEditor {
         interaction.view.draft.replaceChildren(annotationElement(this.buildShape(interaction)));
         break;
       case 'markup':
+        if (interaction.released) return;
         interaction.current = point;
         if (interaction.word && Math.hypot(point[0] - interaction.start[0], point[1] - interaction.start[1]) < 4 / this.zoom) return;
         interaction.word = false;
@@ -2266,12 +2271,21 @@ export class PdfEditor {
     }
     const interaction = this.interaction;
     if (!interaction) return;
-    this.interaction = null;
-    interaction.view.draft.replaceChildren();
     if (interaction.view.overlay.hasPointerCapture(event.pointerId)) {
       interaction.view.overlay.releasePointerCapture(event.pointerId);
     }
+    // A press on a page whose text is still being read: what it does is decided once it is.
+    if (interaction.kind === 'markup' && !interaction.lines) {
+      interaction.released = true;
+      return;
+    }
+    this.finish(interaction);
+  };
 
+  /** Ends a pointer interaction: what it drew becomes an annotation (one undo step). */
+  private finish(interaction: Interaction): void {
+    this.interaction = null;
+    interaction.view.draft.replaceChildren();
     switch (interaction.kind) {
       case 'shape': {
         const shape = this.buildShape(interaction);
@@ -2305,7 +2319,7 @@ export class PdfEditor {
         }
         break;
     }
-  };
+  }
 
   /** Draws a drag across text so far, following the pointer to the nearest line (or as it is, for a word just double-clicked). */
   private drawMarkup(interaction: Extract<Interaction, { kind: 'markup' }>, follow = true): void {
@@ -2319,18 +2333,24 @@ export class PdfEditor {
   private resumeMarkup(interaction: Extract<Interaction, { kind: 'markup' }>): void {
     if (this.interaction !== interaction) return;
     const lines = this.markupLines(interaction.view.index);
+    const word = interaction.double && lines ? wordAt(lines, interaction.start) : null;
     const anchor = lines && positionAt(lines, interaction.start);
-    if (lines && anchor) {
+    let next: Interaction = interaction;
+    if (lines && word) {
+      Object.assign(interaction, { lines, anchor: word[0], focus: word[1], word: true });
+      this.drawMarkup(interaction, false);
+    } else if (lines && anchor) {
       Object.assign(interaction, { lines, anchor, focus: anchor });
       this.drawMarkup(interaction);
     } else if (interaction.tool === 'highlight') {
-      const shape = { kind: 'shape', view: interaction.view, tool: 'highlight', start: interaction.start, current: interaction.current } as const;
-      this.interaction = shape;
-      interaction.view.draft.replaceChildren(annotationElement(this.buildShape(shape)));
+      next = { kind: 'shape', view: interaction.view, tool: 'highlight', start: interaction.start, current: interaction.current };
+      this.interaction = next;
+      interaction.view.draft.replaceChildren(annotationElement(this.buildShape(next)));
     } else {
       // Not on text: an underline or a strike-out has nothing to mark. The pointer stays captured until it's let go.
       interaction.lines = [];
     }
+    if (interaction.released) this.finish(next);
   }
 
   private onPointerCancel = (): void => {
