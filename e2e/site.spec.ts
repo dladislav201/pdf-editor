@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, StandardFonts, degrees } from 'pdf-lib';
+import { DEMO_LICENSE_KEY } from '../apps/demo/src/license';
+import { SITE } from '../apps/demo/src/site';
+import { checkLicense } from '../packages/editor/src/license';
 import { readFormFields } from '../packages/editor/src/pdf/forms';
 import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfParagraphs, pdfText, waitForApp } from './helpers';
 
@@ -16,6 +19,13 @@ async function download(page: Page): Promise<Uint8Array> {
 }
 
 const squash = (text: string) => text.replace(/\s+/g, '');
+
+test('the site key covers the site\'s own domains, so it never runs as a trial there', async () => {
+  for (const host of [new URL(SITE.url).hostname, `www.${new URL(SITE.url).hostname}`, 'pdf-sdk-demo.peer-mcp.workers.dev']) {
+    const license = await checkLicense(DEMO_LICENSE_KEY, host);
+    expect(license.status, host).toBe('valid');
+  }
+});
 
 test('start page fits the screen', async ({ page }) => {
   await gotoApp(page, '/');
@@ -33,6 +43,41 @@ test('opens a PDF and keeps the bars on screen', async ({ page }) => {
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
   }
+});
+
+test('a reload opens the same file again, and asks first when there are changes', async ({ page }) => {
+  await openSample(page, 'A contract');
+  const leaving = () =>
+    page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  // Nothing changed yet: leaving needs no question.
+  expect(await leaving()).toBe(false);
+
+  await page.reload();
+  await waitForApp(page);
+  await expectPainted(page);
+  await expect(page.getByText('Services agreement.pdf').filter({ visible: true })).toBeVisible();
+  await expect(page.getByText('1 / 3').filter({ visible: true })).toBeVisible();
+
+  // A change not downloaded: the browser asks before the page goes.
+  await page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'Highlight' }).click();
+  const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.55, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  expect(await leaving()).toBe(true);
+
+  // Back on the start page, the file is let go: a reload stays there.
+  await page.getByRole('button', { name: 'Back to start' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await page.reload();
+  await waitForApp(page);
+  await expect(page.getByRole('button', { name: 'A contract', exact: true })).toBeVisible();
 });
 
 test('lets a finger scroll the pages, except while drawing', async ({ page }) => {

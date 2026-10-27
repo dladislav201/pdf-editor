@@ -323,6 +323,17 @@ export function Workspace({
     return () => removeEventListener('keydown', key);
   }, [mode, openSearch]);
 
+  // Changes not downloaded yet go with a reload or a closed tab: the browser asks first.
+  useEffect(() => {
+    if (!history.canUndo) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    addEventListener('beforeunload', warn);
+    return () => removeEventListener('beforeunload', warn);
+  }, [history.canUndo]);
+
   const drawing = isMarkup(tool) || tool === 'ink' || tool === 'rectangle' || tool === 'text';
   // Highlight, underline or strike out: with the colors on wide screens, in place of the hint on phones.
   const markupChoice = MARKUPS.map(({ tool: name, icon, key }) => (

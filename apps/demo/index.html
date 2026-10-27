@@ -21,6 +21,10 @@
         } catch (e) {}
         if (theme !== 'light' && theme !== 'dark') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         document.documentElement.dataset.theme = theme;
+        // A reload while a file was open: it opens again, so the start page isn't shown first (same rule as App.tsx).
+        var navigation = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+        var again = navigation && (navigation.type === 'reload' || navigation.type === 'back_forward');
+        if (again && history.state && history.state.editing) document.documentElement.dataset.restoring = '';
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

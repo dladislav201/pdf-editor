@@ -128,6 +128,12 @@ The site is built for search as well as for use (`apps/demo`):
 - **A light start page**: the editor, PDFium and pdf-lib load when a file is
   opened (the start page's script went from the whole app to about 250 KB),
   and the handwriting fonts load with the signature dialog only.
+- **A reload keeps the file open**: the file a tab opens is kept in this
+  browser (IndexedDB, `src/session.ts`, keyed by a per-tab id in
+  sessionStorage) and opened again after a reload, the start page hidden
+  meanwhile; going back to the start page removes it, and copies left by
+  closed tabs go after a day. Edits aren't kept: with changes not downloaded
+  the browser asks before the page reloads or closes.
 - **Brand**: LovelyDoc, a page with a heart. The name (`SITE.name`) is in
   titles, the top bar and the footer; the mark is `src/Logo.tsx` and
   `public/favicon.svg`. PNG icons and `public/og.png` (1200×630) are drawn
@@ -223,8 +229,10 @@ node scripts/license.mjs issue --customer "Acme Ltd" --domains "app.acme.com,*.a
 
 The signing key lives only in `~/.pdfsdk/` on the vendor's machine; keep a
 backup (a password manager). Losing it means shipping a new public key and
-reissuing every key. The demo's key (`apps/demo/src/license.ts`) covers only
-the demo's domain.
+reissuing every key. The site's key (`apps/demo/src/license.ts`) covers
+lovelydoc.com, its subdomains and the old workers.dev address; a site test
+checks it covers `SITE.url`, so moving to a new domain without a new key
+fails CI instead of showing the trial watermark to everyone.
 
 ## Usage
 

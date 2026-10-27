@@ -7,6 +7,7 @@ import scanUk from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url'
 import type { PageImage } from '@pdfsdk/editor';
 import { Home, type OpenRequest } from './Home';
 import { useI18n, type Locale } from './i18n';
+import { forget, keepOpen, reopen } from './session';
 import { routeOf } from './site';
 import { track } from './telemetry';
 import { applyTheme, initialTheme, type Theme } from './theme';
@@ -29,6 +30,22 @@ function openedWith(request: OpenRequest): string {
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [open, setOpen] = useState<OpenRequest | null>(null);
+  // A reload (or Back to it) while a file was open: it opens again (see session.ts) instead of the start page.
+  // Going to the address afresh starts on the start page, though browsers keep the state for the same address.
+  const [restoring, setRestoring] = useState(() => {
+    const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const again = navigation?.type === 'reload' || navigation?.type === 'back_forward';
+    return again && (window.history.state as { editing?: boolean } | null)?.editing === true;
+  });
+  useEffect(() => {
+    if (!restoring) return;
+    void reopen().then((request) => {
+      if (request) setOpen(request);
+      else window.history.replaceState(null, '');
+      setRestoring(false);
+      delete document.documentElement.dataset.restoring;
+    });
+  }, [restoring]);
   const { locale } = useI18n();
   // Every tool page is the start page with its own words; an unknown path shows the start page.
   const [id] = useState(() => routeOf(location.pathname)?.id ?? 'home');
@@ -42,13 +59,17 @@ export function App() {
 
   // The browser's back button returns to the start page.
   useEffect(() => {
-    const onPop = () => setOpen(null);
+    const onPop = () => {
+      setOpen(null);
+      void forget();
+    };
     addEventListener('popstate', onPop);
     return () => removeEventListener('popstate', onPop);
   }, []);
   const show = (request: OpenRequest) => {
-    history.pushState({ editing: true }, '');
+    window.history.pushState({ editing: true }, '');
     setOpen(request);
+    void keepOpen(request);
   };
 
   const sample = async (kind: 'contract' | 'scan' | 'form') => {
@@ -90,6 +111,7 @@ export function App() {
 
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
+  if (restoring) return <div className="workspace" />;
   return open ? (
     <Suspense fallback={<div className="workspace" />}>
       <Workspace

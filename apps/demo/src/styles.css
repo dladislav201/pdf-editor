@@ -57,6 +57,10 @@ body,
   height: 100%;
   margin: 0;
 }
+/* Reopening the file that was open before a reload (App.tsx). */
+:root[data-restoring] #root {
+  visibility: hidden;
+}
 body {
   background: var(--canvas);
   color: var(--text);
