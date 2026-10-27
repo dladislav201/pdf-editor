@@ -389,6 +389,80 @@ test('types a signature and places it', async ({ page }) => {
   expect(stamps?.length).toBe(1);
 });
 
+test('lifts a signature and a stamp off a photo of paper in shadow, and places them', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Sign' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add your signature' });
+  await dialog.getByRole('button', { name: 'Photo', exact: true }).click();
+  // A phone photo: warm paper going into shadow, a signature, and a pale blue stamp in the shadow.
+  const jpeg = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 800;
+    canvas.height = 600;
+    const ctx = canvas.getContext('2d')!;
+    const light = ctx.createLinearGradient(0, 0, 800, 0);
+    light.addColorStop(0, 'rgb(245,238,225)');
+    light.addColorStop(1, 'rgb(150,140,125)');
+    ctx.fillStyle = light;
+    ctx.fillRect(0, 0, 800, 600);
+    ctx.strokeStyle = 'rgb(30,30,45)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    for (let x = 80; x < 460; x += 4) ctx.lineTo(x, 300 + Math.sin(x / 30) * 60);
+    ctx.stroke();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = 'rgb(60,80,200)';
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.arc(620, 300, 85, 0, Math.PI * 2);
+    ctx.stroke();
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.9));
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  });
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg) });
+  await expect(dialog.getByLabel('Clean up the background')).toBeVisible();
+
+  /** The preview's pixels: its size, the top-left corner's alpha, and the opaque ones by colour. */
+  const preview = () =>
+    dialog.locator('.modal__paper img').evaluate(async (img: HTMLImageElement) => {
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const px = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let opaque = 0;
+      let blue = 0;
+      let dark = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3]! < 200) continue;
+        opaque++;
+        if (px[i + 2]! > px[i]! + 40) blue++;
+        if (px[i]! < 70 && px[i + 1]! < 70 && px[i + 2]! < 90) dark++;
+      }
+      return { width: canvas.width, height: canvas.height, corner: px[3]!, opaque, blue, dark };
+    });
+  const own = await preview();
+  // Cut down to the ink, the shadowed paper gone, the stamp blue and the signature dark.
+  expect(own.width).toBeLessThan(700);
+  expect(own.corner).toBe(0);
+  expect(own.blue).toBeGreaterThan(1500);
+  expect(own.dark).toBeGreaterThan(1500);
+  expect(own.opaque).toBeLessThan(own.width * own.height * 0.2);
+
+  await dialog.getByRole('button', { name: 'Black' }).click();
+  await expect.poll(async () => (await preview()).blue).toBe(0);
+  expect((await preview()).dark).toBeGreaterThan(own.dark + 1000);
+
+  await dialog.getByRole('button', { name: 'Place signature' }).click();
+  await clickPage(page, 0.5, 0.5);
+  const doc = await PDFDocument.load(await download(page));
+  const annots = doc.getPage(0).node.Annots()!;
+  const kinds = Array.from({ length: annots.size() }, (_, i) => annots.lookup(i, PDFDict).lookup(PDFName.of('Subtype'), PDFName).decodeText());
+  expect(kinds).toEqual(['Stamp']);
+});
+
 test('shows page thumbnails', async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Pages', exact: true }).click();

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { liftInk, readInk, type InkPhoto } from '@pdfsdk/editor';
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useI18n } from './i18n';
 import { Icon } from './icons';
 
@@ -85,25 +86,29 @@ function trim(canvas: HTMLCanvasElement): Signature | null {
   return { src: out.toDataURL('image/png'), width: w, height: h };
 }
 
-/** A photo or scan of a signature on paper: the paper becomes transparent, the ink stays. */
-async function fromImage(file: File): Promise<Signature | null> {
+/** A photo or scan of a signature or stamp on paper, read for lifting its ink (at most 1600 px across). */
+async function readPhoto(file: File): Promise<InkPhoto> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 1200 / bitmap.width);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const px = image.data;
-  for (let i = 0; i < px.length; i += 4) {
-    const lum = 0.299 * px[i]! + 0.587 * px[i + 1]! + 0.114 * px[i + 2]!;
-    // Light paper fades out; ink keeps its colour, its edge softly transparent.
-    const alpha = Math.max(0, Math.min(1, (215 - lum) / 90));
-    px[i + 3] = Math.round(px[i + 3]! * alpha);
-  }
-  ctx.putImageData(image, 0, 0);
-  return trim(canvas);
+  bitmap.close();
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return readInk({ width: canvas.width, height: canvas.height, rgba: data });
+}
+
+/** The ink of a photo on a transparent background: the paper and its shadows go, the ink stays. */
+function lifted(photo: InkPhoto, strength: number, color: string | null): Signature | null {
+  const ink = liftInk(photo, { strength, color });
+  if (!ink) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = ink.width;
+  canvas.height = ink.height;
+  canvas.getContext('2d')!.putImageData(new ImageData(ink.rgba as Uint8ClampedArray<ArrayBuffer>, ink.width, ink.height), 0, 0);
+  return { src: canvas.toDataURL('image/png'), width: ink.width, height: ink.height };
 }
 
 export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signature) => void; onClose: () => void }) {
@@ -113,7 +118,13 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
   const [name, setName] = useState('');
   const [font, setFont] = useState(0);
   const [drawn, setDrawn] = useState(false);
-  const [uploaded, setUploaded] = useState<Signature | null>(null);
+  const [photo, setPhoto] = useState<InkPhoto | null>(null);
+  const [strength, setStrength] = useState(0.5);
+  // The photo's own colours (a stamp stays blue), or one ink.
+  const [photoInk, setPhotoInk] = useState<string | null>(null);
+  // The slider stays smooth while the picture catches up.
+  const deferredStrength = useDeferredValue(strength);
+  const uploaded = useMemo(() => (photo ? lifted(photo, deferredStrength, photoInk) : null), [photo, deferredStrength, photoInk]);
   const [saved] = useState(loadSaved);
   const pad = useRef<HTMLCanvasElement>(null);
   const last = useRef<{ x: number; y: number } | null>(null);
@@ -267,21 +278,48 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
               <input
                 ref={upload}
                 type="file"
-                accept="image/png,image/jpeg"
+                accept="image/*"
                 hidden
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  if (file) setUploaded(await fromImage(file));
                   e.target.value = '';
+                  if (file) setPhoto(await readPhoto(file));
                 }}
               />
-              <button type="button" className="pill pill--ink" onClick={() => upload.current?.click()}>
-                <Icon name="upload" /> {s.chooseImage}
-              </button>
-              <p>{s.imageHint}</p>
+              {photo ? (
+                <>
+                  <label className="sign-upload__strength">
+                    <span>{s.cleanup}</span>
+                    <input type="range" min={0} max={1} step={0.05} value={strength} onChange={(e) => setStrength(Number(e.target.value))} />
+                  </label>
+                  {!uploaded && <p className="dialog__error">{s.noInk}</p>}
+                  <button type="button" className="pill" onClick={() => upload.current?.click()}>
+                    <Icon name="image" /> {s.another}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="pill pill--ink" onClick={() => upload.current?.click()}>
+                    <Icon name="upload" /> {s.chooseImage}
+                  </button>
+                  <p>{s.imageHint}</p>
+                </>
+              )}
             </div>
           )}
 
+          {mode === 'upload' && photo && (
+            <div className="group modal__inks" aria-label={s.ink}>
+              <button type="button" className="pill pill--icon" aria-label={s.inks.original} title={s.inks.original} aria-pressed={photoInk === null} onClick={() => setPhotoInk(null)}>
+                <span className="swatch swatch--photo" />
+              </button>
+              {INKS.map((c) => (
+                <button key={c.value} type="button" className="pill pill--icon" aria-label={s.inks[c.name]} aria-pressed={photoInk === c.value} onClick={() => setPhotoInk(c.value)}>
+                  <span className="swatch" style={{ background: c.value }} />
+                </button>
+              ))}
+            </div>
+          )}
           {mode !== 'upload' && (
             <div className="group modal__inks" aria-label={s.ink}>
               {INKS.map((c) => (

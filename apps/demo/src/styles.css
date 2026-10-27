@@ -230,6 +230,10 @@ a.pill {
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
+/* The photo's own colours. */
+.swatch--photo {
+  background: conic-gradient(#1d3fbf, #7b2fbf, #c02f4b, #1b1b1f, #1d3fbf);
+}
 .pill[aria-pressed='true'] .swatch {
   box-shadow: 0 0 0 2px var(--pill-active), 0 0 0 3.5px var(--accent);
 }
@@ -1111,6 +1115,18 @@ a.pill {
   margin: 0;
   color: var(--text-2);
   font-size: 13px;
+}
+.sign-upload__strength {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.sign-upload__strength input {
+  width: 100%;
+  accent-color: var(--accent);
 }
 @media (max-width: 720px) {
   .modal__card {

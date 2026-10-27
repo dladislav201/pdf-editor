@@ -1,7 +1,8 @@
 export { PdfEditor } from './editor';
 export { exportPdf, type ExportOptions } from './export';
 export type { ScanInfo } from './engine/pdfium-core';
-export type { OcrPage, OcrWord } from './ocr/types';
+export type { OcrPage, OcrWord, Raster } from './ocr/types';
+export { liftInk, readInk, type InkPhoto, type LiftOptions } from './image/ink';
 export { checkLicense, type LicenseInfo, type LicensePayload, type LicenseStatus } from './license';
 export { arrangePages, type ArrangedPage } from './pdf/arrange';
 export { readFormFields, type FormField, type FormValue } from './pdf/forms';

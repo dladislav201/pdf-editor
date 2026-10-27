@@ -508,9 +508,21 @@ PDF here gives back the same picture, still movable; flattening draws it
 into the page.
 
 The site's Sign dialog makes the picture: draw it (a pen that thins when
-moving fast), type it in one of three script fonts, or upload a photo of it
-(the paper turns transparent); black or blue ink; the last three signatures
+moving fast), type it in one of three script fonts, or take a photo of a
+signature or stamp on paper; black or blue ink; the last three signatures
 are kept in this browser only.
+
+**Ink off a photo** (`readInk` and `liftInk`, `src/image/ink.ts`, exported):
+no model, plain image work, a few tens of milliseconds. The paper's colour
+is found block by block (the brightest fifth of each block's pixels, a block
+full of ink taking its brightest neighbour's), smoothed and stretched over
+the picture, so a shadow or warm light goes with the paper. Darkness is
+measured against that paper in the darkest channel, so a pale blue stamp
+counts like black ink; ink starts a little above the paper's grain (its
+median darkness), fades in over a soft edge, specks are dropped, and the
+picture is cut down to the ink. The ink keeps its colour (the paper showing
+through its edge taken out) or takes black or blue. The dialog's slider moves
+where ink starts.
 
 ## Search
 
