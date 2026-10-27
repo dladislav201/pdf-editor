@@ -41,7 +41,11 @@ as they're found), later searches use the kept index (60 ms).
 
 ## Deploy the demo
 
-Live: https://pdf-sdk-demo.peer-mcp.workers.dev
+Live: https://lovelydoc.com (also https://pdf-sdk-demo.peer-mcp.workers.dev)
+
+The domain is registered at Spaceship (renews yearly, auto-renew on) with its
+nameservers pointed at Cloudflare; `routes` in `wrangler.toml` attach it and
+`www.lovelydoc.com` to the Worker as custom domains.
 
 The demo is a static site on Cloudflare Workers static assets (the successor
 of Pages, free for static traffic). Config: `apps/demo/wrangler.toml`,

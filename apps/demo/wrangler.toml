@@ -5,6 +5,16 @@ name = "pdf-sdk-demo"
 compatibility_date = "2026-10-01"
 main = "worker/index.ts"
 
+# The site's own domain (registered at Spaceship, DNS on Cloudflare). Cloudflare
+# creates the DNS records and certificates for custom domains itself.
+routes = [
+  { pattern = "lovelydoc.com", custom_domain = true },
+  { pattern = "www.lovelydoc.com", custom_domain = true },
+]
+# Keep the old workers.dev address working for links already shared; with
+# routes set, wrangler turns it off unless this says otherwise.
+workers_dev = true
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

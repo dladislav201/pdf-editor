@@ -8,7 +8,7 @@ import { LOCALES, localePrefix, localeOfPath, type Locale } from './i18n';
  */
 export const SITE = {
   name: 'Private PDF Editor',
-  url: 'https://pdf-sdk-demo.peer-mcp.workers.dev',
+  url: 'https://lovelydoc.com',
 };
 
 /** Pages people can land on from a search: the start page and one per tool. Their words are in i18n/<locale>.ts. */
