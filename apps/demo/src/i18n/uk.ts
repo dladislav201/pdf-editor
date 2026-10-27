@@ -80,6 +80,8 @@ export const uk: Messages = {
     savePictures: { title: 'Зображення', text: 'Кожна сторінка як PNG або JPG' },
     undo: 'Скасувати',
     redo: 'Повторити',
+    bold: 'Жирний',
+    italic: 'Курсив',
     colour: (colour) => `Колір ${colour}`,
     delete: 'Видалити',
     editTextScan: 'Клацніть будь-який рядок скану: спершу текст буде прочитано, потім його можна редагувати.',

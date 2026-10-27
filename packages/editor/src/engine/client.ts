@@ -1,6 +1,6 @@
 import type { InvisibleWord } from '../ocr/place';
 import type { SearchMatch, SearchOptions } from '../text/search';
-import type { PageText } from '../text/types';
+import type { ObjectMove, PageText } from '../text/types';
 import type { TextWritePlan } from '../text/write-plan';
 import type { ScanErase } from '../text/scan-edit';
 import type { ScanInfo, ScanPatch } from './pdfium-core';
@@ -76,8 +76,16 @@ export class EngineClient {
     return (await this.send({ type: 'unlock', data: buffer, password }, [buffer]).promise) as Uint8Array;
   }
 
-  render(docId: number, page: number, width: number, height: number, hidden?: number[]): RenderHandle {
-    const { id, promise } = this.send({ type: 'render', docId, page, width, height, ...(hidden?.length ? { hidden } : {}) });
+  render(docId: number, page: number, width: number, height: number, hidden?: number[], moved?: ObjectMove[]): RenderHandle {
+    const { id, promise } = this.send({
+      type: 'render',
+      docId,
+      page,
+      width,
+      height,
+      ...(hidden?.length ? { hidden } : {}),
+      ...(moved?.length ? { moved } : {}),
+    });
     return {
       promise: promise as Promise<ImageBitmap>,
       cancel: () => {

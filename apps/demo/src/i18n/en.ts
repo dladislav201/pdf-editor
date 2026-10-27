@@ -87,6 +87,8 @@ export const en = {
     savePictures: { title: 'Pictures', text: 'Each page as PNG or JPG' },
     undo: 'Undo',
     redo: 'Redo',
+    bold: 'Bold',
+    italic: 'Italic',
     colour: (colour: string) => `Colour ${colour}`,
     delete: 'Delete',
     editTextScan: 'Click any line on the scan: its text is read first, then you can edit it.',

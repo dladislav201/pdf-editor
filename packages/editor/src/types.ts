@@ -191,6 +191,8 @@ export interface EditorEventMap {
   paragraphSelect: { paragraph: TextParagraph | null };
   /** A paragraph opened for typing with the Edit text tool, or the open one was left (`paragraph` null). */
   textEditing: { paragraph: TextParagraph | null };
+  /** Bold and italic of the selection in the open paragraph changed; `style` is null when none is open or it can't be styled. */
+  textStyleChange: { style: { bold: boolean; italic: boolean } | null };
   /** A protected file was opened (after its password, if `password`): the document has no protection now. */
   documentUnlocked: { password: boolean };
   /** Page text was edited (fires when an edit session ends). */

@@ -18,8 +18,8 @@ import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations, resizeHandle } from './render-annotations';
 import { injectStyles } from './styles';
-import { TextEditSession, paragraphChars, paragraphFrame } from './text/edit-session';
-import { CUSTOM_FONT_BASE, FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontSource } from './text/glyph-store';
+import { TextEditSession, paragraphChars, paragraphFrame, type TextEditCallbacks, type TextStyleKind } from './text/edit-session';
+import { CUSTOM_FONT_BASE, FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontSource, type FontTraits } from './text/glyph-store';
 import type { ParagraphLayout } from './text/layout';
 import {
   composeScanParagraph,
@@ -35,7 +35,8 @@ import { recognizedChars, scanErase, type ScanErase } from './text/scan-edit';
 import { buildWritePlan, type TextWritePlan } from './text/write-plan';
 import { searchPage, type SearchMatch, type SearchOptions } from './text/search';
 import type { StyledChar } from './text/layout';
-import type { PageText, TextParagraph } from './text/types';
+import { pushDown, type PushItem } from './text/push';
+import type { ObjectMove, PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
 import type {
   Annotation,
@@ -286,6 +287,10 @@ export class PdfEditor {
   /** Paragraphs whose text was changed, drawn by their (frozen) sessions until saved. */
   private textEdits = new Map<string, { paragraph: TextParagraph; session: TextEditSession }>();
   private textDragging = false;
+  /** Per page: what paragraphs that grew push down (see `pushDown`), and the growth it was worked out for. */
+  private pushes = new Map<number, { key: string; shifts: Map<string, number>; moves: ObjectMove[] }>();
+  private pushQueued = new Set<number>();
+  private textStyleKey = '';
   /** A text edit session being opened (glyphs loading): its paragraph and the latest click on it. */
   private opening: { id: string; point: Point; event: PointerEvent; token: number; clicks: number } | null = null;
   private openToken = 0;
@@ -470,7 +475,7 @@ export class PdfEditor {
       this.fileName = file.name;
       this.geometries = pages.map((info) => new PageGeometry(info.box, info.rotation));
       this.views = this.geometries.map(
-        (geometry, i) => new PageView(i, geometry, (w, h, hidden) => this.engine.render(docId, i, w, h, hidden), this.zoom),
+        (geometry, i) => new PageView(i, geometry, (w, h, hidden, moved) => this.engine.render(docId, i, w, h, hidden, moved), this.zoom),
       );
       this.pagesEl.append(...this.views.map((view) => view.el));
       for (const view of this.views) this.visibleObserver.observe(view.el);
@@ -548,11 +553,15 @@ export class PdfEditor {
             const image = this.composeScan(session, scan);
             return scanWritePlan(paragraph, session.laidOutChars, session.layout, { image, origin, xAxis, yAxis }, scan.bold);
           }
-          const plan = buildWritePlan(paragraph, session.styledChars, session.layout, this.glyphs);
+          const plan = buildWritePlan(paragraph, session.styledChars, session.layout, this.glyphs, this.pageFonts(paragraph.pageIndex));
           // Recognized text of a scan: its words come off the scan underneath.
           return paragraph.recognized ? { ...plan, erase: await this.scanEraseFor(paragraph) } : plan;
         }),
       );
+      // What grown paragraphs pushed down moves in the file too.
+      for (const [page, { moves }] of this.pushes) {
+        if (moves.length) plans.push({ page, remove: [], moves, words: [], fallback: [] });
+      }
       const fallbackFonts: Record<number, ArrayBuffer> = {};
       const invisible = plans.flatMap((plan) => plan.invisible ?? []);
       const fallbackIds = [
@@ -1198,6 +1207,7 @@ export class PdfEditor {
     this.textSession = null;
     for (const edit of this.textEdits.values()) edit.session.destroy();
     this.textEdits.clear();
+    this.pushes.clear();
     for (const patch of this.scanPatches.values()) void patch.then(({ href }) => URL.revokeObjectURL(href), () => undefined);
     this.scanPatches.clear();
     for (const edit of this.scanEdits.values()) if (edit.href) URL.revokeObjectURL(edit.href);
@@ -1373,11 +1383,13 @@ export class PdfEditor {
     const pad = PARAGRAPH_HIT_PADDING;
     return (
       model.paragraphs.find(
-        ({ box }) =>
-          point[0] >= box.x - pad &&
+        (paragraph) => {
+          const box = this.paragraphBox(paragraph);
+          return point[0] >= box.x - pad &&
           point[0] <= box.x + box.width + pad &&
           point[1] >= box.y - pad &&
-          point[1] <= box.y + box.height + pad,
+          point[1] <= box.y + box.height + pad;
+        },
       ) ?? null
     );
   }
@@ -1433,13 +1445,135 @@ export class PdfEditor {
       a.x + inset < b.x + b.width && b.x + inset < a.x + a.width && a.y + inset < b.y + b.height && b.y + inset < a.y + a.height;
     // Only new collisions count: loose text boxes of neighbours often touch already.
     return model.paragraphs.some(
-      (other) => other.id !== paragraph.id && meets(other.box, session.box) && !meets(other.box, paragraph.box),
+      (other) =>
+        other.id !== paragraph.id && meets(this.paragraphBox(other), session.box) && !meets(other.box, paragraph.box),
     );
   }
 
+  /** Where a paragraph is now: an edited one as its text is set, others moved down when pushed. */
   private paragraphBox(paragraph: TextParagraph): Rect {
     if (this.textSession?.paragraph.id === paragraph.id) return this.textSession.box;
-    return this.textEdits.get(paragraph.id)?.session.box ?? paragraph.box;
+    const edited = this.textEdits.get(paragraph.id)?.session.box;
+    if (edited) return edited;
+    const shift = this.pushes.get(paragraph.pageIndex)?.shifts.get(paragraph.id) ?? 0;
+    return shift ? { ...paragraph.box, y: paragraph.box.y - shift } : paragraph.box;
+  }
+
+  private pageSessions(pageIndex: number): TextEditSession[] {
+    return [this.textSession, ...[...this.textEdits.values()].map((e) => e.session)].filter(
+      (s): s is TextEditSession => s?.paragraph.pageIndex === pageIndex,
+    );
+  }
+
+  /** Works out the push again once the current change is done (sessions report every change). */
+  private queuePush(pageIndex: number): void {
+    if (this.pushQueued.has(pageIndex)) return;
+    this.pushQueued.add(pageIndex);
+    queueMicrotask(() => {
+      this.pushQueued.delete(pageIndex);
+      this.updateHidden(pageIndex);
+    });
+  }
+
+  /**
+   * Edited paragraphs that got longer push what is below them down, so they
+   * don't run into it. Pages with recognized text don't: the scan underneath
+   * can't move. Where there is no room the text overlaps, and is flagged.
+   */
+  private updatePush(pageIndex: number): void {
+    const sessions = this.pageSessions(pageIndex);
+    const model = this.pageTexts.get(pageIndex);
+    const key = sessions.map((s) => `${s.paragraph.id}:${s.growth.toFixed(2)}`).join();
+    if (this.pushes.get(pageIndex)?.key === key) return;
+    let shifts = new Map<string, number>();
+    const geometry = this.geometries[pageIndex];
+    if (model && geometry && sessions.some((s) => s.growth > 0) && !model.paragraphs.some((p) => p.recognized)) {
+      const edited = new Map(sessions.map((s) => [s.paragraph.id, s]));
+      const items: PushItem[] = [
+        ...model.paragraphs.map((paragraph): PushItem => {
+          const session = edited.get(paragraph.id);
+          if (!session) {
+            const fixed = paragraph.lines.some((l) => l.chars.some((c) => c.object < 0));
+            return { id: paragraph.id, box: paragraph.box, ...(fixed ? { fixed } : {}) };
+          }
+          // A title can grow sideways too: what is below that part counts.
+          const now = session.box;
+          const left = Math.min(paragraph.box.x, now.x);
+          const right = Math.max(paragraph.box.x + paragraph.box.width, now.x + now.width);
+          return { id: paragraph.id, box: { ...paragraph.box, x: left, width: right - left }, growth: session.growth };
+        }),
+        ...model.graphics.map((g): PushItem => ({ id: `g${g.object}`, box: g.box, graphic: true })),
+      ];
+      const [x0, y0, x1, y1] = geometry.box;
+      const leading = Math.max(...sessions.map((s) => s.paragraph.leading));
+      shifts = pushDown(items, { keepGap: leading * 2, page: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } }) ?? shifts;
+    }
+    const moves: ObjectMove[] = [];
+    const edited = new Set(sessions.map((s) => s.paragraph.id));
+    const editedObjects = new Set(sessions.flatMap((s) => s.paragraph.lines.flatMap((l) => l.chars.map((c) => c.object))));
+    const seen = new Set<number>();
+    const move = (object: number, dy: number) => {
+      if (object < 0 || seen.has(object) || editedObjects.has(object)) return;
+      seen.add(object);
+      moves.push({ object, dx: 0, dy: -dy });
+    };
+    for (const paragraph of model?.paragraphs ?? []) {
+      const dy = shifts.get(paragraph.id);
+      if (!dy || edited.has(paragraph.id)) continue;
+      for (const line of paragraph.lines) {
+        for (const c of line.chars) move(c.object, dy);
+        for (const space of line.spaceObjects) move(space.object, dy);
+      }
+    }
+    for (const graphic of model?.graphics ?? []) {
+      const dy = shifts.get(`g${graphic.object}`);
+      if (dy) move(graphic.object, dy);
+    }
+    this.pushes.set(pageIndex, { key, shifts, moves });
+    for (const session of sessions) session.setShift(shifts.get(session.paragraph.id) ?? 0);
+    this.drawParagraphOutlines(...sessions.map((s) => s.paragraph));
+  }
+
+  /** A text object for each font used on a page, to write restyled text with (see `buildWritePlan`). */
+  private pageFonts(pageIndex: number): Map<number, number> {
+    const fonts = new Map<number, number>();
+    for (const paragraph of this.pageTexts.get(pageIndex)?.paragraphs ?? []) {
+      if (paragraph.recognized) continue;
+      for (const c of paragraph.lines.flatMap((l) => l.chars)) if (c.object >= 0 && !fonts.has(c.font)) fonts.set(c.font, c.object);
+    }
+    return fonts;
+  }
+
+  /** Session callbacks for making text bold or italic in fonts of its page. */
+  private styling(paragraph: TextParagraph): Pick<TextEditCallbacks, 'styleFont' | 'fontSource'> {
+    if (paragraph.recognized) return {};
+    const page = paragraph.pageIndex;
+    return {
+      styleFont: (font, want) => this.glyphs.variant(font, want, this.pageFonts(page).keys()),
+      fontSource: (font) => {
+        const object = this.pageFonts(page).get(font);
+        return object === undefined ? null : { page, object };
+      },
+    };
+  }
+
+  /** Bold and italic of the open paragraph's selection, for toolbars; null when none is open or it can't be styled. */
+  getTextStyle(): FontTraits | null {
+    return this.textSession?.textStyle ?? null;
+  }
+
+  /** Makes the selection in the open paragraph bold or italic, or not (what is typed next, with nothing selected). */
+  toggleTextStyle(kind: TextStyleKind): void {
+    this.textSession?.toggleStyle(kind);
+    this.textSession?.focus();
+  }
+
+  private emitTextStyle(): void {
+    const style = this.getTextStyle();
+    const key = JSON.stringify(style);
+    if (key === this.textStyleKey) return;
+    this.textStyleKey = key;
+    this.events.emit('textStyleChange', { style });
   }
 
   // ------------------------------------------------------ text editing
@@ -1457,16 +1591,14 @@ export class PdfEditor {
 
   /** Page objects to leave out of a page's bitmap: those of every paragraph being or having been edited. */
   private hiddenObjects(pageIndex: number): number[] {
-    const sessions = [this.textSession, ...[...this.textEdits.values()].map((e) => e.session)];
-    return sessions
-      .filter((s): s is TextEditSession => s?.paragraph.pageIndex === pageIndex)
-      .flatMap((s) => s.paragraph.lines.flatMap((l) => l.chars.map((c) => c.object)));
+    return this.pageSessions(pageIndex).flatMap((s) => s.paragraph.lines.flatMap((l) => l.chars.map((c) => c.object)));
   }
 
   private updateHidden(pageIndex: number): void {
     const view = this.views[pageIndex];
     if (!view) return;
-    view.setHidden(this.hiddenObjects(pageIndex));
+    this.updatePush(pageIndex);
+    view.setHidden(this.hiddenObjects(pageIndex), this.pushes.get(pageIndex)?.moves ?? []);
     if (this.visible.has(view)) this.renderView(view);
   }
 
@@ -1523,13 +1655,16 @@ export class PdfEditor {
     this.textSession = new TextEditSession(view, paragraph, paragraphFrame(paragraph, page.block), store, {
       onChange: () => {
         this.drawParagraphOutlines(paragraph);
+        this.queuePush(paragraph.pageIndex);
         this.emitHistory();
+        this.emitTextStyle();
       },
       onExit: () => this.endTextEdit(),
-      ...(scan ? { paint: (session: TextEditSession) => this.paintScan(session, scan) } : {}),
+      ...(scan ? { paint: (session: TextEditSession) => this.paintScan(session, scan) } : this.styling(paragraph)),
     }, initial);
     this.root.dataset.editing = 'text';
     this.events.emit('textEditing', { paragraph });
+    this.emitTextStyle();
     if (ready) this.textSession.setBackground({ href: ready.href, ...ready.patch });
     this.updateHidden(paragraph.pageIndex);
     this.textSession.pointerDown(opening.point, opening.event, opening.clicks);
@@ -1687,6 +1822,7 @@ export class PdfEditor {
     this.textDragging = false;
     delete this.root.dataset.editing;
     this.events.emit('textEditing', { paragraph: null });
+    this.emitTextStyle();
     // Leaving a paragraph after changing it is one step of the undo history.
     const start = this.sessionStart;
     this.sessionStart = null;
@@ -1742,9 +1878,12 @@ export class PdfEditor {
       paragraphFrame(paragraph, page.block),
       this.glyphs,
       {
-        onChange: () => this.drawParagraphOutlines(paragraph),
+        onChange: () => {
+          this.drawParagraphOutlines(paragraph);
+          this.queuePush(paragraph.pageIndex);
+        },
         onExit: () => undefined,
-        ...(scan ? { paint: (s: TextEditSession) => this.paintScan(s, scan) } : {}),
+        ...(scan ? { paint: (s: TextEditSession) => this.paintScan(s, scan) } : this.styling(paragraph)),
       },
       chars,
     );

@@ -64,15 +64,21 @@ function fontInfo(lib: WrappedPdfiumModule, font: number, scratch: number): Text
 export function extractPageText(lib: WrappedPdfiumModule, page: number, pageIndex: number): RawPageText {
   const { wasmExports } = lib.pdfium;
   const objectIndex = new Map<number, number>();
+  const graphics: RawPageText['graphics'] = [];
   const objectCount = lib.FPDFPage_CountObjects(page);
+  // Scratch: doubles at 0/8, a FS_RECTF at 16, a FS_MATRIX at 32, RGBA at 56, four doubles at 80.
+  const scratch = wasmExports.malloc(112);
   for (let i = 0; i < objectCount; i++) {
     const object = lib.FPDFPage_GetObject(page, i);
-    if (lib.FPDFPageObj_GetType(object) === FPDF_PAGEOBJ_TEXT) objectIndex.set(object, i);
+    if (lib.FPDFPageObj_GetType(object) === FPDF_PAGEOBJ_TEXT) {
+      objectIndex.set(object, i);
+    } else if (lib.FPDFPageObj_GetBounds(object, scratch, scratch + 4, scratch + 8, scratch + 12)) {
+      const [left, bottom, right, top] = heaps(lib).HEAPF32.subarray(scratch >> 2, (scratch >> 2) + 4) as unknown as number[];
+      graphics.push({ object: i, box: { x: left!, y: bottom!, width: right! - left!, height: top! - bottom! } });
+    }
   }
 
   const textPage = lib.FPDFText_LoadPage(page);
-  // Scratch: doubles at 0/8, a FS_RECTF at 16, a FS_MATRIX at 32, RGBA at 56, four doubles at 80.
-  const scratch = wasmExports.malloc(112);
   const fonts: RawPageText['fonts'] = {};
   const chars: RawPageText['chars'] = [];
   const renderModes = new Map<number, number>();
@@ -141,5 +147,5 @@ export function extractPageText(lib: WrappedPdfiumModule, page: number, pageInde
     wasmExports.free(scratch);
     lib.FPDFText_ClosePage(textPage);
   }
-  return { pageIndex, fonts, chars };
+  return { pageIndex, fonts, chars, graphics };
 }

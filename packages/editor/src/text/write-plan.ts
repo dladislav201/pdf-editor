@@ -55,16 +55,18 @@ const isBlank = (char: string) => char === ' ' || char === ' ' || char === '\t'
  * a glyph that still exists keeps its own page object, just moved (so text
  * that didn't change stays byte-for-byte the same glyphs, kerning included);
  * new or retyped text becomes new words in the same font, or in the fallback
- * font where the document's subset lacks a character.
+ * font where the document's subset lacks a character. `pageFonts` gives a
+ * text object for other fonts of the page that text was restyled to.
  */
 export function buildWritePlan(
   paragraph: TextParagraph,
   chars: StyledChar[],
   layout: ParagraphLayout,
   store: GlyphStore,
+  pageFonts: ReadonlyMap<number, number> = new Map(),
 ): TextWritePlan {
-  const fontObject = new Map<number, number>();
-  for (const c of paragraph.lines.flatMap((l) => l.chars)) if (!fontObject.has(c.font)) fontObject.set(c.font, c.object);
+  const fontObject = new Map(pageFonts);
+  for (const c of paragraph.lines.flatMap((l) => l.chars)) if (c.object >= 0) fontObject.set(c.font, c.object);
   const objects = new Set(paragraph.lines.flatMap((l) => [...l.chars.map((c) => c.object), ...l.spaceObjects.map((s) => s.object)]));
 
   const plan: TextWritePlan = { page: paragraph.pageIndex, remove: [], moves: [], words: [], fallback: [] };

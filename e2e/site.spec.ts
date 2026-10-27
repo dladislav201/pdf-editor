@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { PDFDocument, PDFName } from 'pdf-lib';
 import { readFormFields } from '../packages/editor/src/pdf/forms';
-import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfText, waitForApp } from './helpers';
+import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfParagraphs, pdfText, waitForApp } from './helpers';
 
 /** Clicks a point of a page given as fractions of its width and height. */
 async function clickPage(page: Page, x: number, y: number, index = 0) {
@@ -105,6 +105,32 @@ test('undoes and redoes a paragraph edit after leaving it', async ({ page }) => 
   await expect(page.getByRole('button', { name: /^Download · 1 edit/ })).toBeVisible();
   [first] = await pdfText(await download(page));
   expect(squash(first!)).toContain('Replacedopeningparagraph.');
+});
+
+test('makes text bold and pushes what is below down when a paragraph grows', async ({ page }) => {
+  await openSample(page, 'A contract');
+  const before = await pdfParagraphs(await download(page));
+  const heading = before.find((p) => p.text === '1. Scope of Services')!;
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  // The first word: from the paragraph's start, extended to the end of the word.
+  await page.keyboard.press('ControlOrMeta+ArrowUp');
+  for (let i = 0; i < 'This'.length; i++) await page.keyboard.press('Shift+ArrowRight');
+  await page.getByRole('button', { name: 'Bold', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Bold', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ControlOrMeta+ArrowDown');
+  await page.keyboard.type(' Either Party may assign this Agreement to an affiliate with written notice to the other Party.');
+  await page.keyboard.press('Escape');
+
+  const after = await pdfParagraphs(await download(page));
+  const opening = after.find((p) => p.text.startsWith('This Software'))!;
+  expect(opening.fonts['This']).toBe('Helvetica-Bold');
+  expect(opening.fonts['Software']).toBe('Helvetica');
+  expect(opening.text).toContain('written notice to the other Party.');
+  // The paragraph grew by a line or more; the heading under it moved down as much.
+  const moved = after.find((p) => p.text === '1. Scope of Services')!;
+  expect(heading.baseline - moved.baseline).toBeGreaterThan(10);
 });
 
 test('opens a password-protected PDF after asking for its password', async ({ page }) => {

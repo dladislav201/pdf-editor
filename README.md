@@ -303,8 +303,23 @@ page; `exportPdf()` / Download write the edits into the PDF
   paragraphs stay drawn and reopen with their edits.
 - Paragraphs whose page objects also hold other text, or that sit in form
   XObjects, are read-only for now.
-- Text that grows into other content is flagged with a red outline; content
-  below does not move (as in Acrobat).
+- Bold and italic: Cmd/Ctrl+B and +I, or `toggleTextStyle('bold' | 'italic')`
+  (`getTextStyle()`, `textStyleChange` for toolbars). The selection — or, with
+  nothing selected, what is typed next — goes to a font of the same family the
+  page already uses (Helvetica → Helvetica-Bold), else to the matching
+  fallback (Arimo/Tinos/Cousine Bold, Italic, Bold Italic). Families are
+  matched by PostScript name without the subset prefix and style
+  (`ABCDEF+Arial-BoldMT` = `ArialMT`). Not for a scan's letters.
+- A paragraph that gets longer pushes what is below it down
+  (`text/push.ts`), like a word processor: paragraphs, lines, pictures and
+  whole tables in the same column move as far as it grew, and push what is
+  under them in turn; a gap wider than two lines (above a footer) takes up
+  some of it first. On screen the moved objects are rendered shifted
+  (`render(…, moved)`), and on save they are moved in the file. Nothing moves
+  — the text is flagged with a red outline instead — when the paragraph sits
+  in a cell or a box (a graphic around its end), when text would leave the
+  page, when it would move text inside a form XObject, or on a page with
+  recognized text (the scan underneath can't move).
 
 ### Writing edits into the PDF
 
@@ -544,11 +559,12 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
 - Text model: two plain text lines without spacing (e.g. from a .txt) read as one
   paragraph; bullets drawn as shapes are not part of the item's text; vertical
   and rotated text is skipped.
-- Text editing: no bold/italic toggles or font picker; the
-  live document isn't modified until save, so page text search/selection
-  reflects the original until the file is reopened; a paragraph that grows
-  overlaps content below instead of pushing it down; not yet checked in
-  Acrobat and Chrome.
+- Text editing: no font picker or sizes; the live document isn't modified
+  until save, so page text search/selection reflects the original (and the
+  place of pushed text) until the file is reopened; annotations on pushed text
+  stay where they were; a paragraph in a table cell can't grow its cell (it
+  overlaps, flagged); a shorter paragraph leaves its space empty instead of
+  pulling what is below up; not yet checked in Acrobat and Chrome.
 - Text annotations on rotated pages are not counter-rotated.
 - OCR: a letter the page doesn't contain at all is drawn in Arimo; a viewer
   may draw the edited piece a fraction of a pixel off the page image; the

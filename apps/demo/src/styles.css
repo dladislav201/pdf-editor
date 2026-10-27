@@ -117,6 +117,17 @@ a.pill {
   width: 36px;
   padding: 0;
 }
+.pill.style-bold,
+.pill.style-italic {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 17px;
+}
+.pill.style-bold {
+  font-weight: 700;
+}
+.pill.style-italic {
+  font-style: italic;
+}
 .pill:hover:not(:disabled) {
   background: var(--pill-hover);
   color: var(--text);

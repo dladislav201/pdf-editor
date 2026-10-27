@@ -1,9 +1,10 @@
 import type { RenderHandle } from './engine/client';
 import type { PageGeometry } from './engine/page-geometry';
+import type { ObjectMove } from './text/types';
 import type { Point } from './types';
 
-/** Asks the engine for a bitmap of this page at a pixel size, leaving out `hidden` page objects. */
-export type PageRenderer = (width: number, height: number, hidden: number[]) => RenderHandle;
+/** Asks the engine for a bitmap of this page at a pixel size, leaving out `hidden` page objects and shifting `moved` ones. */
+export type PageRenderer = (width: number, height: number, hidden: number[], moved: ObjectMove[]) => RenderHandle;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Above this many canvas pixels mobile Safari silently refuses to draw. */
@@ -38,6 +39,8 @@ export class PageView {
   private renderedScale = 0;
   /** Page objects left out of the bitmap (their text is drawn by an edit session instead). */
   private hidden: number[] = [];
+  /** Page objects drawn shifted (pushed down by a paragraph that grew). */
+  private moved: ObjectMove[] = [];
 
   constructor(
     readonly index: number,
@@ -92,11 +95,13 @@ export class PageView {
     return this.geometry.scale;
   }
 
-  /** Sets the page objects to leave out of the bitmap; the next `render()` redraws. */
-  setHidden(objects: number[]): void {
+  /** Sets the page objects to leave out of the bitmap and those to draw shifted; the next `render()` redraws. */
+  setHidden(objects: number[], moved: ObjectMove[] = []): void {
     const next = [...new Set(objects)].sort((a, b) => a - b);
-    if (next.join() === this.hidden.join()) return;
+    const key = (moves: ObjectMove[]) => moves.map((m) => `${m.object}:${m.dx.toFixed(2)}:${m.dy.toFixed(2)}`).join();
+    if (next.join() === this.hidden.join() && key(moved) === key(this.moved)) return;
     this.hidden = next;
+    this.moved = moved;
     // A render in flight was asked for the old set; drop it so it can't mark the page as current.
     this.cancelRender();
     this.renderedScale = 0;
@@ -117,7 +122,7 @@ export class PageView {
 
     const width = Math.max(1, Math.floor(cssWidth * outputScale));
     const height = Math.max(1, Math.floor(cssHeight * outputScale));
-    const task = this.renderer(width, height, this.hidden);
+    const task = this.renderer(width, height, this.hidden, this.moved);
     this.renderTask = task;
     let bitmap: ImageBitmap;
     try {

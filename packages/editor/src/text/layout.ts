@@ -7,6 +7,8 @@ export interface CharStyle {
   color: string;
   /** Baseline shift for super/subscripts. */
   rise: number;
+  /** The document font the text was in before it was made bold or italic (set only while `font` differs). */
+  base?: number;
 }
 
 export interface StyledChar {

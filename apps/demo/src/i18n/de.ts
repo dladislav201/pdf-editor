@@ -72,6 +72,8 @@ export const de: Messages = {
     savePictures: { title: 'Bilder', text: 'Jede Seite als PNG oder JPG' },
     undo: 'Rückgängig',
     redo: 'Wiederholen',
+    bold: 'Fett',
+    italic: 'Kursiv',
     colour: (colour) => `Farbe ${colour}`,
     delete: 'Löschen',
     editTextScan: 'Klicken Sie auf eine Zeile des Scans: Der Text wird zuerst gelesen, dann können Sie ihn bearbeiten.',

@@ -12,6 +12,7 @@ import { analyzePage } from './analyze';
 import { paragraphChars, paragraphFrame } from './edit-session';
 import { GlyphStore, fallbackFile } from './glyph-store';
 import { layoutParagraph, type StyledChar } from './layout';
+import { pushDown, type PushItem } from './push';
 import type { TextParagraph } from './types';
 import { withWordFallback } from './word-fonts';
 import { buildWritePlan, type TextWritePlan } from './write-plan';
@@ -215,5 +216,167 @@ describe('writing edited text into the PDF', () => {
     const original = await doc.save();
     const { bytes } = await editParagraph(original, 'Total due', (chars) => replaceText(chars, 'thirty', 'fourteen'));
     expect(paragraphTexts(bytes)).toEqual(['Total due within fourteen days of the invoice date.']);
+  });
+});
+
+/** Opens page 1 of `source` for editing as the editor does: its text model and a glyph store with every font loaded. */
+async function openPage(doc: PdfiumDocument) {
+  const page = analyzePage(doc.extractText(0));
+  const store = new GlyphStore(async (src, chars) => doc.glyphs(src.page, src.object, chars), loadFallback);
+  store.registerFonts(page.fonts);
+  const pageFonts = new Map<number, number>();
+  for (const c of page.paragraphs.flatMap((p) => p.lines.flatMap((l) => l.chars))) {
+    if (!pageFonts.has(c.font)) pageFonts.set(c.font, c.object);
+  }
+  for (const [font, object] of pageFonts) await store.ensure(font, { page: 0, object }, []);
+  return { page, store, pageFonts };
+}
+
+async function fallbackFontsOf(plans: TextWritePlan[], store: GlyphStore): Promise<Record<number, Uint8Array>> {
+  const fonts: Record<number, Uint8Array> = {};
+  for (const font of new Set(plans.flatMap((p) => p.fallback.map((w) => w.font)))) {
+    const chars = plans.flatMap((p) => p.fallback.filter((w) => w.font === font).flatMap((w) => [...w.text]));
+    fonts[font] = subsetter.subset(new Uint8Array((await store.fallbackBytes(font))!), chars);
+  }
+  return fonts;
+}
+
+/** Fonts (PostScript names) the saved page draws each word of a paragraph in. */
+function wordFonts(bytes: Uint8Array, starts: string): Map<string, string> {
+  const doc = new PdfiumDocument(lib, bytes);
+  try {
+    const raw = doc.extractText(0);
+    const paragraph = analyzePage(raw).paragraphs.find((p) => p.text.startsWith(starts))!;
+    const words = new Map<string, string>();
+    for (const line of paragraph.lines) {
+      line.wordStarts.forEach((start, i) => {
+        const chars = line.chars.slice(start, line.wordStarts[i + 1] ?? line.chars.length);
+        words.set(chars.map((c) => c.text).join(''), raw.fonts[chars[0]!.font]!.name);
+      });
+    }
+    return words;
+  } finally {
+    doc.close();
+  }
+}
+
+describe('bold and italic', () => {
+  async function restyle(want: { bold: boolean; italic: boolean }, word: string): Promise<{ bytes: Uint8Array; plan: TextWritePlan }> {
+    const source = await PDFDocument.create();
+    const regular = await source.embedFont(StandardFonts.Helvetica);
+    const bold = await source.embedFont(StandardFonts.HelveticaBold);
+    const pdfPage = source.addPage([400, 300]);
+    pdfPage.drawText('Payment terms', { x: 40, y: 270, size: 14, font: bold });
+    pdfPage.drawText('Total due within thirty days of the invoice date.', { x: 40, y: 240, size: 11, font: regular });
+    const doc = new PdfiumDocument(lib, await source.save());
+    try {
+      const { page, store, pageFonts } = await openPage(doc);
+      const paragraph = page.paragraphs.find((p) => p.text.startsWith('Total due'))!;
+      const chars = paragraphChars(paragraph, (style, char) => store.advance(style, char));
+      const at = paragraph.text.indexOf(word);
+      const styled = chars.map((c, i) => {
+        if (i < at || i >= at + word.length) return c;
+        const font = store.variant(c.style.font, want, pageFonts.keys())!;
+        return { char: c.char, style: { ...c.style, font, base: c.style.font } };
+      });
+      const lay = () => layoutParagraph(withWordFallback(styled, store), paragraphFrame(paragraph, page.block), (s, c) => store.advance(s, c));
+      let plan = buildWritePlan(paragraph, styled, lay(), store, pageFonts);
+      await Promise.all(plan.fallback.map((w) => store.fallbackBytes(w.font)));
+      plan = buildWritePlan(paragraph, styled, lay(), store, pageFonts);
+      doc.applyTextPlans([plan], await fallbackFontsOf([plan], store));
+      return { bytes: doc.save(), plan };
+    } finally {
+      doc.close();
+    }
+  }
+
+  it('makes a word bold in the bold font the page already uses', async () => {
+    const { bytes, plan } = await restyle({ bold: true, italic: false }, 'thirty');
+    expect(plan.fallback).toEqual([]);
+    const fonts = wordFonts(bytes, 'Total due');
+    expect(fonts.get('thirty')).toBe('Helvetica-Bold');
+    expect(fonts.get('days')).toBe('Helvetica');
+    expect(paragraphTexts(bytes)).toContain('Total due within thirty days of the invoice date.');
+  });
+
+  it('makes a word italic in the matching fallback when the page has no italic', async () => {
+    const { bytes, plan } = await restyle({ bold: false, italic: true }, 'invoice');
+    expect(plan.fallback.map((w) => [w.text, fallbackFile(w.font)])).toEqual([['invoice', 'Arimo-Italic.ttf']]);
+    expect(wordFonts(bytes, 'Total due').get('invoice')).toMatch(/Arimo-Italic/);
+    expect(inkOf(bytes, plan.fallback[0]!)).toBeGreaterThan(60);
+  });
+});
+
+describe('a paragraph that grows', () => {
+  /** A column: a paragraph of three lines, a rule under it and a paragraph after that. */
+  async function column(): Promise<Uint8Array> {
+    const source = await PDFDocument.create();
+    const font = await source.embedFont(StandardFonts.Helvetica);
+    const page = source.addPage([400, 400]);
+    const lines = [
+      'The supplier delivers the goods to the address',
+      'given in the order within ten working days and',
+      'informs the customer of the delivery date.',
+    ];
+    lines.forEach((text, i) => page.drawText(text, { x: 40, y: 350 - i * 14, size: 11, font }));
+    page.drawLine({ start: { x: 40, y: 300 }, end: { x: 300, y: 300 }, thickness: 1 });
+    page.drawText('Payment is due within thirty days.', { x: 40, y: 280, size: 11, font });
+    return source.save();
+  }
+
+  it('pushes the rule and the text below down, in the file as on screen', async () => {
+    const doc = new PdfiumDocument(lib, await column());
+    try {
+      const { page, store } = await openPage(doc);
+      const paragraph = page.paragraphs.find((p) => p.text.startsWith('The supplier'))!;
+      const chars = paragraphChars(paragraph, (s, c) => store.advance(s, c));
+      const style = chars[chars.length - 1]!.style;
+      const longer = [...chars, ...[...' Partial deliveries are allowed if the customer agrees.'].map((char) => ({ char, style }))];
+      const layout = layoutParagraph(longer, paragraphFrame(paragraph, page.block), (s, c) => store.advance(s, c));
+      const growth = paragraph.lines[paragraph.lines.length - 1]!.baseline - layout.lines[layout.lines.length - 1]!.baseline;
+      expect(layout.lines.length).toBeGreaterThan(paragraph.lines.length);
+
+      const items: PushItem[] = [
+        ...page.paragraphs.map((p) => ({ id: p.id, box: p.box, ...(p.id === paragraph.id ? { growth } : {}) })),
+        ...page.graphics.map((g) => ({ id: `g${g.object}`, box: g.box, graphic: true })),
+      ];
+      const shifts = pushDown(items, { keepGap: paragraph.leading * 2, page: { x: 0, y: 0, width: 400, height: 400 } })!;
+      const after = page.paragraphs.find((p) => p.text.startsWith('Payment'))!;
+      expect(shifts.get(after.id)).toBeCloseTo(growth, 1);
+      expect(page.graphics).toHaveLength(1);
+      expect(shifts.get(`g${page.graphics[0]!.object}`)).toBeCloseTo(growth, 1);
+
+      const moves = [
+        ...after.lines.flatMap((l) => l.chars.map((c) => c.object)),
+        page.graphics[0]!.object,
+      ].map((object) => ({ object, dx: 0, dy: -growth }));
+      // The editor shows the moves by rendering with them; saving must look the same.
+      const shown = doc.render(0, 400, 400, [], false, [...new Map(moves.map((m) => [m.object, m])).values()]);
+      const plan = buildWritePlan(paragraph, longer, layout, store);
+      plan.moves.push(...new Map(moves.map((m) => [m.object, m])).values());
+      doc.applyTextPlans([plan], {});
+      const saved = new PdfiumDocument(lib, doc.save());
+      try {
+        const text = analyzePage(saved.extractText(0));
+        const moved = text.paragraphs.find((p) => p.text.startsWith('Payment'))!;
+        expect(moved.lines[0]!.baseline).toBeCloseTo(after.lines[0]!.baseline - growth, 1);
+        expect(text.graphics[0]!.box.y).toBeCloseTo(page.graphics[0]!.box.y - growth, 1);
+        // Nothing overlaps: the grown paragraph ends above the rule.
+        const grown = text.paragraphs.find((p) => p.text.startsWith('The supplier'))!;
+        expect(grown.box.y).toBeGreaterThan(text.graphics[0]!.box.y + text.graphics[0]!.box.height);
+        // Below the edited paragraph the screen and the file agree.
+        const final = saved.render(0, 400, 400, [], false);
+        const rule = page.graphics[0]!.box;
+        let differ = 0;
+        for (let row = Math.floor(400 - (rule.y + rule.height - growth)); row < 400; row++) {
+          for (let x = 0; x < 400 * 4; x++) if (shown[row * 1600 + x] !== final[row * 1600 + x]) differ++;
+        }
+        expect(differ).toBe(0);
+      } finally {
+        saved.close();
+      }
+    } finally {
+      doc.close();
+    }
   });
 });

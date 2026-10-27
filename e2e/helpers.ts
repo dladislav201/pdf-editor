@@ -5,6 +5,7 @@ import { init } from '@embedpdf/pdfium';
 import { expect, type Download, type Page } from '@playwright/test';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { PdfiumDocument, initLibrary } from '../packages/editor/src/engine/pdfium-core';
+import { analyzePage } from '../packages/editor/src/text/analyze';
 
 const require = createRequire(import.meta.url);
 let lib: ReturnType<typeof initLibrary> | undefined;
@@ -22,6 +23,29 @@ export async function pdfText(bytes: Uint8Array): Promise<string[]> {
         .chars.map((c) => c.text)
         .join(''),
     );
+  } finally {
+    doc.close();
+  }
+}
+
+/** Paragraphs of the first page: text, first baseline and the fonts (PostScript names) of each word. */
+export async function pdfParagraphs(bytes: Uint8Array): Promise<{ text: string; baseline: number; fonts: Record<string, string> }[]> {
+  lib ??= initLibrary(
+    await init({ wasmBinary: readFileSync(join(dirname(require.resolve('@embedpdf/pdfium')), 'pdfium.wasm')) }),
+  );
+  const doc = new PdfiumDocument(lib, bytes);
+  try {
+    const raw = doc.extractText(0);
+    return analyzePage(raw).paragraphs.map((p) => {
+      const fonts: Record<string, string> = {};
+      for (const line of p.lines) {
+        line.wordStarts.forEach((start, i) => {
+          const chars = line.chars.slice(start, line.wordStarts[i + 1] ?? line.chars.length);
+          fonts[chars.map((c) => c.text).join('')] = raw.fonts[chars[0]!.font]!.name;
+        });
+      }
+      return { text: p.text, baseline: p.lines[0]!.baseline, fonts };
+    });
   } finally {
     doc.close();
   }

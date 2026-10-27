@@ -72,6 +72,8 @@ export const nb: Messages = {
     savePictures: { title: 'Bilder', text: 'Hver side som PNG eller JPG' },
     undo: 'Angre',
     redo: 'Gjør om',
+    bold: 'Fet',
+    italic: 'Kursiv',
     colour: (colour) => `Farge ${colour}`,
     delete: 'Slett',
     editTextScan: 'Klikk på en linje i skanningen: teksten leses først, så kan du redigere den.',

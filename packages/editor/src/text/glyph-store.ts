@@ -27,6 +27,24 @@ export const fallbackFile = (font: number): string => FALLBACKS[-font - 1]!.file
 export const fallbackId = (family: FallbackFamily, style: (typeof STYLES)[number]): number =>
   -(FALLBACKS.findIndex((f) => f.family === family && f.style === style) + 1);
 
+export interface FontTraits {
+  bold: boolean;
+  italic: boolean;
+}
+
+/**
+ * A font's family to compare by, from its PostScript name without the
+ * subset prefix and the style: `ABCDEF+Arial-BoldMT` and `ArialMT` are one
+ * family, as are `Times-Roman` and `Times-BoldItalic`.
+ */
+const familyKey = (name: string) =>
+  name
+    .replace(/^[A-Z]{6}\+/, '')
+    .toLowerCase()
+    .replace(/[\s_,-]/g, '')
+    .replace(/bold|italic|oblique|regular|roman|semibold|demi|medium|book/g, '')
+    .replace(/(mt|ps)+$/, '');
+
 /** A drawable glyph: advance in ems, outline in its own units (y up). */
 export interface Glyph {
   advance: number;
@@ -166,6 +184,44 @@ export class GlyphStore {
     const italic = info?.italic ?? false;
     const style = bold && italic ? 'BoldItalic' : bold ? 'Bold' : italic ? 'Italic' : 'Regular';
     return fallbackId(family, style);
+  }
+
+  /** Whether text in a font is bold and italic: from the description of a document font, from the style of a fallback. */
+  traits(font: number): FontTraits {
+    if (isFallback(font)) {
+      const style = FALLBACKS[-font - 1]!.style;
+      return { bold: style.startsWith('Bold'), italic: style.endsWith('Italic') };
+    }
+    const info = this.infos.get(font);
+    return { bold: (info?.weight ?? 400) >= 600, italic: info?.italic ?? false };
+  }
+
+  /**
+   * The font to set text of `font` in with another weight or slant: a font of
+   * the same family among `available` (document fonts the page uses, so the
+   * text keeps its typeface), else the fallback of its kind in that style.
+   * Null for fonts the editor made up (a scan's letters): they have no styles.
+   */
+  variant(font: number, want: FontTraits, available: Iterable<number>): number | null {
+    if (isCustomFont(font)) return null;
+    const same = (a: FontTraits) => a.bold === want.bold && a.italic === want.italic;
+    if (same(this.traits(font))) return font;
+    const info = this.infos.get(font);
+    if (info) {
+      const family = familyKey(info.name);
+      const match = [...available]
+        .map((id) => this.infos.get(id))
+        .find((other) => other && familyKey(other.name) === family && same(this.traits(other.id)));
+      if (match) return match.id;
+    }
+    const kind: FallbackFamily = isFallback(font)
+      ? FALLBACKS[-font - 1]!.family
+      : info?.monospace
+        ? 'mono'
+        : info?.serif
+          ? 'serif'
+          : 'sans';
+    return fallbackId(kind, want.bold && want.italic ? 'BoldItalic' : want.bold ? 'Bold' : want.italic ? 'Italic' : 'Regular');
   }
 
   /** The glyph to draw `char` with: the document font if it has one, else its fallback. */

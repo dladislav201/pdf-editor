@@ -29,6 +29,8 @@ const OCR_LANGUAGES: Record<Locale, string[]> = {
 };
 const COLORS = ['#facc15', '#ef4444', '#22c55e', '#2f6fed', '#191918'];
 const MAX_FIT_ZOOM = 1.25;
+/** How shortcuts with the command key read on this system. */
+const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 type Scan =
   | { kind: 'none' }
@@ -107,6 +109,8 @@ export function Workspace({
   const [fields, setFields] = useState(0);
   // A paragraph is open for typing: Esc (or a click elsewhere) finishes it.
   const [typing, setTyping] = useState(false);
+  // Bold and italic of the selection in the open paragraph (null: none open, or a scan's letters).
+  const [textStyle, setTextStyle] = useState<{ bold: boolean; italic: boolean } | null>(null);
   const [mode, setMode] = useState<'edit' | 'pages'>('edit');
   const [loaded, setLoaded] = useState(false);
   const wantPages = useRef(startInPages);
@@ -165,6 +169,7 @@ export function Workspace({
       editor.on('pageChange', ({ pageIndex }) => setPage((p) => ({ ...p, index: pageIndex }))),
       editor.on('textEditsChange', ({ edits }) => setEdits(edits.length)),
       editor.on('textEditing', ({ paragraph }) => setTyping(!!paragraph)),
+      editor.on('textStyleChange', ({ style }) => setTextStyle(style)),
       editor.on('documentUnlocked', ({ password }) => {
         track(password ? 'open.unlocked.password' : 'open.unlocked.owner');
         if (password) setMessage(w.unlocked);
@@ -559,6 +564,28 @@ export function Workspace({
                     onClick={() => editor?.setColor(c)}
                   >
                     <span className="swatch" style={{ background: c }} />
+                  </button>
+                ))}
+              </div>
+            )}
+            {tool === 'editText' && textStyle && (
+              <div className="group">
+                {(['bold', 'italic'] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`pill pill--icon style-${kind}`}
+                    aria-label={w[kind]}
+                    title={`${w[kind]} (${MOD}${kind === 'bold' ? 'B' : 'I'})`}
+                    aria-pressed={textStyle[kind]}
+                    // The paragraph keeps its selection and caret.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      track(`text.${kind}`);
+                      editor?.toggleTextStyle(kind);
+                    }}
+                  >
+                    {kind === 'bold' ? 'B' : 'I'}
                   </button>
                 ))}
               </div>

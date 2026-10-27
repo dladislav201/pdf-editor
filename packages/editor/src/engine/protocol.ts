@@ -1,6 +1,7 @@
 import type { InvisibleWord } from '../ocr/place';
 import type { ScanErase } from '../text/scan-edit';
 import type { SearchOptions } from '../text/search';
+import type { ObjectMove } from '../text/types';
 import type { TextWritePlan } from '../text/write-plan';
 import type { PageInfo } from './pdfium-core';
 
@@ -9,7 +10,16 @@ export type EngineRequest =
   | { id: number; type: 'init'; wasmUrl: string; subsetWasmUrl: string }
   /** Opens a document; it replaces the one being edited unless `keep` (one opened alongside it). */
   | { id: number; type: 'open'; data: ArrayBuffer; keep?: boolean }
-  | { id: number; type: 'render'; docId: number; page: number; width: number; height: number; hidden?: number[] }
+  | {
+      id: number;
+      type: 'render';
+      docId: number;
+      page: number;
+      width: number;
+      height: number;
+      hidden?: number[];
+      moved?: ObjectMove[];
+    }
   | { id: number; type: 'text'; docId: number; page: number }
   /** Opens a protected file with `password` and returns a copy without its protection; PasswordException if it's wrong. */
   | { id: number; type: 'unlock'; data: ArrayBuffer; password: string }

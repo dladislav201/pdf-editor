@@ -1,7 +1,7 @@
 import { shortcutKey } from '../keys';
 import type { PageView } from '../page-view';
 import type { Point, Rect } from '../types';
-import { FALLBACK_FONT, type GlyphStore } from './glyph-store';
+import { FALLBACK_FONT, type FontSource, type FontTraits, type GlyphStore } from './glyph-store';
 import { withWordFallback } from './word-fonts';
 import {
   layoutParagraph,
@@ -40,7 +40,18 @@ export interface TextEditCallbacks {
    * under the caret and selection). Called after every change of layout.
    */
   paint?(session: TextEditSession): void;
+  /**
+   * The font for text of `font` made bold or italic (see `GlyphStore.variant`);
+   * without it the paragraph's text can't be styled.
+   */
+  styleFont?(font: number, want: FontTraits): number | null;
+  /** Where to load glyphs of a font the paragraph doesn't use yet (one that styling switched to). */
+  fontSource?(font: number): FontSource | null;
 }
+
+export type TextStyleKind = keyof FontTraits;
+
+const isBlank = (char: string) => char === ' ' || char === '\u00a0' || char === '\t' || char === '\n';
 
 /**
  * Characters of a paragraph as the engine read them, with spaces at word gaps
@@ -137,7 +148,13 @@ export class TextEditSession {
   private readonly caretEl: SVGLineElement;
   private readonly input: HTMLTextAreaElement;
   private readonly original: string;
+  /** Fonts of the page's characters, so restyled text counts as changed. */
+  private readonly originalFonts: string;
   private chars: StyledChar[];
+  /** Style for what is typed next, set by bold/italic with nothing selected. */
+  private typingStyle: CharStyle | null = null;
+  /** How far the paragraph is moved down: pushed by one above it that grew. */
+  private shiftY = 0;
   private caretOffset: number;
   private anchor: number;
   private composing: string | null = null;
@@ -158,7 +175,7 @@ export class TextEditSession {
   constructor(
     readonly view: PageView,
     readonly paragraph: TextParagraph,
-    private readonly frame: ParagraphFrame,
+    private readonly baseFrame: ParagraphFrame,
     private readonly store: GlyphStore,
     private readonly callbacks: TextEditCallbacks,
     initial: StyledChar[],
@@ -166,9 +183,9 @@ export class TextEditSession {
     this.chars = initial;
     // Compare with the page, not with where this session started: reopening an
     // already edited paragraph and leaving it untouched keeps the edit.
-    this.original = paragraphChars(paragraph)
-      .map((c) => c.char)
-      .join('');
+    const page = paragraphChars(paragraph);
+    this.original = page.map((c) => c.char).join('');
+    this.originalFonts = page.map((c) => c.style.font).join();
     this.caretOffset = initial.length;
     this.anchor = initial.length;
 
@@ -208,11 +225,75 @@ export class TextEditSession {
   }
 
   get changed(): boolean {
-    return this.text !== this.original;
+    if (this.text !== this.original) return true;
+    return !!this.callbacks.styleFont && this.chars.map((c) => c.style.font).join() !== this.originalFonts;
+  }
+
+  /** How far the paragraph is moved down from where it is on the page. */
+  get shift(): number {
+    return this.shiftY;
+  }
+
+  /** Moves the paragraph down by `dy` from its place on the page (0 puts it back). */
+  setShift(dy: number): void {
+    if (Math.abs(dy - this.shiftY) < 0.01) return;
+    this.shiftY = dy;
+    this.layoutCache = null;
+    this.render();
+  }
+
+  /** How much lower the text now ends than on the page, not counting `shift`: what it pushes down. */
+  get growth(): number {
+    const lines = this.layout.lines;
+    const original = this.paragraph.lines[this.paragraph.lines.length - 1]!.baseline;
+    return Math.max(0, original - (lines[lines.length - 1]!.baseline + this.shiftY));
+  }
+
+  /** Whether the selection (or what is typed next) is bold and italic; null where text can't be styled. */
+  get textStyle(): FontTraits | null {
+    if (!this.callbacks.styleFont) return null;
+    const [from, to] = this.selection;
+    const selected = this.chars.slice(from, to).filter((c) => !isBlank(c.char));
+    const styles = selected.length ? selected.map((c) => c.style) : [this.typingStyle ?? this.styleAt(from)];
+    const traits = styles.map((style) => this.store.traits(style.font));
+    return { bold: traits.every((t) => t.bold), italic: traits.every((t) => t.italic) };
+  }
+
+  /**
+   * Makes the selection bold (or not bold, when all of it is), or italic; with
+   * nothing selected, what is typed next. Undoable like typing.
+   */
+  toggleStyle(kind: TextStyleKind): void {
+    const current = this.textStyle;
+    if (!current) return;
+    const value = !current[kind];
+    const [from, to] = this.selection;
+    if (from === to) {
+      this.typingStyle = this.restyle(this.typingStyle ?? this.styleAt(from), kind, value);
+      this.render();
+      return;
+    }
+    const restyled = this.chars.map((c, i) =>
+      i < from || i >= to || c.char === '\n' ? c : { char: c.char, style: this.restyle(c.style, kind, value) },
+    );
+    this.pushUndo('other');
+    this.chars = restyled;
+    this.changedContent(restyled.slice(from, to));
   }
 
   get styledChars(): StyledChar[] {
     return this.chars;
+  }
+
+  /** The column the paragraph is set in, moved down by `shift`. */
+  private get frame(): ParagraphFrame {
+    if (!this.shiftY) return this.baseFrame;
+    const { firstBaseline, baselines } = this.baseFrame;
+    return {
+      ...this.baseFrame,
+      firstBaseline: firstBaseline - this.shiftY,
+      ...(baselines ? { baselines: baselines.map((b) => b - this.shiftY) } : {}),
+    };
   }
 
   get layout(): ParagraphLayout {
@@ -286,6 +367,7 @@ export class TextEditSession {
     const last = this.lastPress;
     const repeat = event.timeStamp - last.time < 500 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 5;
     const count = clicks ?? (repeat ? last.count + 1 : 1);
+    this.typingStyle = null;
     this.lastPress = { time: event.timeStamp, x: event.clientX, y: event.clientY, count };
     if (count === 2) {
       this.selectWord(offset);
@@ -358,8 +440,19 @@ export class TextEditSession {
     return style;
   }
 
+  /** `style` with its font made (or no longer) bold or italic; `base` remembers the document font to go back to. */
+  private restyle(style: CharStyle, kind: TextStyleKind, value: boolean): CharStyle {
+    const base = style.base ?? style.font;
+    const want = { ...this.store.traits(style.font), [kind]: value };
+    const font = this.callbacks.styleFont?.(base, want) ?? null;
+    if (font === null || font === style.font) return style;
+    const { base: _, ...rest } = style;
+    return font === base ? { ...rest, font } : { ...rest, font, base };
+  }
+
   private replace(from: number, to: number, text: string, kind: 'typing' | 'other'): void {
-    const style = from < to ? this.chars[from]!.style : this.styleAt(from);
+    const style = this.typingStyle ?? (from < to ? this.chars[from]!.style : this.styleAt(from));
+    this.typingStyle = null;
     const inserted = [...text].map((char) => ({ char, style: char === ' ' ? { ...style, rise: 0 } : style }));
     this.pushUndo(kind);
     this.chars = [...this.chars.slice(0, from), ...inserted, ...this.chars.slice(to)];
@@ -397,12 +490,13 @@ export class TextEditSession {
     }
   }
 
-  private fontSource(font: number) {
+  private fontSource(font: number): FontSource | null {
     const char = this.paragraph.lines.flatMap((l) => l.chars).find((c) => c.font === font);
-    return char ? { page: this.paragraph.pageIndex, object: char.object } : null;
+    return char ? { page: this.paragraph.pageIndex, object: char.object } : (this.callbacks.fontSource?.(font) ?? null);
   }
 
   private restore(snapshot: Snapshot): void {
+    this.typingStyle = null;
     this.chars = snapshot.chars;
     this.caretOffset = snapshot.caret;
     this.anchor = snapshot.anchor;
@@ -480,6 +574,7 @@ export class TextEditSession {
   }
 
   private move(target: number, extend: boolean, keepGoal = false): void {
+    this.typingStyle = null;
     this.caretOffset = Math.max(0, Math.min(this.chars.length, target));
     if (!extend) this.anchor = this.caretOffset;
     if (!keepGoal) this.goalX = null;
@@ -548,6 +643,9 @@ export class TextEditSession {
     } else if (mod && key === 'y' && !mac) {
       event.preventDefault();
       this.redo();
+    } else if (mod && (key === 'b' || key === 'i') && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      this.toggleStyle(key === 'b' ? 'bold' : 'italic');
     }
   };
 
@@ -642,7 +740,7 @@ export class TextEditSession {
   private displayChars(): StyledChar[] {
     if (!this.composing) return this.chars;
     const [from, to] = this.selection;
-    const style = this.styleAt(from);
+    const style = this.typingStyle ?? this.styleAt(from);
     return [...this.chars.slice(0, from), ...[...this.composing].map((char) => ({ char, style })), ...this.chars.slice(to)];
   }
 

@@ -4,7 +4,7 @@ import type { InvisibleWord } from '../ocr/place';
 import type { Raster } from '../ocr/types';
 import type { ScanErase } from '../text/scan-edit';
 import type { Point } from '../types';
-import type { RawPageText } from '../text/types';
+import type { ObjectMove, RawPageText } from '../text/types';
 import type { TextWritePlan } from '../text/write-plan';
 import { PageGeometry, type Rotation } from './page-geometry';
 import { fontGlyphs, type FontGlyphs } from './pdfium-glyphs';
@@ -194,15 +194,39 @@ export class PdfiumDocument {
 
   /**
    * Renders the page (with its annotations' appearances) to RGBA pixels.
-   * `hidden` page objects are left out, e.g. the text of a paragraph being edited.
+   * `hidden` page objects are left out, e.g. the text of a paragraph being
+   * edited; `moved` ones are drawn shifted, e.g. content pushed down by it.
    */
-  render(index: number, width: number, height: number, hidden: number[] = [], annotations = true): Uint8ClampedArray<ArrayBuffer> {
+  render(
+    index: number,
+    width: number,
+    height: number,
+    hidden: number[] = [],
+    annotations = true,
+    moved: ObjectMove[] = [],
+  ): Uint8ClampedArray<ArrayBuffer> {
     const page = this.page(index);
     const lib = this.lib;
+    const { wasmExports } = lib.pdfium;
     const inactive = hidden.map((i) => lib.FPDFPage_GetObject(page, i)).filter(Boolean);
     for (const object of inactive) lib.FPDFPageObj_SetIsActive(object, false);
+    // Moved for this render only: each gets its exact matrix back afterwards.
+    const matrices = moved.length ? wasmExports.malloc(moved.length * 24) : 0;
+    const shifted: { object: number; matrix: number }[] = [];
+    moved.forEach((move, i) => {
+      const object = lib.FPDFPage_GetObject(page, move.object);
+      const matrix = matrices + i * 24;
+      if (!object || !lib.FPDFPageObj_GetMatrix(object, matrix)) return;
+      lib.FPDFPageObj_Transform(object, 1, 0, 0, 1, move.dx, move.dy);
+      shifted.push({ object, matrix });
+    });
     const bitmap = lib.FPDFBitmap_Create(width, height, 1);
-    if (!bitmap) throw new EngineError('EngineError', 'Not enough memory to render the page.');
+    if (!bitmap) {
+      for (const { object, matrix } of shifted) lib.FPDFPageObj_SetMatrix(object, matrix);
+      if (matrices) wasmExports.free(matrices);
+      for (const object of inactive) lib.FPDFPageObj_SetIsActive(object, true);
+      throw new EngineError('EngineError', 'Not enough memory to render the page.');
+    }
     try {
       lib.FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
       lib.FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, (annotations ? FPDF_ANNOT : 0) | FPDF_REVERSE_BYTE_ORDER);
@@ -215,6 +239,8 @@ export class PdfiumDocument {
       return new Uint8ClampedArray(heapU8(lib).slice(ptr, ptr + width * height * 4).buffer);
     } finally {
       lib.FPDFBitmap_Destroy(bitmap);
+      for (const { object, matrix } of shifted) lib.FPDFPageObj_SetMatrix(object, matrix);
+      if (matrices) wasmExports.free(matrices);
       for (const object of inactive) lib.FPDFPageObj_SetIsActive(object, true);
     }
   }

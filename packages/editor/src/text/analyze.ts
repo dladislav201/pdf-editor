@@ -472,5 +472,5 @@ export function analyzePage(raw: RawPageText): PageText {
     .map((paragraph, i) => ({ ...paragraph, id: `p${raw.pageIndex}-${i}` }));
   // A scan has no drawn text: its text block is that of the recognized text.
   const block = drawn.length || !recognized.margins ? margins : recognized.margins;
-  return { pageIndex: raw.pageIndex, fonts: raw.fonts, paragraphs, block };
+  return { pageIndex: raw.pageIndex, fonts: raw.fonts, paragraphs, block, graphics: raw.graphics };
 }

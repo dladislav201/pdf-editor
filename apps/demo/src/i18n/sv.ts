@@ -72,6 +72,8 @@ export const sv: Messages = {
     savePictures: { title: 'Bilder', text: 'Varje sida som PNG eller JPG' },
     undo: 'Ångra',
     redo: 'Gör om',
+    bold: 'Fet',
+    italic: 'Kursiv',
     colour: (colour) => `Färg ${colour}`,
     delete: 'Ta bort',
     editTextScan: 'Klicka på en rad i skanningen: texten läses först, sedan kan du redigera den.',

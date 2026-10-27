@@ -103,12 +103,27 @@ export interface TextParagraph {
   recognized?: boolean;
 }
 
+/** A page object that isn't text (a path, picture, shading or form XObject) and where it is. */
+export interface PageGraphic {
+  object: number;
+  box: Rect;
+}
+
+/** A page object shifted by an offset in user space. */
+export interface ObjectMove {
+  object: number;
+  dx: number;
+  dy: number;
+}
+
 export interface PageText {
   pageIndex: number;
   fonts: Record<number, TextFont>;
   paragraphs: TextParagraph[];
   /** Left and right edges of the page's main text block (where most lines start and end). */
   block: { left: number; right: number };
+  /** Everything on the page that isn't text: what moves with text pushed down by a growing paragraph. */
+  graphics: PageGraphic[];
 }
 
 /** What the engine extracts per page before layout analysis. */
@@ -116,4 +131,5 @@ export interface RawPageText {
   pageIndex: number;
   fonts: Record<number, TextFont>;
   chars: (TextChar & { angle: number; unmapped: boolean; invisible: boolean })[];
+  graphics: PageGraphic[];
 }

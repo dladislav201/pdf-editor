@@ -90,7 +90,7 @@ async function pump(): Promise<void> {
         continue;
       }
       try {
-        const pixels = openDoc(job.docId).render(job.page, job.width, job.height, job.hidden);
+        const pixels = openDoc(job.docId).render(job.page, job.width, job.height, job.hidden, true, job.moved);
         const bitmap = await createImageBitmap(new ImageData(pixels, job.width, job.height));
         reply({ id: job.id, ok: true, result: bitmap }, [bitmap]);
       } catch (error) {
