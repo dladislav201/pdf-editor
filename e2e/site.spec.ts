@@ -351,3 +351,12 @@ test('every language has its own pages, linked to each other, and a German page 
   await expect(page.getByRole('navigation', { name: 'Werkzeuge', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Herunterladen/ })).toBeVisible();
 });
+
+test('a page opens in the dark theme picked before, without waiting for the app', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('theme', 'dark'));
+  // No app code at all: what the page looks like before it loads.
+  await page.route('**/assets/*.js', (route) => route.abort());
+  await page.goto('/de');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(20, 20, 20)');
+});
