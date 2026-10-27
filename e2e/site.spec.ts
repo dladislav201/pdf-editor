@@ -107,6 +107,42 @@ test('undoes and redoes a paragraph edit after leaving it', async ({ page }) => 
   expect(squash(first!)).toContain('Replacedopeningparagraph.');
 });
 
+test('takes edits from on-screen keyboards that change the input themselves, as Android ones do', async ({ page }, info) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  const input = page.locator('.pdfsdk-text-input');
+  // Never empty: a keyboard always has something to delete, so it reports Backspace.
+  await expect(input).toHaveValue('\u200b\u200b');
+  await page.keyboard.press('ControlOrMeta+ArrowDown');
+  // A Backspace the browser doesn't let the page cancel: the input loses a character, then says so.
+  await input.evaluate((el: HTMLTextAreaElement) => {
+    el.dispatchEvent(new InputEvent('beforeinput', { inputType: 'deleteContentBackward', cancelable: false, bubbles: true }));
+    el.value = el.value.slice(0, -1);
+    el.dispatchEvent(new InputEvent('input', { inputType: 'deleteContentBackward', bubbles: true }));
+  });
+  // Text that arrives only as a change of the input.
+  await input.evaluate((el: HTMLTextAreaElement) => {
+    el.value += '!';
+    el.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: '!', bubbles: true }));
+  });
+  await expect(input).toHaveValue('\u200b\u200b');
+  if (info.project.name === 'chromium') {
+    // A word composed by an input method, committed once.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.imeSetComposition', { text: ' ok', selectionStart: 3, selectionEnd: 3 });
+    await cdp.send('Input.insertText', { text: ' ok' });
+  }
+  await page.keyboard.press('Escape');
+  // Retyped words are drawn one by one: compare without the gaps.
+  const [first] = await pdfText(await download(page));
+  const ending = info.project.name === 'chromium' ? 'togetherthe"Parties"!ok' : 'togetherthe"Parties"!';
+  expect(squash(first!)).toContain(ending);
+  expect(squash(first!)).not.toContain('"Parties".');
+  expect(squash(first!)).not.toContain('okok');
+});
+
 test('makes text bold and pushes what is below down when a paragraph grows', async ({ page }) => {
   await openSample(page, 'A contract');
   const before = await pdfParagraphs(await download(page));

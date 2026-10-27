@@ -69,6 +69,14 @@ export const MAX_TEXT_SIZE = 144;
 
 const styleKey = (style: CharStyle) => `${style.font}:${style.size}`;
 
+/**
+ * What the hidden input holds between keystrokes: two zero-width spaces, so
+ * an on-screen keyboard (Android's above all) always has something to
+ * delete and reports Backspace; in an empty field it often reports nothing.
+ * Not spaces: a keyboard turns two spaces into a full stop.
+ */
+const INPUT_GUARD = '\u200b\u200b';
+
 const isBlank = (char: string) => char === ' ' || char === '\u00a0' || char === '\t' || char === '\n';
 
 /**
@@ -225,8 +233,10 @@ export class TextEditSession {
     this.input.autocomplete = 'off';
     this.input.spellcheck = false;
     view.el.append(this.input);
+    this.resetInput();
     this.input.addEventListener('keydown', this.onKeyDown);
     this.input.addEventListener('beforeinput', this.onBeforeInput);
+    this.input.addEventListener('input', this.onInput);
     this.input.addEventListener('compositionstart', this.onCompositionStart);
     this.input.addEventListener('compositionupdate', this.onCompositionUpdate);
     this.input.addEventListener('compositionend', this.onCompositionEnd);
@@ -380,6 +390,7 @@ export class TextEditSession {
   }
 
   focus(): void {
+    this.resetInput();
     this.input.focus({ preventScroll: true });
   }
 
@@ -735,9 +746,16 @@ export class TextEditSession {
     }
   };
 
+  /** Puts the guard back in the hidden input, with its caret at the end. */
+  private resetInput(): void {
+    if (this.input.value !== INPUT_GUARD) this.input.value = INPUT_GUARD;
+    this.input.setSelectionRange(INPUT_GUARD.length, INPUT_GUARD.length);
+  }
+
   private onBeforeInput = (event: InputEvent): void => {
-    // Composition is handled by its own events; its input events can't be cancelled.
-    if (event.inputType === 'insertCompositionText') return;
+    // Composition is handled by its own events; its input events can't be cancelled,
+    // and neither can some keyboards' edits: those are read from the input afterwards (`onInput`).
+    if (event.inputType === 'insertCompositionText' || !event.cancelable) return;
     event.preventDefault();
     const [from, to] = this.selection;
     const collapsed = from === to;
@@ -793,9 +811,32 @@ export class TextEditSession {
     this.render();
   };
 
+  /**
+   * An edit the input took itself (one its keyboard didn't let be cancelled):
+   * what changed around the guard is applied here, then the guard goes back.
+   */
+  private onInput = (event: Event): void => {
+    if (this.composing !== null) return;
+    const value = this.input.value;
+    if (value === INPUT_GUARD) return;
+    // Composed text arrives with the composition's own events; a browser that writes it into the input too is ignored.
+    if (/Composition/.test((event as InputEvent).inputType ?? '')) return this.resetInput();
+    const [from, to] = this.selection;
+    if (value.length < INPUT_GUARD.length && !value.replace(/\u200b/g, '')) {
+      // Backspace ate into the guard: once per character gone.
+      const gone = INPUT_GUARD.length - value.length;
+      if (from < to) this.deleteRange(from, to);
+      else this.deleteRange(this.caretOffset - gone, this.caretOffset);
+    } else {
+      const typed = value.replace(/\u200b/g, '');
+      if (typed) this.insert(typed);
+    }
+    this.resetInput();
+  };
+
   private onCompositionEnd = (event: CompositionEvent): void => {
     this.composing = null;
-    this.input.value = '';
+    this.resetInput();
     if (event.data) this.insert(event.data);
     else this.refresh();
   };

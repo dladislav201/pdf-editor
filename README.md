@@ -330,7 +330,12 @@ page; `exportPdf()` / Download write the edits into the PDF
   page's text block. Styles (font, size, color, super/subscript rise) are kept
   per character; typed text takes the style before the caret.
 - Input goes through a hidden textarea (`beforeinput`), so IME composition,
-  dead keys and the clipboard work. Keys: arrows with Alt/Ctrl (words) and
+  dead keys and the clipboard work. It always holds two zero-width spaces, so
+  an on-screen keyboard has something to delete and reports Backspace
+  (Android keyboards report nothing in an empty field); edits a keyboard
+  makes without a cancellable `beforeinput` are read off the textarea on
+  `input` and applied, and Backspace and Delete are also taken on `keydown`
+  (Safari sends no `beforeinput` for them). Keys: arrows with Alt/Ctrl (words) and
   Cmd (line ends), Home/End, Backspace/Delete by word or line, Enter (line
   break), Cmd+A, Cmd+Z / Shift+Cmd+Z; mouse click, drag, Shift+click, double
   (word) and triple (all) click. Escape leaves the paragraph; edited
