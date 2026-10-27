@@ -464,4 +464,52 @@ describe('a paragraph that grows', () => {
       doc.close();
     }
   });
+
+  it('pulls the rule and the text below up when it gets shorter, in the file as on screen', async () => {
+    const doc = new PdfiumDocument(lib, await column());
+    try {
+      const { page, store } = await openPage(doc);
+      const paragraph = page.paragraphs.find((p) => p.text.startsWith('The supplier'))!;
+      const chars = paragraphChars(paragraph, (s, c) => store.advance(s, c));
+      // Without its last line: "… within ten working days."
+      const end = paragraph.text.indexOf(' and informs');
+      const shorter = [...chars.slice(0, end), { char: '.', style: chars[end - 1]!.style }];
+      const layout = layoutParagraph(shorter, paragraphFrame(paragraph, page.block), (s, c) => store.advance(s, c));
+      const growth = paragraph.lines[paragraph.lines.length - 1]!.baseline - layout.lines[layout.lines.length - 1]!.baseline;
+      expect(layout.lines).toHaveLength(2);
+      expect(growth).toBeCloseTo(-14, 1);
+
+      const items: PushItem[] = [
+        ...page.paragraphs.map((p) => ({ id: p.id, box: p.box, ...(p.id === paragraph.id ? { growth } : {}) })),
+        ...page.graphics.map((g) => ({ id: `g${g.object}`, box: g.box, graphic: true })),
+      ];
+      const shifts = pushDown(items, { keepGap: paragraph.leading * 2, page: { x: 0, y: 0, width: 400, height: 400 } })!;
+      const after = page.paragraphs.find((p) => p.text.startsWith('Payment'))!;
+      const rule = page.graphics[0]!;
+      expect(shifts.get(after.id)).toBeCloseTo(-14, 1);
+      expect(shifts.get(`g${rule.object}`)).toBeCloseTo(-14, 1);
+
+      const moves = [...new Set([...after.lines.flatMap((l) => l.chars.map((c) => c.object)), rule.object])].map((object) => ({
+        object,
+        dx: 0,
+        dy: 14,
+      }));
+      const plan = buildWritePlan(paragraph, shorter, layout, store);
+      plan.moves.push(...moves);
+      doc.applyTextPlans([plan], {});
+      const saved = new PdfiumDocument(lib, doc.save());
+      try {
+        const text = analyzePage(saved.extractText(0));
+        expect(text.paragraphs.find((p) => p.text.startsWith('The supplier'))!.text).toBe(
+          'The supplier delivers the goods to the address given in the order within ten working days.',
+        );
+        expect(text.paragraphs.find((p) => p.text.startsWith('Payment'))!.lines[0]!.baseline).toBeCloseTo(after.lines[0]!.baseline + 14, 1);
+        expect(text.graphics[0]!.box.y).toBeCloseTo(rule.box.y + 14, 1);
+      } finally {
+        saved.close();
+      }
+    } finally {
+      doc.close();
+    }
+  });
 });

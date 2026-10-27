@@ -347,6 +347,11 @@ page; `exportPdf()` / Download write the edits into the PDF
   in a cell or a box (a graphic around its end), when text would leave the
   page, when it would move text inside a form XObject, or on a page with
   recognized text (the scan underneath can't move).
+- A paragraph that gets shorter pulls up what follows it closely (a gap of
+  up to two lines), keeping that gap, and what follows that in turn: the next
+  paragraphs, a rule, a table with the text in its cells. Something set apart
+  by a wider gap (a footer) stays, as do text in a form XObject and what is
+  inside a box around the paragraph. Undo puts everything back.
 
 ### Writing edits into the PDF
 
@@ -593,8 +598,7 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
   until save, so page text search/selection reflects the original (and the
   place of pushed text) until the file is reopened; annotations on pushed text
   stay where they were; a paragraph in a table cell can't grow its cell (it
-  overlaps, flagged); a shorter paragraph leaves its space empty instead of
-  pulling what is below up; not yet checked in Acrobat and Chrome.
+  overlaps, flagged); not yet checked in Acrobat and Chrome.
 - Text annotations on rotated pages are not counter-rotated.
 - OCR: a letter the page doesn't contain at all is drawn in Arimo; a viewer
   may draw the edited piece a fraction of a pixel off the page image; the

@@ -313,7 +313,7 @@ export class PdfEditor {
   /** Paragraphs whose text was changed, drawn by their (frozen) sessions until saved. */
   private textEdits = new Map<string, { paragraph: TextParagraph; session: TextEditSession }>();
   private textDragging = false;
-  /** Per page: what paragraphs that grew push down (see `pushDown`), and the growth it was worked out for. */
+  /** Per page: what paragraphs that grew push down or that got shorter pull up (see `pushDown`), and the growth it was worked out for. */
   private pushes = new Map<number, { key: string; shifts: Map<string, number>; moves: ObjectMove[] }>();
   private pushQueued = new Set<number>();
   private textStyleKey = '';
@@ -1558,7 +1558,7 @@ export class PdfEditor {
     if (this.pushes.get(pageIndex)?.key === key) return;
     let shifts = new Map<string, number>();
     const geometry = this.geometries[pageIndex];
-    if (model && geometry && sessions.some((s) => s.growth > 0) && !model.paragraphs.some((p) => p.recognized)) {
+    if (model && geometry && sessions.some((s) => Math.abs(s.growth) > 0.01) && !model.paragraphs.some((p) => p.recognized)) {
       const edited = new Map(sessions.map((s) => [s.paragraph.id, s]));
       const items: PushItem[] = [
         ...model.paragraphs.map((paragraph): PushItem => {

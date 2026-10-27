@@ -133,6 +133,32 @@ test('makes text bold and pushes what is below down when a paragraph grows', asy
   expect(heading.baseline - moved.baseline).toBeGreaterThan(10);
 });
 
+test('pulls what is below up when a paragraph gets shorter, and puts it back on undo', async ({ page }) => {
+  await openSample(page, 'A contract');
+  const before = await pdfParagraphs(await download(page));
+  const heading = before.find((p) => p.text === '1. Scope of Services')!;
+  const footer = before.find((p) => p.text.startsWith('Northwind Software Ltd.'))!;
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  // From the end of the paragraph up two lines: it ends after its second line.
+  await page.keyboard.press('ControlOrMeta+ArrowDown');
+  await page.keyboard.press('Shift+ArrowUp');
+  await page.keyboard.press('Shift+ArrowUp');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Escape');
+
+  const after = await pdfParagraphs(await download(page));
+  const pulled = after.find((p) => p.text === '1. Scope of Services')!;
+  expect(pulled.baseline - heading.baseline).toBeGreaterThan(20);
+  // The footer sits apart, at the bottom of the page: it stays.
+  expect(after.find((p) => p.text.startsWith('Northwind Software Ltd.'))!.baseline).toBeCloseTo(footer.baseline, 1);
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  const undone = await pdfParagraphs(await download(page));
+  expect(undone.find((p) => p.text === '1. Scope of Services')!.baseline).toBeCloseTo(heading.baseline, 1);
+});
+
 test('sets a word in another size and font', async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Edit text' }).click();

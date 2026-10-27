@@ -264,11 +264,14 @@ export class TextEditSession {
     this.render();
   }
 
-  /** How much lower the text now ends than on the page, not counting `shift`: what it pushes down. */
+  /**
+   * How much lower the text now ends than on the page, not counting `shift`:
+   * what it pushes down, or (negative) how much higher, what it pulls up.
+   */
   get growth(): number {
     const lines = this.layout.lines;
     const original = this.paragraph.lines[this.paragraph.lines.length - 1]!.baseline;
-    return Math.max(0, original - (lines[lines.length - 1]!.baseline + this.shiftY));
+    return original - (lines[lines.length - 1]!.baseline + this.shiftY);
   }
 
   /** Whether the selection (or what is typed next) is bold and italic, its size and family; null where text can't be styled. */
@@ -698,6 +701,21 @@ export class TextEditSession {
       case 'Tab':
         event.preventDefault();
         return;
+      // Here and not only on `beforeinput`: Safari sends none for deleting in its (always empty) input.
+      case 'Backspace':
+        event.preventDefault();
+        if (!collapsed) return this.deleteRange(from, to);
+        return this.deleteRange(
+          mod ? this.lineBoundary(this.caretOffset, -1) : word ? this.wordBoundary(this.caretOffset, -1) : this.caretOffset - 1,
+          this.caretOffset,
+        );
+      case 'Delete':
+        event.preventDefault();
+        if (!collapsed) return this.deleteRange(from, to);
+        return this.deleteRange(
+          this.caretOffset,
+          mod ? this.lineBoundary(this.caretOffset, 1) : word ? this.wordBoundary(this.caretOffset, 1) : this.caretOffset + 1,
+        );
     }
     const key = shortcutKey(event);
     if (mod && key === 'a') {
