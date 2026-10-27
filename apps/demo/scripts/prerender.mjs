@@ -140,22 +140,27 @@ for (const post of posts) {
   write(path, html(renderPost(post), head({ path, title: post.title, description: post.description }, { article: true, data }), { isStatic: true }));
 }
 
-// The sitemap lists each page with its versions in the other languages.
-const today = new Date().toISOString().slice(0, 10);
+// The sitemap lists each page with its versions in the other languages (and
+// x-default, as the pages do). Only guides have a date: a build's date would
+// claim every tool page changed on every deploy.
 const entry = (path, date, alternates) =>
-  `  <url><loc>${url(path)}</loc><lastmod>${date}</lastmod>${
-    alternates
-      ? Object.entries(alternates)
-          .map(([l, p]) => `<xhtml:link rel="alternate" hreflang="${l}" href="${url(p)}"/>`)
-          .join('')
-      : ''
-  }</url>`;
+  [
+    '  <url>',
+    `    <loc>${url(path)}</loc>`,
+    ...(date ? [`    <lastmod>${date}</lastmod>`] : []),
+    ...(alternates
+      ? [...Object.entries(alternates), ['x-default', alternates.en]].map(
+          ([l, p]) => `    <xhtml:link rel="alternate" hreflang="${l}" href="${url(p)}"/>`,
+        )
+      : []),
+    '  </url>',
+  ].join('\n');
 writeFileSync(
   'dist/sitemap.xml',
   [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',
-    ...ALL_PAGES.map(({ id, path }) => entry(path, today, alternatesOf(id))),
+    ...ALL_PAGES.map(({ id, path }) => entry(path, undefined, alternatesOf(id))),
     ...(posts.length ? [entry('/blog', posts[0].date)] : []),
     ...posts.map((post) => entry(`/blog/${post.slug}`, post.date)),
     '</urlset>',
