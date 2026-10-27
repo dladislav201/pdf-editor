@@ -1,6 +1,6 @@
 import fontkit from '@pdf-lib/fontkit';
 import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage } from 'pdf-lib';
-import { textBaselines, textLines } from './geometry';
+import { textBaselines, textLine, textLines } from './geometry';
 import { hexToRgb } from './pdf/objects';
 import { fillForm, type FormValue } from './pdf/forms';
 import { embedImages, writeAnnotations } from './pdf/write-annotations';
@@ -50,6 +50,13 @@ function flattenAnnotations(doc: PDFDocument, annotations: Annotation[], font: P
       case 'highlight':
         for (const rect of annotation.segments ?? [annotation.rect]) {
           page.drawRectangle({ ...rect, color, opacity: annotation.opacity, blendMode: BlendMode.Multiply });
+        }
+        break;
+      case 'underline':
+      case 'strikeout':
+        for (const box of annotation.segments ?? [annotation.rect]) {
+          const { y, width } = textLine(annotation.type, box);
+          page.drawLine({ start: { x: box.x, y }, end: { x: box.x + box.width, y }, thickness: width, color });
         }
         break;
       case 'rectangle':

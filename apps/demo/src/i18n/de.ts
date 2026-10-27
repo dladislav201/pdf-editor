@@ -81,7 +81,12 @@ export const de: Messages = {
     editTextFinish: 'Esc oder ein Klick daneben schließt den Absatz ab.',
     placeSignature: 'Klicken Sie dorthin, wo die Unterschrift hin soll. Danach verschieben oder an der Ecke skalieren.',
     tools: 'Werkzeuge',
-    tool: { select: 'Auswählen', editText: 'Text bearbeiten', highlight: 'Markieren', ink: 'Zeichnen', rectangle: 'Form', text: 'Notiz' },
+    tool: { select: 'Auswählen', editText: 'Text bearbeiten', highlight: 'Markieren', underline: 'Unterstreichen', strikeout: 'Durchstreichen', ink: 'Zeichnen', rectangle: 'Form', text: 'Notiz' },
+    markupHint: {
+      highlight: 'Ziehen Sie über Text, um ihn zu markieren, oder ziehen Sie anderswo einen Rahmen auf.',
+      underline: 'Ziehen Sie über Text, um ihn zu unterstreichen.',
+      strikeout: 'Ziehen Sie über Text, um ihn durchzustreichen.',
+    },
     sign: 'Unterschreiben',
     unlocked: 'Mit Passwort geöffnet. Das heruntergeladene PDF fragt nicht mehr danach.',
     feedback: 'Feedback senden',

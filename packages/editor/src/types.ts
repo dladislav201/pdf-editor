@@ -17,8 +17,12 @@ export interface Rect {
   height: number;
 }
 
-/** `image` places the picture given to `placeImage()` (a signature) where the user clicks. */
-export type ToolName = 'select' | 'editText' | 'highlight' | 'rectangle' | 'ink' | 'text' | 'image';
+/**
+ * `highlight`, `underline` and `strikeout` mark the page text dragged across,
+ * line by line (`highlight` draws a box where there is no text). `image`
+ * places the picture given to `placeImage()` (a signature) where the user clicks.
+ */
+export type ToolName = 'select' | 'editText' | 'highlight' | 'underline' | 'strikeout' | 'rectangle' | 'ink' | 'text' | 'image';
 
 interface AnnotationBase {
   id: string;
@@ -43,6 +47,15 @@ export interface HighlightAnnotation extends AnnotationBase {
    */
   segments?: Rect[];
   opacity: number;
+}
+
+/** A line under or through page text: one per line of text, as the PDF `/Underline` and `/StrikeOut` annotations. */
+export interface TextLineAnnotation extends AnnotationBase {
+  type: 'underline' | 'strikeout';
+  /** Bounding box of the marked text. */
+  rect: Rect;
+  /** The marked text's box on each line; when absent, `rect` is the only one. */
+  segments?: Rect[];
 }
 
 export interface RectangleAnnotation extends AnnotationBase {
@@ -78,6 +91,7 @@ export interface ImageAnnotation extends AnnotationBase {
 
 export type Annotation =
   | HighlightAnnotation
+  | TextLineAnnotation
   | RectangleAnnotation
   | InkAnnotation
   | TextAnnotation
@@ -159,7 +173,7 @@ export interface EditorOptions {
    */
   annotations?: Annotation[];
   /**
-   * Read highlight, rectangle, ink and free-text annotations stored in the PDF
+   * Read highlight, underline, strike-out, rectangle, ink and free-text annotations stored in the PDF
    * and make them editable. Default `true`. Other annotation types (links,
    * form fields, stamps, …) are always kept as they are.
    */

@@ -174,6 +174,10 @@ const CSS = /* css */ `
 .pdfsdk-root[data-tool="highlight"] .pdfsdk-page__overlay,
 .pdfsdk-root[data-tool="rectangle"] .pdfsdk-page__overlay,
 .pdfsdk-root[data-tool="ink"] .pdfsdk-page__overlay { cursor: crosshair; }
+/* Underline and strike-out mark text only; every text markup tool shows a text cursor over it. */
+.pdfsdk-root[data-tool="underline"] .pdfsdk-page__overlay,
+.pdfsdk-root[data-tool="strikeout"] .pdfsdk-page__overlay { cursor: default; }
+.pdfsdk-root[data-hover="text"] .pdfsdk-page__overlay { cursor: text; }
 .pdfsdk-root[data-hover="annotation"] .pdfsdk-page__overlay { cursor: move; }
 .pdfsdk-root[data-tool="editText"] .pdfsdk-page__overlay { cursor: default; }
 .pdfsdk-root[data-tool="editText"][data-hover="paragraph"] .pdfsdk-page__overlay { cursor: text; }

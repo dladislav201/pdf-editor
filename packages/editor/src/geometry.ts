@@ -33,6 +33,8 @@ export function textBaselines(annotation: TextAnnotation): number[] {
 export function bounds(annotation: Annotation, measure: MeasureText): Rect {
   switch (annotation.type) {
     case 'highlight':
+    case 'underline':
+    case 'strikeout':
     case 'rectangle':
     case 'image':
       return annotation.rect;
@@ -79,9 +81,22 @@ function distanceToSegment([px, py]: Point, [ax, ay]: Point, [bx, by]: Point): n
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+/**
+ * Where a line under or through text goes in a box of text (one segment):
+ * how thick it is and the height of its middle. An underline sits at the
+ * bottom of the box (below the descenders), a strike-out at the middle of
+ * lower-case letters, as Acrobat draws them.
+ */
+export function textLine(type: 'underline' | 'strikeout', box: Rect): { y: number; width: number } {
+  const width = Math.max(0.5, box.height / 14);
+  return { y: type === 'underline' ? box.y + width / 2 : box.y + box.height * 0.42, width };
+}
+
 export function hitTest(annotation: Annotation, point: Point, tolerance: number, measure: MeasureText): boolean {
   switch (annotation.type) {
     case 'highlight':
+    case 'underline':
+    case 'strikeout':
       return (annotation.segments ?? [annotation.rect]).some((rect) => inRect(rect, point, tolerance));
     case 'text':
       return inRect(bounds(annotation, measure), point, tolerance);
@@ -112,10 +127,12 @@ export function hitTest(annotation: Annotation, point: Point, tolerance: number,
 export function translate(annotation: Annotation, dx: number, dy: number): Annotation {
   switch (annotation.type) {
     case 'highlight':
+    case 'underline':
+    case 'strikeout':
     case 'rectangle':
     case 'image': {
       const move = (rect: Rect): Rect => ({ ...rect, x: round(rect.x + dx), y: round(rect.y + dy) });
-      if (annotation.type === 'highlight' && annotation.segments) {
+      if ('segments' in annotation && annotation.segments) {
         return { ...annotation, rect: move(annotation.rect), segments: annotation.segments.map(move) };
       }
       return { ...annotation, rect: move(annotation.rect) };

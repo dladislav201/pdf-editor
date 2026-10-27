@@ -81,7 +81,12 @@ export const nb: Messages = {
     editTextFinish: 'Esc eller et klikk utenfor avslutter avsnittet.',
     placeSignature: 'Klikk der signaturen skal stå. Dra den deretter, eller endre størrelsen fra hjørnet.',
     tools: 'Verktøy',
-    tool: { select: 'Velg', editText: 'Rediger tekst', highlight: 'Marker', ink: 'Tegn', rectangle: 'Form', text: 'Notat' },
+    tool: { select: 'Velg', editText: 'Rediger tekst', highlight: 'Marker', underline: 'Understrek', strikeout: 'Gjennomstrek', ink: 'Tegn', rectangle: 'Form', text: 'Notat' },
+    markupHint: {
+      highlight: 'Dra over tekst for å markere den, eller tegn en boks hvor som helst.',
+      underline: 'Dra over tekst for å understreke den.',
+      strikeout: 'Dra over tekst for å stryke den ut.',
+    },
     sign: 'Signer',
     unlocked: 'Åpnet med passord. PDF-en du laster ned, ber ikke om passord.',
     feedback: 'Send tilbakemelding',

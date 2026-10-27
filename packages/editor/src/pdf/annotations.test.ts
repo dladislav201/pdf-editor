@@ -48,6 +48,19 @@ const sample: Annotation[] = [
     ],
     opacity: 0.4,
   },
+  {
+    ...base,
+    id: 'u1',
+    pageIndex: 0,
+    color: '#2f6fed',
+    type: 'underline',
+    rect: { x: 60, y: 640, width: 300, height: 30 },
+    segments: [
+      { x: 60, y: 655, width: 300, height: 15 },
+      { x: 60, y: 640, width: 80, height: 15 },
+    ],
+  },
+  { ...base, id: 'x1', pageIndex: 0, color: '#ef4444', type: 'strikeout', rect: { x: 60, y: 600, width: 140, height: 15 } },
   { ...base, id: 'r1', pageIndex: 0, color: '#ef4444', type: 'rectangle', rect: { x: 50, y: 400, width: 200, height: 100 }, strokeWidth: 2 },
   {
     ...base,
@@ -98,7 +111,7 @@ describe('PDF annotations', () => {
 
   it('writes standard annotation objects with appearance streams', async () => {
     const saved = await exportPdf(await blankPdf(), sample, { fontBytes });
-    expect(await annotationSubtypes(saved, 0)).toEqual(['Highlight', 'Square']);
+    expect(await annotationSubtypes(saved, 0)).toEqual(['Highlight', 'Underline', 'StrikeOut', 'Square']);
     expect(await annotationSubtypes(saved, 1)).toEqual(['Ink', 'FreeText', 'Stamp']);
 
     const doc = await PDFDocument.load(saved);

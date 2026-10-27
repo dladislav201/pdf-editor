@@ -1,4 +1,4 @@
-import { bounds, textBaselines, textLines, type MeasureText } from './geometry';
+import { bounds, textBaselines, textLine, textLines, type MeasureText } from './geometry';
 import type { PageView } from './page-view';
 import type { Annotation, Point } from './types';
 
@@ -26,6 +26,15 @@ export function annotationElement(annotation: Annotation): SVGElement {
       const group = svg('g', { class: 'pdfsdk-highlight', fill: annotation.color, opacity: annotation.opacity });
       for (const { x, y, width, height } of annotation.segments ?? [annotation.rect]) {
         group.append(svg('rect', { x, y, width, height }));
+      }
+      return group;
+    }
+    case 'underline':
+    case 'strikeout': {
+      const group = svg('g', { stroke: annotation.color });
+      for (const box of annotation.segments ?? [annotation.rect]) {
+        const { y, width } = textLine(annotation.type, box);
+        group.append(svg('line', { x1: box.x, y1: y, x2: box.x + box.width, y2: y, 'stroke-width': width }));
       }
       return group;
     }

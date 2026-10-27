@@ -9,6 +9,8 @@ const HIDDEN_FLAG = 2;
 
 const DEFAULT_COLORS: Record<string, string> = {
   Highlight: '#facc15',
+  Underline: '#2f6fed',
+  StrikeOut: '#ef4444',
   Square: '#ef4444',
   Ink: '#2f6fed',
   FreeText: '#000000',
@@ -45,6 +47,20 @@ function boundingRect(rects: Rect[]): Rect {
   const right = Math.max(...rects.map((r) => r.x + r.width));
   const top = Math.max(...rects.map((r) => r.y + r.height));
   return { x, y, width: right - x, height: top - y };
+}
+
+/** The box of each quad (one per line of marked text) of a text markup annotation. */
+function quadBoxes(dict: PDFDict): Rect[] {
+  const quads = numbersOf(dict.lookupMaybe(name('QuadPoints'), PDFArray));
+  const boxes: Rect[] = [];
+  for (let i = 0; i + 8 <= quads.length; i += 8) {
+    const xs = [quads[i]!, quads[i + 2]!, quads[i + 4]!, quads[i + 6]!];
+    const ys = [quads[i + 1]!, quads[i + 3]!, quads[i + 5]!, quads[i + 7]!];
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    boxes.push(roundRect({ x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }));
+  }
+  return boxes;
 }
 
 function parseDefaultAppearance(da: string | undefined): { fontSize?: number; color?: string } {
@@ -94,15 +110,7 @@ function parseAnnotation(dict: PDFDict, pageIndex: number, fallbackId: string): 
 
   switch (subtype) {
     case 'Highlight': {
-      const quads = numbersOf(dict.lookupMaybe(name('QuadPoints'), PDFArray));
-      const segments: Rect[] = [];
-      for (let i = 0; i + 8 <= quads.length; i += 8) {
-        const xs = [quads[i]!, quads[i + 2]!, quads[i + 4]!, quads[i + 6]!];
-        const ys = [quads[i + 1]!, quads[i + 3]!, quads[i + 5]!, quads[i + 7]!];
-        const x = Math.min(...xs);
-        const y = Math.min(...ys);
-        segments.push(roundRect({ x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }));
-      }
+      const segments = quadBoxes(dict);
       return {
         ...base,
         ...comment,
@@ -110,6 +118,17 @@ function parseAnnotation(dict: PDFDict, pageIndex: number, fallbackId: string): 
         rect: roundRect(segments.length ? boundingRect(segments) : rect),
         ...(segments.length > 1 ? { segments } : {}),
         opacity: readNumber(dict, 'CA') ?? appearanceOpacity(dict) ?? 1,
+      };
+    }
+    case 'Underline':
+    case 'StrikeOut': {
+      const segments = quadBoxes(dict);
+      return {
+        ...base,
+        ...comment,
+        type: subtype === 'Underline' ? 'underline' : 'strikeout',
+        rect: roundRect(segments.length ? boundingRect(segments) : rect),
+        ...(segments.length > 1 ? { segments } : {}),
       };
     }
     case 'Square': {

@@ -29,7 +29,7 @@ import {
   type PDFOperator,
   type PDFPage,
 } from 'pdf-lib';
-import { TEXT_ASCENT, TEXT_LINE_HEIGHT, bounds, textBaselines, textLines } from '../geometry';
+import { TEXT_ASCENT, TEXT_LINE_HEIGHT, bounds, textBaselines, textLine, textLines } from '../geometry';
 import type { Annotation, Rect, TextAnnotation } from '../types';
 import { hexToComponents, name, pdfDate, rectToArray } from './objects';
 
@@ -52,6 +52,10 @@ function textBox(annotation: TextAnnotation, font: PDFFont): Rect {
   return { x, y: top - height, width, height };
 }
 
+/** Quad points in the order Acrobat writes them: top-left, top-right, bottom-left, bottom-right. */
+const quadPoints = (segments: Rect[]) =>
+  segments.flatMap(({ x, y, width, height }) => [x, y + height, x + width, y + height, x, y, x + width, y]);
+
 /** Key of the stream with a picture's original file, so the editor can read it back as it was. */
 export const IMAGE_SOURCE_KEY = 'PDFSDKSource';
 
@@ -61,10 +65,6 @@ function build(annotation: Annotation, font: PDFFont | null, images: Map<string,
   switch (annotation.type) {
     case 'highlight': {
       const segments = annotation.segments ?? [annotation.rect];
-      // Quad points in the order Acrobat writes them: top-left, top-right, bottom-left, bottom-right.
-      const quadPoints = segments.flatMap(({ x, y, width, height }) => [
-        x, y + height, x + width, y + height, x, y, x + width, y,
-      ]);
       return {
         subtype: 'Highlight',
         rect: annotation.rect,
@@ -79,7 +79,22 @@ function build(annotation: Annotation, font: PDFFont | null, images: Map<string,
         // Multiply keeps the text under the highlight readable. Opacity lives in the
         // appearance itself: Preview and pdf.js ignore the annotation-level /CA.
         resources: { ExtGState: { GS0: { Type: 'ExtGState', BM: 'Multiply', ca: annotation.opacity } } },
-        extra: { QuadPoints: quadPoints },
+        extra: { QuadPoints: quadPoints(segments) },
+      };
+    }
+    case 'underline':
+    case 'strikeout': {
+      const segments = annotation.segments ?? [annotation.rect];
+      const ops: PDFOperator[] = [setStrokingRgbColor(r, g, b)];
+      for (const box of segments) {
+        const { y, width } = textLine(annotation.type, box);
+        ops.push(setLineWidth(width), moveTo(box.x, y), lineTo(box.x + box.width, y), stroke());
+      }
+      return {
+        subtype: annotation.type === 'underline' ? 'Underline' : 'StrikeOut',
+        rect: annotation.rect,
+        appearance: ops,
+        extra: { QuadPoints: quadPoints(segments) },
       };
     }
     case 'rectangle': {
@@ -182,7 +197,7 @@ export async function embedImages(doc: PDFDocument, annotations: Annotation[]): 
 
 /**
  * Adds every annotation to its page as a real PDF annotation (Highlight,
- * Square, Ink, FreeText, Stamp for pictures) with an appearance stream, so
+ * Underline, StrikeOut, Square, Ink, FreeText, Stamp for pictures) with an appearance stream, so
  * other viewers show it and it stays editable in Acrobat, Preview and the
  * editor itself. `images` are the pictures embedded by `embedImages`.
  */

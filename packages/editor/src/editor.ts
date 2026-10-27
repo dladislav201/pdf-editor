@@ -36,6 +36,7 @@ import { buildWritePlan, type TextWritePlan } from './text/write-plan';
 import { searchPage, type SearchMatch, type SearchOptions } from './text/search';
 import type { StyledChar } from './text/layout';
 import { pushDown, type PushItem } from './text/push';
+import { nearestPosition, positionAt, selectableLines, selection, type SelectableLine, type TextPosition } from './text/select';
 import type { ObjectMove, PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
 import type {
@@ -56,9 +57,14 @@ import type {
 
 type DrawingTool = Exclude<ToolName, 'select' | 'editText'>;
 const isDrawingTool = (tool: ToolName): tool is DrawingTool => tool !== 'select' && tool !== 'editText';
+/** Tools that mark page text dragged across. */
+type MarkupTool = 'highlight' | 'underline' | 'strikeout';
+const isMarkupTool = (tool: ToolName): tool is MarkupTool => tool === 'highlight' || tool === 'underline' || tool === 'strikeout';
 
 const DEFAULT_COLORS: Record<DrawingTool, string> = {
   highlight: '#facc15',
+  underline: '#2f6fed',
+  strikeout: '#ef4444',
   rectangle: '#ef4444',
   ink: '#2f6fed',
   text: '#111827',
@@ -71,12 +77,32 @@ const MIN_ZOOM = ZOOM_STEPS[0]!;
 const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
 const PAGES_PADDING = 16;
 const DEFAULT_FONT_SIZE = 14;
-const SHORTCUTS: Record<string, ToolName> = { v: 'select', e: 'editText', h: 'highlight', r: 'rectangle', d: 'ink', t: 'text' };
+const SHORTCUTS: Record<string, ToolName> = {
+  v: 'select',
+  e: 'editText',
+  h: 'highlight',
+  u: 'underline',
+  x: 'strikeout',
+  r: 'rectangle',
+  d: 'ink',
+  t: 'text',
+};
 /** Pointer slack around a paragraph's box when hovering it, in points. */
 const PARAGRAPH_HIT_PADDING = 2;
 
 type Interaction =
   | { kind: 'shape'; view: PageView; tool: 'highlight' | 'rectangle'; start: Point; current: Point }
+  /** A drag across text; `lines` is null until the page's text is read, then `anchor` says whether it began on text. */
+  | {
+      kind: 'markup';
+      view: PageView;
+      tool: MarkupTool;
+      start: Point;
+      current: Point;
+      lines: SelectableLine[] | null;
+      anchor: TextPosition | null;
+      focus: TextPosition | null;
+    }
   | { kind: 'ink'; view: PageView; points: Point[] }
   | { kind: 'move'; view: PageView; id: string; start: Point; before: Annotation[]; moved: boolean }
   | { kind: 'resize'; view: PageView; id: string; before: Annotation[]; resized: boolean };
@@ -690,6 +716,7 @@ export class PdfEditor {
     this.events.emit('toolChange', { tool });
     this.events.emit('colorChange', { color: this.getColor() });
     this.prefetchScanLetters();
+    for (const view of this.visible) this.prefetchMarkupText(view);
   }
 
   /**
@@ -1263,6 +1290,50 @@ export class PdfEditor {
 
   private renderView(view: PageView): void {
     view.render().catch((error: unknown) => this.events.emit('error', { error }));
+    this.prefetchMarkupText(view);
+  }
+
+  /** With a text markup tool, the text of the pages in sight is read ahead, so a press on it can start marking at once. */
+  private prefetchMarkupText(view: PageView): void {
+    if (isMarkupTool(this.tool) && this.docId !== null) this.getPageText(view.index).catch(() => undefined);
+  }
+
+  /**
+   * The lines of a page a text markup tool can mark, once its text is read:
+   * without paragraphs being edited (their glyphs aren't where the model
+   * says) and with pushed ones where they now are.
+   */
+  private markupLines(pageIndex: number): SelectableLine[] | null {
+    const model = this.pageTexts.get(pageIndex);
+    if (!model) return null;
+    const shifts = this.pushes.get(pageIndex)?.shifts;
+    return selectableLines(model, {
+      skip: (id) => this.textEdits.has(id) || this.textSession?.paragraph.id === id,
+      shift: (id) => shifts?.get(id) ?? 0,
+    });
+  }
+
+  /** The annotation a drag across text makes so far; null while it covers no glyph. */
+  private buildMarkup(interaction: Extract<Interaction, { kind: 'markup' }>): Annotation | null {
+    const { lines, anchor, focus } = interaction;
+    if (!lines || !anchor || !focus) return null;
+    const segments = selection(lines, anchor, focus).rects.map((r) => ({
+      x: round(r.x),
+      y: round(r.y),
+      width: round(r.width),
+      height: round(r.height),
+    }));
+    if (!segments.length) return null;
+    const x = Math.min(...segments.map((r) => r.x));
+    const y = Math.min(...segments.map((r) => r.y));
+    const rect = {
+      x,
+      y,
+      width: round(Math.max(...segments.map((r) => r.x + r.width)) - x),
+      height: round(Math.max(...segments.map((r) => r.y + r.height)) - y),
+    };
+    const base = { ...this.newAnnotationBase(interaction.view.index, interaction.tool), rect, ...(segments.length > 1 ? { segments } : {}) };
+    return interaction.tool === 'highlight' ? { ...base, type: 'highlight', opacity: 0.4 } : { ...base, type: interaction.tool };
   }
 
   private fitWidthZoom(): number {
@@ -2004,6 +2075,27 @@ export class PdfEditor {
         return;
       }
       case 'highlight':
+      case 'underline':
+      case 'strikeout': {
+        // On text: mark it, glyph by glyph and line by line. Elsewhere a highlight is a box drawn by hand.
+        const lines = this.markupLines(view.index);
+        const anchor = lines && positionAt(lines, point);
+        if (lines && !anchor) {
+          if (this.tool !== 'highlight') return;
+          this.interaction = { kind: 'shape', view, tool: 'highlight', start: point, current: point };
+          break;
+        }
+        const interaction: Interaction = { kind: 'markup', view, tool: this.tool, start: point, current: point, lines, anchor, focus: anchor };
+        this.interaction = interaction;
+        // The page's text isn't read yet: the drag goes on once it is.
+        if (!lines) {
+          this.getPageText(view.index).then(
+            () => this.resumeMarkup(interaction),
+            () => this.resumeMarkup(interaction),
+          );
+        }
+        break;
+      }
       case 'rectangle':
         this.interaction = { kind: 'shape', view, tool: this.tool, start: point, current: point };
         break;
@@ -2047,6 +2139,13 @@ export class PdfEditor {
         );
         return;
       }
+      if (isMarkupTool(this.tool)) {
+        const view = this.viewFromEvent(event);
+        const lines = view && this.markupLines(view.index);
+        this.root.dataset.hover = view && lines && positionAt(lines, view.clientToPdf(event.clientX, event.clientY)) ? 'text' : '';
+        if (view && !lines) this.prefetchMarkupText(view);
+        return;
+      }
       if (this.tool === 'select' && !this.readOnly) {
         const view = this.viewFromEvent(event);
         const point = view && view.clientToPdf(event.clientX, event.clientY);
@@ -2061,6 +2160,10 @@ export class PdfEditor {
       case 'shape':
         interaction.current = point;
         interaction.view.draft.replaceChildren(annotationElement(this.buildShape(interaction)));
+        break;
+      case 'markup':
+        interaction.current = point;
+        this.drawMarkup(interaction);
         break;
       case 'ink': {
         const last = interaction.points[interaction.points.length - 1]!;
@@ -2119,6 +2222,16 @@ export class PdfEditor {
         }
         break;
       }
+      case 'markup': {
+        // Let go before the page's text was read: a highlight is the box dragged, the others are nothing.
+        const markup = interaction.lines
+          ? this.buildMarkup(interaction)
+          : interaction.tool === 'highlight'
+            ? this.buildShape({ kind: 'shape', view: interaction.view, tool: 'highlight', start: interaction.start, current: interaction.current })
+            : null;
+        if (markup && (markup.type !== 'highlight' || markup.rect.width + markup.rect.height > 4)) this.commit([...this.annotations, markup]);
+        break;
+      }
       case 'ink':
         this.commit([
           ...this.annotations,
@@ -2135,6 +2248,32 @@ export class PdfEditor {
         break;
     }
   };
+
+  /** Draws a drag across text so far, following the pointer to the nearest line. */
+  private drawMarkup(interaction: Extract<Interaction, { kind: 'markup' }>): void {
+    if (!interaction.lines || !interaction.anchor) return;
+    interaction.focus = nearestPosition(interaction.lines, interaction.current) ?? interaction.focus;
+    const markup = this.buildMarkup(interaction);
+    interaction.view.draft.replaceChildren(...(markup ? [annotationElement(markup)] : []));
+  }
+
+  /** The page's text arrived during a drag that began before it: it marks text, or (a highlight off text) draws a box. */
+  private resumeMarkup(interaction: Extract<Interaction, { kind: 'markup' }>): void {
+    if (this.interaction !== interaction) return;
+    const lines = this.markupLines(interaction.view.index);
+    const anchor = lines && positionAt(lines, interaction.start);
+    if (lines && anchor) {
+      Object.assign(interaction, { lines, anchor, focus: anchor });
+      this.drawMarkup(interaction);
+    } else if (interaction.tool === 'highlight') {
+      const shape = { kind: 'shape', view: interaction.view, tool: 'highlight', start: interaction.start, current: interaction.current } as const;
+      this.interaction = shape;
+      interaction.view.draft.replaceChildren(annotationElement(this.buildShape(shape)));
+    } else {
+      // Not on text: an underline or a strike-out has nothing to mark. The pointer stays captured until it's let go.
+      interaction.lines = [];
+    }
+  }
 
   private onPointerCancel = (): void => {
     const interaction = this.interaction;

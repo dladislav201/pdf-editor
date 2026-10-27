@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { PDFDocument, PDFName } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber } from 'pdf-lib';
 import { readFormFields } from '../packages/editor/src/pdf/forms';
 import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfParagraphs, pdfText, waitForApp } from './helpers';
 
@@ -131,6 +131,52 @@ test('makes text bold and pushes what is below down when a paragraph grows', asy
   // The paragraph grew by a line or more; the heading under it moved down as much.
   const moved = after.find((p) => p.text === '1. Scope of Services')!;
   expect(heading.baseline - moved.baseline).toBeGreaterThan(10);
+});
+
+test('highlights, underlines and strikes out text by dragging across it', async ({ page, isMobile }) => {
+  await openSample(page, 'A contract');
+  const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
+  /** Drags between two points of the first page given as fractions of its width and height. */
+  const drag = async (from: [number, number], to: [number, number]) => {
+    await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 5 });
+    await page.mouse.up();
+  };
+  await page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'Highlight' }).click();
+  // Phones have the choice of markup where wider screens have the hint.
+  if (!isMobile) await expect(page.getByText('Drag across text to highlight it')).toBeVisible();
+  // From the middle of the first line of "Provider shall deliver …" to the middle of its third.
+  await drag([0.64, 0.2895], [0.26, 0.3273]);
+  await page.getByRole('button', { name: 'Underline' }).click();
+  // Past the end of the line: up to its last word.
+  await drag([0.115, 0.354], [0.95, 0.354]);
+  await page.getByRole('button', { name: 'Strike out' }).click();
+  await drag([0.115, 0.372], [0.38, 0.372]);
+
+  const doc = await PDFDocument.load(await download(page));
+  const annots = doc.getPage(0).node.Annots()!;
+  const marks = Array.from({ length: annots.size() }, (_, i) => {
+    const dict = annots.lookup(i, PDFDict);
+    const quads = dict.lookup(PDFName.of('QuadPoints'), PDFArray).asArray().map((n) => (n as PDFNumber).asNumber());
+    // Each quad as its left, right, bottom and top.
+    const lines = [];
+    for (let q = 0; q + 8 <= quads.length; q += 8) lines.push({ left: quads[q]!, right: quads[q + 2]!, bottom: quads[q + 5]!, top: quads[q + 1]! });
+    return { subtype: dict.lookup(PDFName.of('Subtype'), PDFName).decodeText(), lines };
+  });
+  expect(marks.map((m) => [m.subtype, m.lines.length])).toEqual([
+    ['Highlight', 3],
+    ['Underline', 1],
+    ['StrikeOut', 1],
+  ]);
+  const [first, middle, last] = marks[0]!.lines;
+  // Line by line, each about as high as the text: the first starts mid-line, the middle one is whole, the last stops mid-line.
+  for (const line of marks[0]!.lines) expect(line.top - line.bottom).toBeGreaterThan(8);
+  expect(first!.left).toBeGreaterThan(middle!.left + 100);
+  expect(last!.right).toBeLessThan(middle!.right - 100);
+  expect(first!.bottom).toBeGreaterThan(middle!.top - 3);
+  expect(marks[1]!.lines[0]!.right - marks[1]!.lines[0]!.left).toBeGreaterThan(300);
+  expect(marks[2]!.lines[0]!.right - marks[2]!.lines[0]!.left).toBeLessThan(200);
 });
 
 test('opens a password-protected PDF after asking for its password', async ({ page }) => {

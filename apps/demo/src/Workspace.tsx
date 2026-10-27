@@ -27,6 +27,14 @@ const OCR_LANGUAGES: Record<Locale, string[]> = {
   nb: ['nor', 'eng'],
   sv: ['swe', 'eng'],
 };
+/** The ways to mark text, picked above the tools while one of them is on; the tool bar has one button for all. */
+const MARKUPS = [
+  { tool: 'highlight', icon: 'highlight', key: 'H' },
+  { tool: 'underline', icon: 'underline', key: 'U' },
+  { tool: 'strikeout', icon: 'strikeout', key: 'X' },
+] as const;
+type Markup = (typeof MARKUPS)[number]['tool'];
+const isMarkup = (tool: ToolName): tool is Markup => MARKUPS.some((m) => m.tool === tool);
 const COLORS = ['#facc15', '#ef4444', '#22c55e', '#2f6fed', '#191918'];
 const MAX_FIT_ZOOM = 1.25;
 /** How shortcuts with the command key read on this system. */
@@ -98,6 +106,11 @@ export function Workspace({
   const editorRef = useRef<PdfEditorInstance | null>(null);
   const [editor, setEditor] = useState<PdfEditorInstance | null>(null);
   const [tool, setTool] = useState<ToolName>(initialTool ?? 'select');
+  // The markup the tool bar's Highlight button turns on: the one used last.
+  const [markup, setMarkup] = useState<Markup>('highlight');
+  useEffect(() => {
+    if (isMarkup(tool)) setMarkup(tool);
+  }, [tool]);
   const [color, setColor] = useState<string | null>(null);
   const [history, setHistory] = useState({ canUndo: false, canRedo: false });
   const [selected, setSelected] = useState<string | null>(null);
@@ -278,7 +291,24 @@ export function Workspace({
     return () => removeEventListener('keydown', key);
   }, [mode, openSearch]);
 
-  const drawing = tool === 'highlight' || tool === 'ink' || tool === 'rectangle' || tool === 'text';
+  const drawing = isMarkup(tool) || tool === 'ink' || tool === 'rectangle' || tool === 'text';
+  // Highlight, underline or strike out: with the colors on wide screens, in place of the hint on phones.
+  const markupChoice = MARKUPS.map(({ tool: name, icon, key }) => (
+    <button
+      key={name}
+      type="button"
+      className="pill pill--icon"
+      aria-label={w.tool[name]}
+      title={`${w.tool[name]} (${key})`}
+      aria-pressed={tool === name}
+      onClick={() => {
+        track(`tool.${name}`);
+        editor?.setTool(name);
+      }}
+    >
+      <Icon name={icon} />
+    </button>
+  ));
 
   return (
     <div className="workspace" data-search={search.open ? 'open' : undefined} data-mode={mode}>
@@ -552,6 +582,7 @@ export function Workspace({
                 <Icon name="redo" />
               </button>
             </div>
+            {isMarkup(tool) && <div className="group wide-only">{markupChoice}</div>}
             {drawing && (
               <div className="group">
                 {COLORS.map((c) => (
@@ -613,11 +644,24 @@ export function Workspace({
         {tool === 'image' && (
           <div className="notice notice--plain">{w.placeSignature}</div>
         )}
+        {isMarkup(tool) && (
+          <>
+            <div className="notice notice--plain wide-only">{w.markupHint[tool]}</div>
+            <div className="bar narrow-only">
+              <div className="group">{markupChoice}</div>
+            </div>
+          </>
+        )}
         <nav className="bar" aria-label={w.tools}>
           <div className="group">
-            {TOOLS.map(({ tool: name, icon, key }) => (
-              <ToolButton key={name} name={name} icon={icon} label={w.tool[name]} shortcut={key} active={tool === name} editor={editor} />
-            ))}
+            {TOOLS.map(({ tool: name, icon, key }) =>
+              name === 'highlight' ? (
+                // One button for highlighting, underlining and striking out: it brings back the one used last.
+                <ToolButton key={name} name={markup} icon={icon} label={w.tool.highlight} shortcut={key} active={isMarkup(tool)} editor={editor} />
+              ) : (
+                <ToolButton key={name} name={name} icon={icon} label={w.tool[name]} shortcut={key} active={tool === name} editor={editor} />
+              ),
+            )}
           </div>
           <div className="group">
             <button type="button" className="pill" aria-label={w.sign} aria-pressed={signing || tool === 'image'} onClick={() => setSigning(true)}>

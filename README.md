@@ -248,8 +248,18 @@ API surface: `load`, `exportPdf`, `download`, `getAnnotations` / `setAnnotations
 `getSelectedParagraph`, `on(event)`, `destroy`.
 Set `toolbar: false` to drive it from your own UI.
 
-Keyboard: V select, E edit text, H highlight, R rectangle, D draw, T text, Del delete,
+Keyboard: V select, E edit text, H highlight, U underline, X strike out, R rectangle,
+D draw, T text, Del delete,
 Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z redo, arrows nudge the selection, Ctrl+wheel zoom.
+
+**Marking text**: with `highlight`, `underline` or `strikeout`, a drag that
+starts on page text marks it the way a text selection runs, glyph by glyph
+and line by line, one box per line (`text/select.ts` on the page text model;
+the text of pages in sight is read as soon as one of these tools is on, and a
+press before it arrives waits for it). Paragraphs being edited are left out
+and pushed ones are marked where they now are. Off text, a highlight is a box
+drawn by hand; underline and strike-out mark nothing. Recognized (OCR) text
+of a scan is marked like any other.
 
 ## PDF annotations
 
@@ -260,13 +270,14 @@ Quick Look) and pdf.js (Firefox); Acrobat and Chrome (PDFium) not yet tested.
 | Editor | PDF |
 |---|---|
 | highlight | `/Highlight` with `/QuadPoints` (one quad per line segment) |
+| underline, strikeout | `/Underline`, `/StrikeOut` with `/QuadPoints`; the line is 1/14 of the line's height, at its bottom or through lower-case letters |
 | rectangle | `/Square` with `/BS` |
 | ink | `/Ink` with `/InkList` |
 | text | `/FreeText` with `/DA`, text in the embedded `fontUrl` font |
 
 The annotation id is stored in `/NM`, author in `/T`, comments in `/Contents`.
 
-On open, those four types are read from the file (including ones made by
+On open, those types are read from the file (including ones made by
 other tools: `/RD` insets, legacy `/Border`, gray/CMYK colors, `/DA` text
 color), removed from the copy the engine renders, and become editable. Their
 popups go with them. Everything else (links, form fields, stamps, notes,
@@ -559,9 +570,11 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
   when it held editable annotations; very large files will feel that. Move to
   a worker, or skip the re-save by hiding annotations at render time.
 - Rich text (`/RC`) of FreeText annotations is read as plain `/Contents`;
-  other markup types (underline, strike-out, circle, line, polygon, sticky
-  notes) are shown but not editable yet.
-- Highlight is a free rectangle; text-aware highlighting can now build on the page text model.
+  other markup types (squiggly, circle, line, polygon, sticky notes) are
+  shown but not editable yet.
+- Marking text: boxes are upright, so rotated text isn't marked; a drag
+  selects glyph by glyph (no double click for a word); the marked text isn't
+  stored with the annotation.
 - Text model: two plain text lines without spacing (e.g. from a .txt) read as one
   paragraph; bullets drawn as shapes are not part of the item's text; vertical
   and rotated text is skipped.

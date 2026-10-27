@@ -81,7 +81,12 @@ export const sv: Messages = {
     editTextFinish: 'Esc eller ett klick utanför avslutar stycket.',
     placeSignature: 'Klicka där namnteckningen ska stå. Dra den sedan, eller ändra storlek från hörnet.',
     tools: 'Verktyg',
-    tool: { select: 'Markera', editText: 'Redigera text', highlight: 'Överstryk', ink: 'Rita', rectangle: 'Form', text: 'Anteckning' },
+    tool: { select: 'Markera', editText: 'Redigera text', highlight: 'Överstryk', underline: 'Stryk under', strikeout: 'Stryk över', ink: 'Rita', rectangle: 'Form', text: 'Anteckning' },
+    markupHint: {
+      highlight: 'Dra över text för att överstryka den, eller rita en ruta var som helst.',
+      underline: 'Dra över text för att stryka under den.',
+      strikeout: 'Dra över text för att stryka över den.',
+    },
     sign: 'Signera',
     unlocked: 'Öppnad med lösenord. PDF-filen du laddar ner frågar inte efter något lösenord.',
     feedback: 'Skicka feedback',

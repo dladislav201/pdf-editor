@@ -24,6 +24,7 @@ export type {
   EditorMessages,
   EditorOptions,
   HighlightAnnotation,
+  TextLineAnnotation,
   InkAnnotation,
   Point,
   Rect,

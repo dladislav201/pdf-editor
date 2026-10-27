@@ -96,7 +96,12 @@ export const en = {
     editTextFinish: 'Esc or a click outside finishes the paragraph.',
     placeSignature: 'Click where your signature goes. Then drag it, or resize it from the corner.',
     tools: 'Tools',
-    tool: { select: 'Select', editText: 'Edit text', highlight: 'Highlight', ink: 'Draw', rectangle: 'Shape', text: 'Note' },
+    tool: { select: 'Select', editText: 'Edit text', highlight: 'Highlight', underline: 'Underline', strikeout: 'Strike out', ink: 'Draw', rectangle: 'Shape', text: 'Note' },
+    markupHint: {
+      highlight: 'Drag across text to highlight it, or draw a box anywhere.',
+      underline: 'Drag across text to underline it.',
+      strikeout: 'Drag across text to strike it out.',
+    },
     sign: 'Sign',
     unlocked: 'Opened with its password. The PDF you download won’t ask for one.',
     feedback: 'Send feedback',
