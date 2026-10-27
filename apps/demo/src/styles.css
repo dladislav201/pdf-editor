@@ -128,6 +128,37 @@ a.pill {
   flex: none;
   border-radius: 7px;
 }
+/* A select in a pill: the arrow is drawn over its right end. */
+.pill-select {
+  position: relative;
+  padding: 0;
+}
+.pill-select select {
+  height: 36px;
+  max-width: 170px;
+  padding: 0 28px 0 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  appearance: none;
+}
+.pill-select select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pill-select svg {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+}
+.pill-select--size select {
+  width: 70px;
+  padding-right: 24px;
+}
 .pill.style-bold,
 .pill.style-italic {
   font-family: Georgia, 'Times New Roman', serif;
@@ -798,6 +829,20 @@ a.pill {
 
 .narrow-only {
   display: none;
+}
+@media (max-width: 720px) {
+  .pill-select select {
+    padding: 0 22px 0 10px;
+  }
+  .pill-select svg {
+    right: 7px;
+  }
+  .pill-select--font select {
+    max-width: 92px;
+  }
+  .pill-select--size select {
+    width: 62px;
+  }
 }
 
 /* Phones: one row of file, search and download, the Edit/Pages switch under

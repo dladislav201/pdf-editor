@@ -45,11 +45,29 @@ export interface TextEditCallbacks {
    * without it the paragraph's text can't be styled.
    */
   styleFont?(font: number, want: FontTraits): number | null;
+  /** The font for text set in a family (see `GlyphStore.familyFont`); without it the typeface can't be changed. */
+  familyFont?(family: string, want: FontTraits): number | null;
+  /** The family a font belongs to (see `GlyphStore.familyOf`). */
+  familyOf?(font: number): string | null;
   /** Where to load glyphs of a font the paragraph doesn't use yet (one that styling switched to). */
   fontSource?(font: number): FontSource | null;
 }
 
 export type TextStyleKind = keyof FontTraits;
+
+/** The look of the selection in an open paragraph (or of what is typed next): null where it varies. */
+export interface TextStyle extends FontTraits {
+  /** Text size in points. */
+  size: number | null;
+  /** The family (a `FontFamily` id). */
+  font: string | null;
+}
+
+/** Text sizes a paragraph can be set in, in points. */
+export const MIN_TEXT_SIZE = 4;
+export const MAX_TEXT_SIZE = 144;
+
+const styleKey = (style: CharStyle) => `${style.font}:${style.size}`;
 
 const isBlank = (char: string) => char === ' ' || char === '\u00a0' || char === '\t' || char === '\n';
 
@@ -118,6 +136,9 @@ export function paragraphFrame(paragraph: TextParagraph, block: TextBlock): Para
       right = center + half;
     }
   }
+  // The size most of its lines are set in: what its leading goes with.
+  const sizes = lines.map((l) => Math.round(l.size * 100) / 100);
+  const size = sizes.reduce((best, s) => (sizes.filter((t) => t === s).length > sizes.filter((t) => t === best).length ? s : best));
   return {
     x,
     width: right - x,
@@ -126,6 +147,7 @@ export function paragraphFrame(paragraph: TextParagraph, block: TextBlock): Para
     leading: paragraph.leading,
     indent: paragraph.indent,
     align: paragraph.align,
+    size,
   };
 }
 
@@ -148,8 +170,8 @@ export class TextEditSession {
   private readonly caretEl: SVGLineElement;
   private readonly input: HTMLTextAreaElement;
   private readonly original: string;
-  /** Fonts of the page's characters, so restyled text counts as changed. */
-  private readonly originalFonts: string;
+  /** Fonts and sizes of the page's characters, so restyled text counts as changed. */
+  private readonly originalStyles: string;
   private chars: StyledChar[];
   /** Style for what is typed next, set by bold/italic with nothing selected. */
   private typingStyle: CharStyle | null = null;
@@ -185,7 +207,7 @@ export class TextEditSession {
     // already edited paragraph and leaving it untouched keeps the edit.
     const page = paragraphChars(paragraph);
     this.original = page.map((c) => c.char).join('');
-    this.originalFonts = page.map((c) => c.style.font).join();
+    this.originalStyles = page.map((c) => styleKey(c.style)).join();
     this.caretOffset = initial.length;
     this.anchor = initial.length;
 
@@ -226,7 +248,7 @@ export class TextEditSession {
 
   get changed(): boolean {
     if (this.text !== this.original) return true;
-    return !!this.callbacks.styleFont && this.chars.map((c) => c.style.font).join() !== this.originalFonts;
+    return !!this.callbacks.styleFont && this.chars.map((c) => styleKey(c.style)).join() !== this.originalStyles;
   }
 
   /** How far the paragraph is moved down from where it is on the page. */
@@ -249,14 +271,21 @@ export class TextEditSession {
     return Math.max(0, original - (lines[lines.length - 1]!.baseline + this.shiftY));
   }
 
-  /** Whether the selection (or what is typed next) is bold and italic; null where text can't be styled. */
-  get textStyle(): FontTraits | null {
+  /** Whether the selection (or what is typed next) is bold and italic, its size and family; null where text can't be styled. */
+  get textStyle(): TextStyle | null {
     if (!this.callbacks.styleFont) return null;
     const [from, to] = this.selection;
     const selected = this.chars.slice(from, to).filter((c) => !isBlank(c.char));
     const styles = selected.length ? selected.map((c) => c.style) : [this.typingStyle ?? this.styleAt(from)];
     const traits = styles.map((style) => this.store.traits(style.font));
-    return { bold: traits.every((t) => t.bold), italic: traits.every((t) => t.italic) };
+    const sizes = new Set(styles.map((style) => Math.round(style.size * 10) / 10));
+    const families = new Set(styles.map((style) => this.callbacks.familyOf?.(style.font) ?? null));
+    return {
+      bold: traits.every((t) => t.bold),
+      italic: traits.every((t) => t.italic),
+      size: sizes.size === 1 ? [...sizes][0]! : null,
+      font: families.size === 1 ? [...families][0]! : null,
+    };
   }
 
   /**
@@ -267,18 +296,31 @@ export class TextEditSession {
     const current = this.textStyle;
     if (!current) return;
     const value = !current[kind];
-    const [from, to] = this.selection;
-    if (from === to) {
-      this.typingStyle = this.restyle(this.typingStyle ?? this.styleAt(from), kind, value);
-      this.render();
-      return;
-    }
-    const restyled = this.chars.map((c, i) =>
-      i < from || i >= to || c.char === '\n' ? c : { char: c.char, style: this.restyle(c.style, kind, value) },
+    this.applyStyle((style) => this.restyle(style, kind, value));
+  }
+
+  /** Sets the selection (or what is typed next) in a size, in points; lines with larger text get more room. */
+  setSize(size: number): void {
+    if (!this.textStyle || !Number.isFinite(size)) return;
+    const next = Math.round(Math.min(MAX_TEXT_SIZE, Math.max(MIN_TEXT_SIZE, size)) * 100) / 100;
+    this.applyStyle((style) =>
+      // A raised or lowered character (a superscript) stays as far up or down for its size.
+      style.size === next ? style : { ...style, size: next, rise: Math.round(((style.rise * next) / style.size) * 100) / 100 },
     );
-    this.pushUndo('other');
-    this.chars = restyled;
-    this.changedContent(restyled.slice(from, to));
+  }
+
+  /** Sets the selection (or what is typed next) in another family (a `FontFamily` id), keeping bold and italic. */
+  setFamily(family: string): void {
+    const familyFont = this.callbacks.familyFont;
+    if (!this.textStyle || !familyFont) return;
+    this.applyStyle((style) => {
+      const font = familyFont(family, this.store.traits(style.font));
+      if (font === null || font === style.font) return style;
+      // Remember the family's upright regular font, so bold and italic can be taken off again.
+      const regular = familyFont(family, { bold: false, italic: false });
+      const { base: _, ...rest } = style;
+      return regular !== null && regular !== font ? { ...rest, font, base: regular } : { ...rest, font };
+    });
   }
 
   get styledChars(): StyledChar[] {
@@ -438,6 +480,32 @@ export class TextEditSession {
     const source = before && before.char !== '\n' ? before : (after ?? before);
     const style = source?.style ?? { font: FALLBACK_FONT, size: 11, color: '#000000', rise: 0 };
     return style;
+  }
+
+  /**
+   * Changes the style of the selected characters, as one undo step; with
+   * nothing selected, of what is typed next. Changed characters are set anew
+   * (no longer placed as on the page).
+   */
+  private applyStyle(change: (style: CharStyle) => CharStyle): void {
+    const [from, to] = this.selection;
+    if (from === to) {
+      this.typingStyle = change(this.typingStyle ?? this.styleAt(from));
+      this.render();
+      return;
+    }
+    let any = false;
+    const restyled = this.chars.map((c, i) => {
+      if (i < from || i >= to || c.char === '\n') return c;
+      const style = change(c.style);
+      if (style === c.style) return c;
+      any = true;
+      return { char: c.char, style };
+    });
+    if (!any) return;
+    this.pushUndo('other');
+    this.chars = restyled;
+    this.changedContent(restyled.slice(from, to));
   }
 
   /** `style` with its font made (or no longer) bold or italic; `base` remembers the document font to go back to. */
@@ -756,7 +824,9 @@ export class TextEditSession {
     else for (const line of layout.lines) {
       for (const placed of line.glyphs) {
         if (placed.char === '\n' || placed.char === ' ') continue;
-        const { glyph } = this.store.resolve(placed.style.font, placed.char);
+        const { font, glyph } = this.store.resolve(placed.style.font, placed.char);
+        // A font still loading draws once it has arrived (the store tells the session).
+        if (!glyph && this.store.isLoading(font)) continue;
         if (!glyph) {
           // Neither the document font nor the fallback has it: show a box, like a viewer would.
           glyphs.push(

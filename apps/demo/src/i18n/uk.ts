@@ -80,6 +80,12 @@ export const uk: Messages = {
     undo: 'Скасувати',
     redo: 'Повторити',
     bold: 'Жирний',
+    font: 'Шрифт',
+    textSize: 'Розмір тексту',
+    fontsOnPage: 'На цій сторінці',
+    fontsStandard: 'Стандартні',
+    /** A standard font and the common one it matches, e.g. "Arimo, like Arial". */
+    fontLike: (font: string, like: string) => `${font}, як ${like}`,
     italic: 'Курсив',
     colour: (colour) => `Колір ${colour}`,
     delete: 'Видалити',

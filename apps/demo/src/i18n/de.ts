@@ -72,6 +72,12 @@ export const de: Messages = {
     undo: 'Rückgängig',
     redo: 'Wiederholen',
     bold: 'Fett',
+    font: 'Schrift',
+    textSize: 'Schriftgröße',
+    fontsOnPage: 'Auf dieser Seite',
+    fontsStandard: 'Standard',
+    /** A standard font and the common one it matches, e.g. "Arimo, like Arial". */
+    fontLike: (font: string, like: string) => `${font}, wie ${like}`,
     italic: 'Kursiv',
     colour: (colour) => `Farbe ${colour}`,
     delete: 'Löschen',

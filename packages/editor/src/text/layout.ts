@@ -35,6 +35,12 @@ export interface ParagraphFrame {
   align: TextAlign;
   /** Baselines of the original lines; lines past them continue one `leading` apart. */
   baselines?: number[];
+  /**
+   * The paragraph's text size that `leading` goes with. A line whose largest
+   * text is another size gets a leading scaled to it (and lines after it
+   * follow), so text made larger doesn't run into the line above.
+   */
+  size?: number;
 }
 
 export type Measure = (style: CharStyle, char: string) => number;
@@ -161,6 +167,28 @@ export function layoutParagraph(chars: StyledChar[], frame: ParagraphFrame, meas
     ranges.push({ start, end: chars.length, hardBreak: false });
   }
 
+  // ---- baselines: the original ones while every line is set at the paragraph's size
+  const known = frame.baselines ?? [frame.firstBaseline];
+  const baselines: number[] = [];
+  let resized = false;
+  ranges.forEach((range, lineIndex) => {
+    let largest = 0;
+    for (let k = range.start; k < range.end; k++) if (chars[k]!.char !== '\n') largest = Math.max(largest, chars[k]!.style.size);
+    if (!largest) largest = chars[Math.min(range.start, chars.length - 1)]?.style.size ?? 0;
+    const scale = frame.size && largest ? largest / frame.size : 1;
+    resized ||= Math.abs(scale - 1) > 0.02;
+    const gap =
+      lineIndex === 0 ? 0 : lineIndex < known.length ? known[lineIndex - 1]! - known[lineIndex]! : frame.leading;
+    if (!resized) {
+      baselines.push(lineIndex < known.length ? known[lineIndex]! : baselines[lineIndex - 1]! - gap);
+    } else if (lineIndex === 0) {
+      // The top of the first line stays: its baseline moves by the change of its ascent.
+      baselines.push(known[0]! - (scale - 1) * frame.leading * 0.75);
+    } else {
+      baselines.push(baselines[lineIndex - 1]! - gap * scale);
+    }
+  });
+
   // ---- place glyphs
   const lines: LayoutLine[] = ranges.map((range, lineIndex) => {
     let inkEnd = range.end;
@@ -179,11 +207,7 @@ export function layoutParagraph(chars: StyledChar[], frame: ParagraphFrame, meas
     else if (frame.align === 'center') offset = room / 2;
     else if (frame.align === 'justify' && !isLast && !range.hardBreak && gaps > 0 && room > 0) stretch = room / gaps;
 
-    const known = frame.baselines ?? [frame.firstBaseline];
-    const baseline =
-      lineIndex < known.length
-        ? known[lineIndex]!
-        : known[known.length - 1]! - (lineIndex - known.length + 1) * frame.leading;
+    const baseline = baselines[lineIndex]!;
     let x = frame.x + (lineIndex === 0 ? frame.indent : 0) + offset;
     const left = x;
     const glyphs: PlacedGlyph[] = [];

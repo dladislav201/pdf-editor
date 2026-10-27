@@ -327,6 +327,16 @@ page; `exportPdf()` / Download write the edits into the PDF
   fallback (Arimo/Tinos/Cousine Bold, Italic, Bold Italic). Families are
   matched by PostScript name without the subset prefix and style
   (`ABCDEF+Arial-BoldMT` = `ArialMT`). Not for a scan's letters.
+- Size and typeface: `setTextSize(points)` (4–144) and `setTextFont(family)`
+  with a family from `getTextFonts()`: those of the fonts the page uses
+  (`doc:<family>`, named after the font; a font that isn't embedded by its
+  PostScript name), then `sans`, `serif`, `mono` (Arimo, Tinos, Cousine).
+  `getTextStyle()` gives `size` and `font` along with bold and italic (null
+  where the selection mixes several). A family keeps bold and italic: its
+  own bold font when the page has it, else the fallback of its kind. A line
+  with larger (or smaller) text than the paragraph's gets its leading scaled
+  to it: the first line keeps its top, the lines after it follow, and a
+  paragraph that grows this way pushes what is below.
 - A paragraph that gets longer pushes what is below it down
   (`text/push.ts`), like a word processor: paragraphs, lines, pictures and
   whole tables in the same column move as far as it grew, and push what is
@@ -578,7 +588,8 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
 - Text model: two plain text lines without spacing (e.g. from a .txt) read as one
   paragraph; bullets drawn as shapes are not part of the item's text; vertical
   and rotated text is skipped.
-- Text editing: no font picker or sizes; the live document isn't modified
+- Text editing: the typeface list holds the page's fonts and three standard
+  ones (no system or uploaded fonts); the live document isn't modified
   until save, so page text search/selection reflects the original (and the
   place of pushed text) until the file is reopened; annotations on pushed text
   stay where they were; a paragraph in a table cell can't grow its cell (it

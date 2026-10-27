@@ -11,7 +11,7 @@ import { exportPdf } from '../export';
 import { analyzePage } from './analyze';
 import { paragraphChars, paragraphFrame } from './edit-session';
 import { GlyphStore, fallbackFile } from './glyph-store';
-import { layoutParagraph, type StyledChar } from './layout';
+import { layoutParagraph, type CharStyle, type StyledChar } from './layout';
 import { pushDown, type PushItem } from './push';
 import type { TextParagraph } from './types';
 import { withWordFallback } from './word-fonts';
@@ -304,6 +304,91 @@ describe('bold and italic', () => {
     expect(plan.fallback.map((w) => [w.text, fallbackFile(w.font)])).toEqual([['invoice', 'Arimo-Italic.ttf']]);
     expect(wordFonts(bytes, 'Total due').get('invoice')).toMatch(/Arimo-Italic/);
     expect(inkOf(bytes, plan.fallback[0]!)).toBeGreaterThan(60);
+  });
+});
+
+describe('text size and typeface', () => {
+  /** Two lines of Helvetica 11 pt, and a line in Times so the page has a second family. */
+  async function source(): Promise<Uint8Array> {
+    const pdf = await PDFDocument.create();
+    const helvetica = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const times = await pdf.embedFont(StandardFonts.TimesRoman);
+    const page = pdf.addPage([400, 300]);
+    page.drawText('Total due within thirty days of the invoice date', { x: 40, y: 240, size: 11, font: helvetica });
+    page.drawText('by bank transfer to the account below.', { x: 40, y: 226, size: 11, font: helvetica });
+    page.drawText('Signed in Kyiv', { x: 40, y: 120, size: 12, font: times });
+    page.drawText('Approved', { x: 40, y: 100, size: 12, font: bold });
+    return pdf.save();
+  }
+
+  /** Restyles `word` of the paragraph, saves, and reads the paragraph back: each word's font and size, and line baselines. */
+  async function restyle(word: string, change: (style: CharStyle, store: GlyphStore, fonts: number[]) => CharStyle) {
+    const doc = new PdfiumDocument(lib, await source());
+    try {
+      const { page, store, pageFonts } = await openPage(doc);
+      const paragraph = page.paragraphs.find((p) => p.text.startsWith('Total due'))!;
+      const chars = paragraphChars(paragraph, (style, char) => store.advance(style, char));
+      const at = paragraph.text.indexOf(word);
+      const styled = chars.map((c, i) => (i < at || i >= at + word.length ? c : { char: c.char, style: change(c.style, store, [...pageFonts.keys()]) }));
+      const lay = () => layoutParagraph(withWordFallback(styled, store), paragraphFrame(paragraph, page.block), (st, c) => store.advance(st, c));
+      let plan = buildWritePlan(paragraph, styled, lay(), store, pageFonts);
+      await Promise.all(plan.fallback.map((w) => store.fallbackBytes(w.font)));
+      plan = buildWritePlan(paragraph, styled, lay(), store, pageFonts);
+      doc.applyTextPlans([plan], await fallbackFontsOf([plan], store));
+      const bytes = doc.save();
+      const saved = new PdfiumDocument(lib, bytes);
+      try {
+        const raw = saved.extractText(0);
+        // Lines set apart by larger text may read as paragraphs of their own: look at every line.
+        const lines = analyzePage(raw).paragraphs.flatMap((p) => p.lines);
+        const after = analyzePage(raw).paragraphs.find((p) => p.text.startsWith('Total due'))!;
+        const words = new Map<string, { font: string; size: number }>();
+        for (const line of lines) {
+          line.wordStarts.forEach((start, i) => {
+            const glyphs = line.chars.slice(start, line.wordStarts[i + 1] ?? line.chars.length);
+            words.set(glyphs.map((c) => c.text).join(''), { font: raw.fonts[glyphs[0]!.font]!.name, size: Math.round(glyphs[0]!.size * 10) / 10 });
+          });
+        }
+        // The paragraph's first line, and the one with "bank" (set anew, the first line may now wrap earlier).
+        const baselines = ['Total due', 'bank'].map((word) => lines.find((l) => l.text.includes(word))!.baseline);
+        return { words, baselines, text: after.text, families: store.families(pageFonts.keys()) };
+      } finally {
+        saved.close();
+      }
+    } finally {
+      doc.close();
+    }
+  }
+
+  it('offers the families the page uses, then the standard ones', async () => {
+    const { families } = await restyle('thirty', (style) => style);
+    expect(families.map((f) => f.name)).toEqual(['Helvetica', 'Times', 'Arimo', 'Tinos', 'Cousine']);
+    expect(families.map((f) => f.kind)).toEqual(['document', 'document', 'standard', 'standard', 'standard']);
+  });
+
+  it('sets a word larger and gives its line more room', async () => {
+    const first = await restyle('thirty', (style) => ({ ...style, size: 18 }));
+    expect(first.text).toContain('Total due within thirty days of the invoice date');
+    expect(first.words.get('thirty')).toEqual({ font: 'Helvetica', size: 18 });
+    expect(first.words.get('days')).toEqual({ font: 'Helvetica', size: 11 });
+    // The first line keeps its top: its baseline moves down by the larger ascent, and the next line follows.
+    expect(first.baselines[0]).toBeLessThan(240 - 4);
+    expect(first.baselines[0]! - first.baselines[1]!).toBeCloseTo(14, 0);
+    // Larger text on the second line: the first stays, the second moves away from it.
+    const second = await restyle('bank', (style) => ({ ...style, size: 18 }));
+    expect(second.baselines[0]).toBeCloseTo(240, 1);
+    expect(second.baselines[0]! - second.baselines[1]!).toBeGreaterThan(14 * 1.4);
+  });
+
+  it('sets a word in another family of the page, or in a standard one keeping bold', async () => {
+    const times = await restyle('thirty', (style, store, fonts) => ({ ...style, font: store.familyFont('doc:times', { bold: false, italic: false }, fonts)! }));
+    expect(times.words.get('thirty')?.font).toBe('Times-Roman');
+    const bold = await restyle('thirty', (style, store, fonts) => ({ ...style, font: store.familyFont('serif', { bold: true, italic: false }, fonts)! }));
+    expect(bold.words.get('thirty')?.font).toMatch(/Tinos-Bold/);
+    // Helvetica's bold is on the page: bold in Helvetica's family uses it, not a fallback.
+    const own = await restyle('days', (style, store, fonts) => ({ ...style, font: store.familyFont('doc:helvetica', { bold: true, italic: false }, fonts)! }));
+    expect(own.words.get('days')?.font).toBe('Helvetica-Bold');
   });
 });
 

@@ -32,6 +32,33 @@ export interface FontTraits {
   italic: boolean;
 }
 
+const styleOf = (want: FontTraits) => (want.bold && want.italic ? 'BoldItalic' : want.bold ? 'Bold' : want.italic ? 'Italic' : 'Regular');
+
+/**
+ * A typeface text can be set in: a family of the page's document fonts
+ * (`doc:<family>`), or one of the fallback families that come with the editor
+ * (`sans`, `serif`, `mono`: Arimo, Tinos and Cousine).
+ */
+export interface FontFamily {
+  id: string;
+  name: string;
+  kind: 'document' | 'standard';
+}
+
+const STANDARD: FontFamily[] = (Object.keys(FAMILIES) as FallbackFamily[]).map((family) => ({
+  id: family,
+  name: FAMILIES[family],
+  kind: 'standard',
+}));
+
+/** A family's name to show: the font's family without subset prefix, style and `MT`/`PS` endings. */
+const displayName = (family: string) =>
+  family
+    .replace(/^[A-Z]{6}\+/, '')
+    .replace(/[-,]?(Bold|Italic|Oblique|Regular|Roman|Semibold|Medium)+$/i, '')
+    .replace(/(MT|PS)$/, '')
+    .trim();
+
 /**
  * A font's family to compare by, from its PostScript name without the
  * subset prefix and the style: `ABCDEF+Arial-BoldMT` and `ArialMT` are one
@@ -221,7 +248,42 @@ export class GlyphStore {
         : info?.serif
           ? 'serif'
           : 'sans';
-    return fallbackId(kind, want.bold && want.italic ? 'BoldItalic' : want.bold ? 'Bold' : want.italic ? 'Italic' : 'Regular');
+    return fallbackId(kind, styleOf(want));
+  }
+
+  /** The family a font belongs to (see `FontFamily`); null for fonts the editor made up (a scan's letters). */
+  familyOf(font: number): string | null {
+    if (isCustomFont(font)) return null;
+    if (isFallback(font)) return FALLBACKS[-font - 1]!.family;
+    const info = this.infos.get(font);
+    return info ? `doc:${familyKey(info.name)}` : null;
+  }
+
+  /** The families text can be set in: those of `available` (the page's document fonts), then the standard ones. */
+  families(available: Iterable<number>): FontFamily[] {
+    const found = new Map<string, FontFamily>();
+    for (const id of available) {
+      const info = this.infos.get(id);
+      const family = this.familyOf(id);
+      if (!info || !family || found.has(family)) continue;
+      // A font that isn't embedded is drawn with a stand-in, whose family is what the engine reports: its own name says what it is.
+      const name = (info.embedded && displayName(info.family)) || displayName(info.name);
+      found.set(family, { id: family, name, kind: 'document' });
+    }
+    return [...[...found.values()].sort((a, b) => a.name.localeCompare(b.name)), ...STANDARD];
+  }
+
+  /**
+   * The font to set text in `family` with a weight and slant: the family's
+   * document font in that style when the page has it, else the fallback of
+   * its kind in that style (as `variant` does). Null for an unknown family.
+   */
+  familyFont(family: string, want: FontTraits, available: Iterable<number>): number | null {
+    const standard = STANDARD.find((f) => f.id === family);
+    if (standard) return fallbackId(standard.id as FallbackFamily, styleOf(want));
+    const members = [...available].filter((id) => this.familyOf(id) === family);
+    if (!members.length) return null;
+    return this.variant(members[0]!, want, members);
   }
 
   /** The glyph to draw `char` with: the document font if it has one, else its fallback. */
@@ -236,6 +298,11 @@ export class GlyphStore {
     }
     const fallback = this.fallbackFor(font);
     return { font: fallback, glyph: this.fallbackFont(fallback)?.glyph(char) ?? null };
+  }
+
+  /** Whether a fallback font is still on its way (its glyphs resolve to null until it arrives). */
+  isLoading(font: number): boolean {
+    return isFallback(font) && !this.fallbacks.has(font) && this.fallbackLoads.has(font);
   }
 
   /** True once the document font is loaded and `char` is known to be absent from it. */

@@ -1,6 +1,6 @@
 import { PdfEditor, type PdfEditorInstance } from '@pdfsdk/react';
-import type { ToolName } from '@pdfsdk/editor';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FontFamily, TextStyle, ToolName } from '@pdfsdk/editor';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from './icons';
 import { DEMO_LICENSE_KEY } from './license';
 import { Pages } from './Pages';
@@ -36,6 +36,10 @@ const MARKUPS = [
 type Markup = (typeof MARKUPS)[number]['tool'];
 const isMarkup = (tool: ToolName): tool is Markup => MARKUPS.some((m) => m.tool === tool);
 const COLORS = ['#facc15', '#ef4444', '#22c55e', '#2f6fed', '#191918'];
+/** Text sizes offered for page text, in points; the selection's own size joins them when it's another. */
+const TEXT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
+/** The common fonts the editor's standard ones match in shape and width. */
+const LIKE: Record<string, string> = { sans: 'Arial', serif: 'Times New Roman', mono: 'Courier' };
 const MAX_FIT_ZOOM = 1.25;
 /** How shortcuts with the command key read on this system. */
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -45,6 +49,30 @@ type Scan =
   | { kind: 'scanned'; pages: number[] }
   | { kind: 'reading'; done: number; total: number }
   | { kind: 'done'; words: number };
+
+/** A native select dressed as a pill: the phone's own picker, and the keyboard, for free. */
+function PillSelect({
+  label,
+  value,
+  onChange,
+  children,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={`pill pill-select ${className}`} title={label}>
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+        {children}
+      </select>
+      <Icon name="chevronDown" size={14} />
+    </span>
+  );
+}
 
 function ToolButton({
   name,
@@ -123,7 +151,8 @@ export function Workspace({
   // A paragraph is open for typing: Esc (or a click elsewhere) finishes it.
   const [typing, setTyping] = useState(false);
   // Bold and italic of the selection in the open paragraph (null: none open, or a scan's letters).
-  const [textStyle, setTextStyle] = useState<{ bold: boolean; italic: boolean } | null>(null);
+  const [textStyle, setTextStyle] = useState<TextStyle | null>(null);
+  const [textFonts, setTextFonts] = useState<FontFamily[]>([]);
   const [mode, setMode] = useState<'edit' | 'pages'>('edit');
   const [loaded, setLoaded] = useState(false);
   const wantPages = useRef(startInPages);
@@ -182,7 +211,10 @@ export function Workspace({
       editor.on('pageChange', ({ pageIndex }) => setPage((p) => ({ ...p, index: pageIndex }))),
       editor.on('textEditsChange', ({ edits }) => setEdits(edits.length)),
       editor.on('textEditing', ({ paragraph }) => setTyping(!!paragraph)),
-      editor.on('textStyleChange', ({ style }) => setTextStyle(style)),
+      editor.on('textStyleChange', ({ style }) => {
+        setTextStyle(style);
+        setTextFonts(style ? editor.getTextFonts() : []);
+      }),
       editor.on('documentUnlocked', ({ password }) => {
         track(password ? 'open.unlocked.password' : 'open.unlocked.owner');
         if (password) setMessage(w.unlocked);
@@ -619,6 +651,50 @@ export function Workspace({
                     {kind === 'bold' ? 'B' : 'I'}
                   </button>
                 ))}
+              </div>
+            )}
+            {tool === 'editText' && textStyle && (
+              <div className="group">
+                <PillSelect
+                  label={w.font}
+                  className="pill-select--font"
+                  value={textStyle.font ?? ''}
+                  onChange={(font) => {
+                    track('text.font');
+                    editor?.setTextFont(font);
+                  }}
+                >
+                  {textStyle.font === null && <option value="" disabled hidden />}
+                  {(['document', 'standard'] as const).map((kind) => (
+                    <optgroup key={kind} label={kind === 'document' ? w.fontsOnPage : w.fontsStandard}>
+                      {textFonts
+                        .filter((f) => f.kind === kind)
+                        .map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {LIKE[f.id] ? w.fontLike(f.name, LIKE[f.id]!) : f.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </PillSelect>
+                <PillSelect
+                  label={w.textSize}
+                  className="pill-select--size"
+                  value={textStyle.size === null ? '' : String(textStyle.size)}
+                  onChange={(size) => {
+                    track('text.size');
+                    editor?.setTextSize(Number(size));
+                  }}
+                >
+                  {textStyle.size === null && <option value="" disabled hidden />}
+                  {[...new Set([...TEXT_SIZES, ...(textStyle.size === null ? [] : [textStyle.size])])]
+                    .sort((a, b) => a - b)
+                    .map((size) => (
+                      <option key={size} value={String(size)}>
+                        {size}
+                      </option>
+                    ))}
+                </PillSelect>
               </div>
             )}
             {tool === 'select' && (

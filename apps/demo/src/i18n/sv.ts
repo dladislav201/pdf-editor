@@ -72,6 +72,12 @@ export const sv: Messages = {
     undo: 'Ångra',
     redo: 'Gör om',
     bold: 'Fet',
+    font: 'Typsnitt',
+    textSize: 'Textstorlek',
+    fontsOnPage: 'På den här sidan',
+    fontsStandard: 'Standard',
+    /** A standard font and the common one it matches, e.g. "Arimo, like Arial". */
+    fontLike: (font: string, like: string) => `${font}, som ${like}`,
     italic: 'Kursiv',
     colour: (colour) => `Färg ${colour}`,
     delete: 'Ta bort',

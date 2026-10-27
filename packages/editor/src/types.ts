@@ -1,5 +1,6 @@
 import type { OcrPage } from './ocr/types';
 import type { FormValue } from './pdf/forms';
+import type { TextStyle } from './text/edit-session';
 import type { TextParagraph } from './text/types';
 
 /**
@@ -205,8 +206,8 @@ export interface EditorEventMap {
   paragraphSelect: { paragraph: TextParagraph | null };
   /** A paragraph opened for typing with the Edit text tool, or the open one was left (`paragraph` null). */
   textEditing: { paragraph: TextParagraph | null };
-  /** Bold and italic of the selection in the open paragraph changed; `style` is null when none is open or it can't be styled. */
-  textStyleChange: { style: { bold: boolean; italic: boolean } | null };
+  /** Bold, italic, size or family of the selection in the open paragraph changed; `style` is null when none is open or it can't be styled. */
+  textStyleChange: { style: TextStyle | null };
   /** A protected file was opened (after its password, if `password`): the document has no protection now. */
   documentUnlocked: { password: boolean };
   /** Page text was edited (fires when an edit session ends). */

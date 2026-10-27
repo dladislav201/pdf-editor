@@ -18,8 +18,8 @@ import { importAnnotations } from './pdf/read-annotations';
 import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations, resizeHandle } from './render-annotations';
 import { injectStyles } from './styles';
-import { TextEditSession, paragraphChars, paragraphFrame, type TextEditCallbacks, type TextStyleKind } from './text/edit-session';
-import { CUSTOM_FONT_BASE, FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontSource, type FontTraits } from './text/glyph-store';
+import { TextEditSession, paragraphChars, paragraphFrame, type TextEditCallbacks, type TextStyle, type TextStyleKind } from './text/edit-session';
+import { CUSTOM_FONT_BASE, FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontFamily, type FontSource } from './text/glyph-store';
 import type { ParagraphLayout } from './text/layout';
 import {
   composeScanParagraph,
@@ -1615,12 +1615,14 @@ export class PdfEditor {
     return fonts;
   }
 
-  /** Session callbacks for making text bold or italic in fonts of its page. */
-  private styling(paragraph: TextParagraph): Pick<TextEditCallbacks, 'styleFont' | 'fontSource'> {
+  /** Session callbacks for setting text bold, italic or in another family, in fonts of its page or the standard ones. */
+  private styling(paragraph: TextParagraph): Pick<TextEditCallbacks, 'styleFont' | 'familyFont' | 'familyOf' | 'fontSource'> {
     if (paragraph.recognized) return {};
     const page = paragraph.pageIndex;
     return {
       styleFont: (font, want) => this.glyphs.variant(font, want, this.pageFonts(page).keys()),
+      familyFont: (family, want) => this.glyphs.familyFont(family, want, this.pageFonts(page).keys()),
+      familyOf: (font) => this.glyphs.familyOf(font),
       fontSource: (font) => {
         const object = this.pageFonts(page).get(font);
         return object === undefined ? null : { page, object };
@@ -1628,9 +1630,36 @@ export class PdfEditor {
     };
   }
 
-  /** Bold and italic of the open paragraph's selection, for toolbars; null when none is open or it can't be styled. */
-  getTextStyle(): FontTraits | null {
+  /**
+   * Bold, italic, size and family of the open paragraph's selection (or of
+   * what is typed next), for toolbars; a value is null where the selection
+   * mixes several. Null when no paragraph is open or it can't be styled.
+   */
+  getTextStyle(): TextStyle | null {
     return this.textSession?.textStyle ?? null;
+  }
+
+  /**
+   * The families text in the open paragraph can be set in: those of the
+   * fonts its page uses, then the standard ones that come with the editor.
+   * Empty when no paragraph is open or it can't be styled (recognized text).
+   */
+  getTextFonts(): FontFamily[] {
+    const session = this.textSession;
+    if (!session?.textStyle) return [];
+    return this.glyphs.families(this.pageFonts(session.paragraph.pageIndex).keys());
+  }
+
+  /** Sets the selection in the open paragraph (or what is typed next) in a size, in points (4–144). */
+  setTextSize(size: number): void {
+    this.textSession?.setSize(size);
+    this.textSession?.focus();
+  }
+
+  /** Sets the selection in the open paragraph (or what is typed next) in a family from `getTextFonts`. */
+  setTextFont(family: string): void {
+    this.textSession?.setFamily(family);
+    this.textSession?.focus();
   }
 
   /** Makes the selection in the open paragraph bold or italic, or not (what is typed next, with nothing selected). */

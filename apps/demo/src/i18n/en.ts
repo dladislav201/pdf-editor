@@ -87,6 +87,12 @@ export const en = {
     undo: 'Undo',
     redo: 'Redo',
     bold: 'Bold',
+    font: 'Font',
+    textSize: 'Text size',
+    fontsOnPage: 'On this page',
+    fontsStandard: 'Standard',
+    /** A standard font and the common one it matches, e.g. "Arimo, like Arial". */
+    fontLike: (font: string, like: string) => `${font}, like ${like}`,
     italic: 'Italic',
     colour: (colour: string) => `Colour ${colour}`,
     delete: 'Delete',

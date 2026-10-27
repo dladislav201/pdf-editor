@@ -72,6 +72,12 @@ export const nb: Messages = {
     undo: 'Angre',
     redo: 'Gjør om',
     bold: 'Fet',
+    font: 'Skrift',
+    textSize: 'Tekststørrelse',
+    fontsOnPage: 'På denne siden',
+    fontsStandard: 'Standard',
+    /** A standard font and the common one it matches, e.g. "Arimo, like Arial". */
+    fontLike: (font: string, like: string) => `${font}, som ${like}`,
     italic: 'Kursiv',
     colour: (colour) => `Farge ${colour}`,
     delete: 'Slett',

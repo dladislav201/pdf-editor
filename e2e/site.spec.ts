@@ -133,6 +133,31 @@ test('makes text bold and pushes what is below down when a paragraph grows', asy
   expect(heading.baseline - moved.baseline).toBeGreaterThan(10);
 });
 
+test('sets a word in another size and font', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  await expect(page.getByRole('combobox', { name: 'Font' })).toHaveValue('doc:helvetica');
+  await page.keyboard.press('ControlOrMeta+ArrowUp');
+  for (let i = 0; i < 'This'.length; i++) await page.keyboard.press('Shift+ArrowRight');
+  await page.getByRole('combobox', { name: 'Text size' }).selectOption('18');
+  await page.getByRole('combobox', { name: 'Font' }).selectOption('serif');
+  await expect(page.getByRole('combobox', { name: 'Text size' })).toHaveValue('18');
+  // The paragraph still has the caret: typing goes on in it.
+  await page.keyboard.press('ControlOrMeta+ArrowDown');
+  await page.keyboard.type(' Signed.');
+  await page.keyboard.press('Escape');
+
+  const after = await pdfParagraphs(await download(page));
+  const opening = after.find((p) => p.text.includes('Software Services Agreement'))!;
+  expect(opening.fonts['This']).toMatch(/Tinos-Regular/);
+  expect(opening.sizes['This']).toBe(18);
+  expect(opening.fonts['Software']).toBe('Helvetica');
+  expect(opening.sizes['Software']).toBe(10.5);
+  expect(opening.text).toContain('"Parties". Signed.');
+});
+
 test('highlights, underlines and strikes out text by dragging across it', async ({ page, isMobile }) => {
   await openSample(page, 'A contract');
   const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;

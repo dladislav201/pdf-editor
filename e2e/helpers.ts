@@ -28,8 +28,10 @@ export async function pdfText(bytes: Uint8Array): Promise<string[]> {
   }
 }
 
-/** Paragraphs of the first page: text, first baseline and the fonts (PostScript names) of each word. */
-export async function pdfParagraphs(bytes: Uint8Array): Promise<{ text: string; baseline: number; fonts: Record<string, string> }[]> {
+/** Paragraphs of the first page: text, first baseline, and the font (PostScript name) and size of each word. */
+export async function pdfParagraphs(
+  bytes: Uint8Array,
+): Promise<{ text: string; baseline: number; fonts: Record<string, string>; sizes: Record<string, number> }[]> {
   lib ??= initLibrary(
     await init({ wasmBinary: readFileSync(join(dirname(require.resolve('@embedpdf/pdfium')), 'pdfium.wasm')) }),
   );
@@ -38,13 +40,16 @@ export async function pdfParagraphs(bytes: Uint8Array): Promise<{ text: string; 
     const raw = doc.extractText(0);
     return analyzePage(raw).paragraphs.map((p) => {
       const fonts: Record<string, string> = {};
+      const sizes: Record<string, number> = {};
       for (const line of p.lines) {
         line.wordStarts.forEach((start, i) => {
           const chars = line.chars.slice(start, line.wordStarts[i + 1] ?? line.chars.length);
-          fonts[chars.map((c) => c.text).join('')] = raw.fonts[chars[0]!.font]!.name;
+          const word = chars.map((c) => c.text).join('');
+          fonts[word] = raw.fonts[chars[0]!.font]!.name;
+          sizes[word] = Math.round(chars[0]!.size * 10) / 10;
         });
       }
-      return { text: p.text, baseline: p.lines[0]!.baseline, fonts };
+      return { text: p.text, baseline: p.lines[0]!.baseline, fonts, sizes };
     });
   } finally {
     doc.close();
