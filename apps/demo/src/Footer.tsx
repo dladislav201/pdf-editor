@@ -1,5 +1,6 @@
 import { useI18n } from './i18n';
-import { LANDING_IDS, landingPath, type LandingId } from './site';
+import { Logo } from './Logo';
+import { LANDING_IDS, landingPath, SITE, type LandingId } from './site';
 
 /** Links to every tool page (in the page's language) and the guides: how people and search engines find the rest. */
 export function Footer({ current }: { current?: LandingId | 'blog' }) {
@@ -18,6 +19,10 @@ export function Footer({ current }: { current?: LandingId | 'blog' }) {
           </a>
         )}
       </nav>
+      <p className="footer__brand">
+        <Logo size={20} />
+        {SITE.name}
+      </p>
       <p>{t.footer.privacy}</p>
     </footer>
   );

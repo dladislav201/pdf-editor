@@ -2,12 +2,11 @@ import type { OpenRequest } from './Home';
 import { LOCALES, localePrefix, localeOfPath, type Locale } from './i18n';
 
 /**
- * The site's name and address, used in titles, canonical links, the sitemap
- * and structured data. Change them here once the product has its own name
- * and domain.
+ * The site's name and address, used in its top bar and footer, titles,
+ * canonical links, the sitemap and structured data.
  */
 export const SITE = {
-  name: 'Private PDF Editor',
+  name: 'LovelyDoc',
   url: 'https://lovelydoc.com',
 };
 

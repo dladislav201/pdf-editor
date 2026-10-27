@@ -9,7 +9,7 @@ files are never uploaded anywhere.
 |---|---|
 | `packages/editor` | `@pdfsdk/editor` — framework-free core: rendering (PDFium WebAssembly in a Web Worker), annotation tools, undo/redo, PDF annotation read/write (pdf-lib) |
 | `packages/react` | `@pdfsdk/react` — `<PdfEditor />` component |
-| `apps/demo` | The web service (Vite + React): start page with drop zone and tools, and the editor with floating pill toolbars (the editor's built-in toolbar is off). Name and domain to come |
+| `apps/demo` | The web service (Vite + React): start page with drop zone and tools, and the editor with floating pill toolbars (the editor's built-in toolbar is off). Live as LovelyDoc at https://lovelydoc.com |
 | `scripts/copy-engine-assets.mjs` | Copies `pdfium.wasm`, `harfbuzz-subset.wasm`, the fallback fonts and the OCR assets (Tesseract worker, cores, English, Ukrainian, German, Norwegian and Swedish models) next to the bundle |
 
 ## Run
@@ -115,8 +115,10 @@ The site is built for search as well as for use (`apps/demo`):
 - **A light start page**: the editor, PDFium and pdf-lib load when a file is
   opened (the start page's script went from the whole app to about 250 KB),
   and the handwriting fonts load with the signature dialog only.
-- **Icons and a preview picture**: `public/favicon.svg`, PNG icons and
-  `public/og.png` (1200×630), drawn by `scripts/make-images.mjs`.
+- **Brand**: LovelyDoc, a page with a heart. The name (`SITE.name`) is in
+  titles, the top bar and the footer; the mark is `src/Logo.tsx` and
+  `public/favicon.svg`. PNG icons and `public/og.png` (1200×630) are drawn
+  from it by `scripts/make-images.mjs`.
 
 **Languages**: English, German, Norwegian (Bokmål), Swedish and Ukrainian.
 Every word of the site and the editor's own messages are in

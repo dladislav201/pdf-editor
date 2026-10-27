@@ -37,7 +37,7 @@ ctx.fillRect(0, 0, W, H);
 ctx.drawImage(icon, 80, 72, 72, 72);
 ctx.fillStyle = '#1b1b1d';
 ctx.font = '30px "Arimo Bold"';
-ctx.fillText('Private PDF Editor', 172, 119);
+ctx.fillText('LovelyDoc', 172, 119);
 
 ctx.font = '68px "Arimo Bold"';
 ctx.fillText('Edit any PDF,', 80, 268);

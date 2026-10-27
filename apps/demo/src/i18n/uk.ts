@@ -16,7 +16,6 @@ const FREE = { q: 'Це безкоштовно?', a: 'Так, без реєст�
 export const uk: Messages = {
   home: {
     sections: 'Розділи',
-    home: 'Головна',
     openPdf: 'Відкрити PDF',
     feedback: 'Надіслати відгук',
     theme: 'Змінити тему',

@@ -9,7 +9,6 @@ const FREE = { q: 'Er det gratis?', a: 'Ja, uten registrering, uten vannmerke og
 export const nb: Messages = {
   home: {
     sections: 'Seksjoner',
-    home: 'Hjem',
     openPdf: 'Åpne PDF',
     feedback: 'Send tilbakemelding',
     theme: 'Bytt tema',

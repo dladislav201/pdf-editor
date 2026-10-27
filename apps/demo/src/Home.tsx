@@ -4,6 +4,7 @@ import { FeedbackDialog } from './FeedbackDialog';
 import { Footer } from './Footer';
 import { browserLocale, LANGUAGE_NAMES, LOCALES, SUGGEST, useI18n, type Locale, type Messages } from './i18n';
 import { Icon, type IconName } from './icons';
+import { BrandLink } from './Logo';
 import { LANDING_TOOLS, landingPath, type LandingId } from './site';
 
 export interface OpenRequest {
@@ -150,17 +151,11 @@ export function Home({
       <div className="home__top">
         <nav className="bar" aria-label={t.home.sections}>
           <div className="group">
-            <a
-              className="pill pill--icon"
-              href={landingPath('home', locale)}
-              aria-current={id === 'home' ? 'page' : undefined}
-              aria-label={t.home.home}
-            >
-              <Icon name="home" />
-            </a>
-            <button type="button" className="pill" aria-label={t.home.openPdf} onClick={() => choose()}>
+            <BrandLink href={landingPath('home', locale)} current={id === 'home'} />
+            {/* Phones have room for the name, and the big button below opens a PDF. */}
+            <button type="button" className="pill wide-only" onClick={() => choose()}>
               <Icon name="file" />
-              <span className="wide-only">{t.home.openPdf}</span>
+              {t.home.openPdf}
             </button>
           </div>
         </nav>

@@ -9,7 +9,6 @@ const FREE = { q: 'Ist es kostenlos?', a: 'Ja – ohne Anmeldung, ohne Wasserzei
 export const de: Messages = {
   home: {
     sections: 'Bereiche',
-    home: 'Startseite',
     openPdf: 'PDF öffnen',
     feedback: 'Feedback senden',
     theme: 'Design wechseln',

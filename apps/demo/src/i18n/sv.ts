@@ -9,7 +9,6 @@ const FREE = { q: 'Är det gratis?', a: 'Ja, utan registrering, utan vattenstäm
 export const sv: Messages = {
   home: {
     sections: 'Avsnitt',
-    home: 'Hem',
     openPdf: 'Öppna PDF',
     feedback: 'Skicka feedback',
     theme: 'Byt tema',

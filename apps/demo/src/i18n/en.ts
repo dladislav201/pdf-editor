@@ -25,7 +25,6 @@ const FREE = { q: 'Is it free?', a: 'Yes, with no sign-up, no watermark and no l
 export const en = {
   home: {
     sections: 'Sections',
-    home: 'Home',
     openPdf: 'Open PDF',
     feedback: 'Send feedback',
     theme: 'Switch theme',

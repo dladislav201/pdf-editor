@@ -1,6 +1,7 @@
 import { formatDate, type Post } from './posts';
 import { Footer } from './Footer';
 import { Icon } from './icons';
+import { BrandLink } from './Logo';
 
 /** The guides' top bar: back to the editor, and the list of guides. */
 function BlogTop() {
@@ -8,9 +9,7 @@ function BlogTop() {
     <div className="home__top">
       <nav className="bar" aria-label="Sections">
         <div className="group">
-          <a className="pill pill--icon" href="/" aria-label="Home">
-            <Icon name="home" />
-          </a>
+          <BrandLink href="/" />
           <a className="pill" href="/blog">
             Guides
           </a>
