@@ -6,6 +6,7 @@ export { checkLicense, type LicenseInfo, type LicensePayload, type LicenseStatus
 export { arrangePages, type ArrangedPage } from './pdf/arrange';
 export { readFormFields, type FormField, type FormValue } from './pdf/forms';
 export { imagesToPdf, type PageImage } from './pdf/images';
+export { encryptPdf, type EncryptOptions } from './pdf/encrypt';
 export { importAnnotations, type ImportResult } from './pdf/read-annotations';
 export type { SearchMatch, SearchOptions } from './text/search';
 export type { TextStyle, TextStyleKind } from './text/edit-session';

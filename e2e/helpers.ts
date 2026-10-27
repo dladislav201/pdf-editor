@@ -10,12 +10,12 @@ import { analyzePage } from '../packages/editor/src/text/analyze';
 const require = createRequire(import.meta.url);
 let lib: ReturnType<typeof initLibrary> | undefined;
 
-/** The text of every page of a PDF, read with the same engine the site uses. */
-export async function pdfText(bytes: Uint8Array): Promise<string[]> {
+/** The text of every page of a PDF (opened with `password` when it needs one), read with the same engine the site uses. */
+export async function pdfText(bytes: Uint8Array, password?: string): Promise<string[]> {
   lib ??= initLibrary(
     await init({ wasmBinary: readFileSync(join(dirname(require.resolve('@embedpdf/pdfium')), 'pdfium.wasm')) }),
   );
-  const doc = new PdfiumDocument(lib, bytes);
+  const doc = new PdfiumDocument(lib, bytes, password);
   try {
     return Array.from({ length: doc.pageCount }, (_, i) =>
       doc

@@ -82,7 +82,20 @@ the editor calls the `getPassword({ fileName, incorrect })` option and tries
 again until it's right or the answer is null (then the file doesn't open).
 `documentUnlocked` tells the app; the site asks in a dialog and says the
 downloaded copy won't ask for the password. Merging (Add PDF) goes the same
-way. Saving with a password isn't possible yet.
+way.
+
+**Saving with a password**: `exportPdf({ password })` / `download(name,
+{ password })`, or `encryptPdf(bytes, { password })` on any PDF
+(`pdf/encrypt.ts`). It is the standard security handler, revision 6 (PDF
+2.0, AES-256 — what Acrobat writes), on Web Crypto: a random 256-bit file
+key encrypts every string and stream (object streams are written out as
+plain objects first), and the password unlocks the key. Everything is
+allowed once the file is open. The password goes in twice: as the user
+password in UTF-8 after NFKC, as the standard asks (Acrobat, Chrome, PDFium,
+pdf.js), and as the owner password after NFD, which is how Apple's PDFKit
+(Preview, Safari) spells it — otherwise a password with "ü" or "é" doesn't
+open there. Checked opening with PDFium and PDFKit, pixel for pixel. The
+site has it under More ways to save → With a password (typed twice).
 
 ## Undo
 

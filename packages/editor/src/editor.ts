@@ -561,9 +561,10 @@ export class PdfEditor {
   /**
    * Returns the PDF with the current annotations saved as real PDF annotations
    * (editable in Acrobat, Preview and here), or burned into the pages with
-   * `{ flatten: true }`.
+   * `{ flatten: true }`. With `{ password }` the file opens only with it
+   * (AES-256, as Acrobat protects files).
    */
-  async exportPdf(options: Pick<ExportOptions, 'flatten'> = {}): Promise<Uint8Array> {
+  async exportPdf(options: Pick<ExportOptions, 'flatten' | 'password'> = {}): Promise<Uint8Array> {
     this.commitTextEditor();
     this.endTextEdit();
     if (!this.bytes) throw new Error('No document is open.');
@@ -605,6 +606,7 @@ export class PdfEditor {
         fontBytes,
         flatten: options.flatten,
         formValues: this.formValues,
+        password: options.password,
         ...(license.status === 'valid' ? {} : { watermark: 'PDF SDK trial' }),
       });
     } catch (error) {
@@ -614,7 +616,7 @@ export class PdfEditor {
   }
 
   /** Exports and saves the PDF through the browser's download flow. */
-  async download(fileName = this.fileName, options: Pick<ExportOptions, 'flatten'> = {}): Promise<void> {
+  async download(fileName = this.fileName, options: Pick<ExportOptions, 'flatten' | 'password'> = {}): Promise<void> {
     const bytes = await this.exportPdf(options);
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
     const link = document.createElement('a');

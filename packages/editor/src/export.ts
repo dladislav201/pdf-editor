@@ -2,6 +2,7 @@ import fontkit from '@pdf-lib/fontkit';
 import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage } from 'pdf-lib';
 import { textBaselines, textLine, textLines } from './geometry';
 import { hexToRgb } from './pdf/objects';
+import { encryptPdf } from './pdf/encrypt';
 import { fillForm, type FormValue } from './pdf/forms';
 import { embedImages, writeAnnotations } from './pdf/write-annotations';
 import { pathData } from './render-annotations';
@@ -19,6 +20,8 @@ export interface ExportOptions {
   watermark?: string;
   /** Values filled into the PDF's form fields, by field name. */
   formValues?: Record<string, FormValue>;
+  /** Protect the file with a password to open it (AES-256); once open, everything is allowed. */
+  password?: string;
 }
 
 /** Characters Helvetica can encode (WinAnsi), so we can fail with a clear message instead of a cryptic one. */
@@ -140,5 +143,6 @@ export async function exportPdf(
   else writeAnnotations(doc, annotations, font, images);
   if (options.watermark) await stampWatermark(doc, options.watermark);
   // Appearances are already drawn above, in the right font.
-  return doc.save({ updateFieldAppearances: false });
+  const bytes = await doc.save({ updateFieldAppearances: false });
+  return options.password ? encryptPdf(bytes, { password: options.password }) : bytes;
 }

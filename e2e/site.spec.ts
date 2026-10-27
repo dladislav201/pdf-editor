@@ -249,6 +249,32 @@ test('opens a password-protected PDF after asking for its password', async ({ pa
   expect(squash((await pdfText(saved))[0]!)).toContain('SoftwareServicesAgreement');
 });
 
+test('saves a PDF with a password that opens it, here and in other viewers', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'More ways to save' }).click();
+  await page.getByRole('menuitem', { name: /With a password/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Protect with a password' });
+  await dialog.getByLabel('Password', { exact: true }).fill('Kyiv 2026');
+  await dialog.getByLabel('Repeat the password').fill('Kyiv 2025');
+  await expect(dialog.getByText('The passwords don’t match.')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Download' })).toBeDisabled();
+  await dialog.getByLabel('Repeat the password').fill('Kyiv 2026');
+  const [file] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: 'Download' }).click()]);
+  await expect(dialog).toBeHidden();
+  const bytes = await downloadBytes(file);
+  expect(file.suggestedFilename()).toBe('Services agreement.pdf');
+  await expect(pdfText(bytes)).rejects.toThrow();
+  expect(squash((await pdfText(bytes, 'Kyiv 2026'))[0]!)).toContain('SOFTWARESERVICESAGREEMENT');
+
+  // Opened here again, it asks for the password.
+  await gotoApp(page, '/');
+  await page.locator('input[type=file]').setInputFiles({ name: 'Protected.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
+  const ask = page.getByRole('dialog', { name: 'This PDF is protected' });
+  await ask.getByLabel('Password').fill('Kyiv 2026');
+  await ask.getByRole('button', { name: 'Open' }).click();
+  await expectPainted(page);
+});
+
 test('asks for the password again after cancelling', async ({ page }) => {
   const bytes = readFileSync(new URL('../packages/editor/test/fixtures/protected-user.pdf', import.meta.url));
   await gotoApp(page, '/');

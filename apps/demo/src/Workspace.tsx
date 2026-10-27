@@ -6,7 +6,7 @@ import { DEMO_LICENSE_KEY } from './license';
 import { Pages } from './Pages';
 import { SignDialog } from './SignDialog';
 import { reportError, track } from './telemetry';
-import { CompressDialog, ImagesDialog } from './ExportDialogs';
+import { CompressDialog, ImagesDialog, ProtectDialog } from './ExportDialogs';
 import { FeedbackDialog } from './FeedbackDialog';
 import { PasswordDialog } from './PasswordDialog';
 import { useI18n, type Locale } from './i18n';
@@ -158,7 +158,7 @@ export function Workspace({
   const wantPages = useRef(startInPages);
   const wantSign = useRef(startSigning);
   const [signing, setSigning] = useState(false);
-  const [dialog, setDialog] = useState<'compress' | 'images' | null>(null);
+  const [dialog, setDialog] = useState<'compress' | 'images' | 'protect' | null>(null);
   const [menu, setMenu] = useState(false);
   const [search, setSearch] = useState<{ open: boolean; query: string; count: number; active: number; busy?: boolean }>({
     open: false,
@@ -558,6 +558,20 @@ export function Workspace({
                 role="menuitem"
                 onClick={() => {
                   setMenu(false);
+                  setDialog('protect');
+                }}
+              >
+                <Icon name="lock" />{' '}
+                <span>
+                  <strong>{w.saveProtected.title}</strong>
+                  {w.saveProtected.text}
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(false);
                   setDialog('compress');
                 }}
               >
@@ -750,6 +764,7 @@ export function Workspace({
 
       {editor && dialog === 'compress' && <CompressDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
       {editor && dialog === 'images' && <ImagesDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
+      {editor && dialog === 'protect' && <ProtectDialog editor={editor} fileName={file.name} onClose={() => setDialog(null)} />}
 
       <button type="button" className="float feedback-button" hidden={mode === 'pages'} onClick={() => setFeedback(true)} aria-label={w.feedback} title={w.feedback}>
         <Icon name="feedback" />

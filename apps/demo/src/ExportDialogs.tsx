@@ -221,3 +221,73 @@ export function ImagesDialog({
     </Dialog>
   );
 }
+
+/** Downloads the PDF protected with a password to open it, typed twice. */
+export function ProtectDialog({
+  editor,
+  fileName,
+  onClose,
+}: {
+  editor: PdfEditorInstance;
+  fileName: string;
+  onClose: () => void;
+}) {
+  const p = useI18n().t.protect;
+  const [password, setPassword] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mismatch = repeat.length > 0 && repeat !== password;
+
+  return (
+    <Dialog title={p.title} onClose={onClose}>
+      <form
+        className="feedback"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!password || password !== repeat) return;
+          setBusy(true);
+          setError(null);
+          track('download.protected');
+          editor
+            .download(fileName, { password })
+            .then(onClose, (err: unknown) => {
+              reportError(err);
+              setError(err instanceof Error ? err.message : String(err));
+            })
+            .finally(() => setBusy(false));
+        }}
+      >
+        <input
+          type="password"
+          autoFocus
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder={p.label}
+          aria-label={p.label}
+        />
+        <input
+          type="password"
+          autoComplete="new-password"
+          value={repeat}
+          onChange={(e) => setRepeat(e.target.value)}
+          placeholder={p.repeat}
+          aria-label={p.repeat}
+          aria-invalid={mismatch || undefined}
+        />
+        {mismatch && <p className="dialog__error">{p.mismatch}</p>}
+        <p className="dialog__note">{p.note}</p>
+        {error && <p className="dialog__error">{error}</p>}
+        <div className="modal__foot">
+          <button type="button" className="pill" onClick={onClose}>
+            {p.cancel}
+          </button>
+          <button type="submit" className="pill pill--ink" disabled={busy || !password || password !== repeat}>
+            <Icon name="lock" /> {busy ? p.running : p.download}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
