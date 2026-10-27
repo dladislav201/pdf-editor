@@ -1,6 +1,6 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, decodePDFRawStream } from 'pdf-lib';
 import { round } from '../geometry';
-import type { Annotation, Point, Rect } from '../types';
+import type { Annotation, Point, Quad, Rect } from '../types';
 import { componentsToHex, name, numbersOf, readBorderWidth, readDate, readNumber, readRect, readText } from './objects';
 import { IMAGE_SOURCE_KEY } from './write-annotations';
 
@@ -49,18 +49,30 @@ function boundingRect(rects: Rect[]): Rect {
   return { x, y, width: right - x, height: top - y };
 }
 
-/** The box of each quad (one per line of marked text) of a text markup annotation. */
-function quadBoxes(dict: PDFDict): Rect[] {
-  const quads = numbersOf(dict.lookupMaybe(name('QuadPoints'), PDFArray));
+/**
+ * The lines of a text markup annotation: the box of each quad, and the quads
+ * themselves when the text runs at an angle (a box would lose its direction).
+ */
+function markedLines(dict: PDFDict, rect: Rect): { rect: Rect; segments?: Rect[]; quads?: Quad[] } {
+  const values = numbersOf(dict.lookupMaybe(name('QuadPoints'), PDFArray));
   const boxes: Rect[] = [];
-  for (let i = 0; i + 8 <= quads.length; i += 8) {
-    const xs = [quads[i]!, quads[i + 2]!, quads[i + 4]!, quads[i + 6]!];
-    const ys = [quads[i + 1]!, quads[i + 3]!, quads[i + 5]!, quads[i + 7]!];
+  const quads: Quad[] = [];
+  for (let i = 0; i + 8 <= values.length; i += 8) {
+    const xs = [values[i]!, values[i + 2]!, values[i + 4]!, values[i + 6]!];
+    const ys = [values[i + 1]!, values[i + 3]!, values[i + 5]!, values[i + 7]!];
     const x = Math.min(...xs);
     const y = Math.min(...ys);
     boxes.push(roundRect({ x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }));
+    quads.push([0, 1, 2, 3].map((k) => [round(xs[k]!), round(ys[k]!)]) as Quad);
   }
-  return boxes;
+  if (!boxes.length) return { rect: roundRect(rect) };
+  // Upright when each quad's top edge is level and its sides are plumb.
+  const upright = quads.every(([a, b, c]) => Math.abs(a[1] - b[1]) < 0.5 && Math.abs(a[0] - c[0]) < 0.5);
+  return {
+    rect: roundRect(boundingRect(boxes)),
+    ...(boxes.length > 1 || !upright ? { segments: boxes } : {}),
+    ...(upright ? {} : { quads }),
+  };
 }
 
 function parseDefaultAppearance(da: string | undefined): { fontSize?: number; color?: string } {
@@ -110,25 +122,21 @@ function parseAnnotation(dict: PDFDict, pageIndex: number, fallbackId: string): 
 
   switch (subtype) {
     case 'Highlight': {
-      const segments = quadBoxes(dict);
       return {
         ...base,
         ...comment,
         type: 'highlight',
-        rect: roundRect(segments.length ? boundingRect(segments) : rect),
-        ...(segments.length > 1 ? { segments } : {}),
+        ...markedLines(dict, rect),
         opacity: readNumber(dict, 'CA') ?? appearanceOpacity(dict) ?? 1,
       };
     }
     case 'Underline':
     case 'StrikeOut': {
-      const segments = quadBoxes(dict);
       return {
         ...base,
         ...comment,
         type: subtype === 'Underline' ? 'underline' : 'strikeout',
-        rect: roundRect(segments.length ? boundingRect(segments) : rect),
-        ...(segments.length > 1 ? { segments } : {}),
+        ...markedLines(dict, rect),
       };
     }
     case 'Square': {

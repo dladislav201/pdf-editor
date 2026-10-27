@@ -272,7 +272,11 @@ the text of pages in sight is read as soon as one of these tools is on, and a
 press before it arrives waits for it). Paragraphs being edited are left out
 and pushed ones are marked where they now are. Off text, a highlight is a box
 drawn by hand; underline and strike-out mark nothing. Recognized (OCR) text
-of a scan is marked like any other.
+of a scan is marked like any other. A double click marks the word under it.
+Text that runs at an angle (a label up the side of a table, content turned
+on its page) is marked along its direction: such annotations keep `quads`,
+each line's turned box, written as they are to `/QuadPoints` and read back
+(also from other tools, which used to come in as upright boxes).
 
 ## PDF annotations
 
@@ -283,7 +287,7 @@ Quick Look) and pdf.js (Firefox); Acrobat and Chrome (PDFium) not yet tested.
 | Editor | PDF |
 |---|---|
 | highlight | `/Highlight` with `/QuadPoints` (one quad per line segment) |
-| underline, strikeout | `/Underline`, `/StrikeOut` with `/QuadPoints`; the line is 1/14 of the line's height, at its bottom or through lower-case letters |
+| underline, strikeout | `/Underline`, `/StrikeOut` with `/QuadPoints`; the line is 1/14 of the line's height, at its bottom or through lower-case letters, along the text |
 | rectangle | `/Square` with `/BS` |
 | ink | `/Ink` with `/InkList` |
 | text | `/FreeText` with `/DA`, text in the embedded `fontUrl` font |
@@ -600,12 +604,12 @@ of other PDFs; Apply changes rebuilds the document and keeps editing it.
 - Rich text (`/RC`) of FreeText annotations is read as plain `/Contents`;
   other markup types (squiggly, circle, line, polygon, sticky notes) are
   shown but not editable yet.
-- Marking text: boxes are upright, so rotated text isn't marked; a drag
-  selects glyph by glyph (no double click for a word); the marked text isn't
-  stored with the annotation.
+- Marking text: the marked text isn't stored with the annotation; text at an
+  angle near 45° is measured from its font size (its glyph boxes can't be
+  turned back exactly there).
 - Text model: two plain text lines without spacing (e.g. from a .txt) read as one
-  paragraph; bullets drawn as shapes are not part of the item's text; vertical
-  and rotated text is skipped.
+  paragraph; bullets drawn as shapes are not part of the item's text; text at
+  an angle is read (searched, marked) but can't be edited yet.
 - Text editing: the typeface list holds the page's fonts and three standard
   ones (no system or uploaded fonts); the live document isn't modified
   until save, so page text search/selection reflects the original (and the

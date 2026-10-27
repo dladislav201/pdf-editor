@@ -10,6 +10,13 @@ import type { TextParagraph } from './text/types';
  */
 export type Point = [x: number, y: number];
 
+/**
+ * Four corners of a piece of text that runs at an angle, in the order PDF
+ * quad points use: start and end of its top edge, then of its bottom edge
+ * (as the text reads).
+ */
+export type Quad = [topStart: Point, topEnd: Point, bottomStart: Point, bottomEnd: Point];
+
 /** Axis-aligned box in PDF user space; (x, y) is the bottom-left corner. */
 export interface Rect {
   x: number;
@@ -47,6 +54,8 @@ export interface HighlightAnnotation extends AnnotationBase {
    * from Acrobat and other viewers do. When absent, `rect` is the highlight.
    */
   segments?: Rect[];
+  /** For text at an angle: each line's turned box; `segments` are then their bounding boxes. */
+  quads?: Quad[];
   opacity: number;
 }
 
@@ -57,6 +66,8 @@ export interface TextLineAnnotation extends AnnotationBase {
   rect: Rect;
   /** The marked text's box on each line; when absent, `rect` is the only one. */
   segments?: Rect[];
+  /** For text at an angle: each line's turned box; `segments` are then their bounding boxes. */
+  quads?: Quad[];
 }
 
 export interface RectangleAnnotation extends AnnotationBase {

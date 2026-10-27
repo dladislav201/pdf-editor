@@ -1,6 +1,6 @@
 import fontkit from '@pdf-lib/fontkit';
 import { BlendMode, LineCapStyle, PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage } from 'pdf-lib';
-import { textBaselines, textLine, textLines } from './geometry';
+import { markLine, markQuads, textBaselines, textLines } from './geometry';
 import { hexToRgb } from './pdf/objects';
 import { encryptPdf } from './pdf/encrypt';
 import { fillForm, type FormValue } from './pdf/forms';
@@ -51,15 +51,22 @@ function flattenAnnotations(doc: PDFDocument, annotations: Annotation[], font: P
 
     switch (annotation.type) {
       case 'highlight':
-        for (const rect of annotation.segments ?? [annotation.rect]) {
-          page.drawRectangle({ ...rect, color, opacity: annotation.opacity, blendMode: BlendMode.Multiply });
+        for (const [a, b, c, d] of markQuads(annotation)) {
+          // drawSvgPath flips y (SVG is y-down), so feed it negated user-space y.
+          page.drawSvgPath(`${pathData([a, b, d, c].map(([x, y]) => [x, -y]))} Z`, {
+            x: 0,
+            y: 0,
+            color,
+            opacity: annotation.opacity,
+            blendMode: BlendMode.Multiply,
+          });
         }
         break;
       case 'underline':
       case 'strikeout':
-        for (const box of annotation.segments ?? [annotation.rect]) {
-          const { y, width } = textLine(annotation.type, box);
-          page.drawLine({ start: { x: box.x, y }, end: { x: box.x + box.width, y }, thickness: width, color });
+        for (const quad of markQuads(annotation)) {
+          const { from, to, width } = markLine(annotation.type, quad);
+          page.drawLine({ start: { x: from[0], y: from[1] }, end: { x: to[0], y: to[1] }, thickness: width, color });
         }
         break;
       case 'rectangle':

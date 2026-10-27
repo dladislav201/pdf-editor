@@ -105,7 +105,7 @@ describe('layout analysis', () => {
     expect(page.paragraphs[1]!.lines[0]!.size).toBeCloseTo(12, 1);
   });
 
-  it('reads invisible (OCR) text as recognized, ignores rotated text and marks text in form XObjects read-only', async () => {
+  it('reads invisible (OCR) text as recognized, rotated text along its direction, and marks text in form XObjects read-only', async () => {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const page = doc.addPage([400, 400]);
@@ -121,10 +121,23 @@ describe('layout analysis', () => {
     page.drawPage(embedded!, { x: 40, y: 200 });
 
     const result = analyze(await doc.save());
-    expect(result.paragraphs.map((p) => p.text)).toEqual(['Visible text', 'Invisible OCR layer', 'Inside a form']);
+    expect(result.paragraphs.map((p) => p.text)).toEqual(['Visible text', 'Invisible OCR layer', 'Inside a form', 'Rotated text']);
     expect(result.paragraphs[0]!.editable).toBe(true);
     expect(result.paragraphs[1]).toMatchObject({ editable: true, recognized: true });
     expect(result.paragraphs[2]).toMatchObject({ editable: false, reason: expect.stringContaining('form XObject') });
+    // Up the page: read in one line, its frame turned a quarter, its box tall and thin where it is drawn.
+    const rotated = result.paragraphs[3]!;
+    expect(rotated).toMatchObject({ editable: false, reason: expect.stringContaining('angle') });
+    expect(rotated.lines).toHaveLength(1);
+    const [line] = rotated.lines;
+    expect(line!.rotation!.angle).toBeCloseTo(Math.PI / 2, 2);
+    expect(line!.box.height).toBeGreaterThan(line!.box.width * 3);
+    expect(line!.box.x).toBeGreaterThan(280);
+    expect(line!.box.x + line!.box.width).toBeLessThan(304);
+    expect(line!.box.y).toBeCloseTo(100, 0);
+    // Its glyphs' straight boxes run left to right, one after the other.
+    const lefts = line!.chars.map((c) => c.straight!.x);
+    expect([...lefts].sort((a, b) => a - b)).toEqual(lefts);
   });
 
   it('marks paragraphs that share a page object with other text as read-only', async () => {

@@ -463,11 +463,63 @@ function recognizedParagraphs(raw: RawPageText): { paragraphs: TextParagraph[]; 
   };
 }
 
+/** Angles closer than this read as one direction of text. */
+const SAME_ANGLE = 0.05;
+
+/**
+ * Visible text that runs at an angle: each direction is set straight, read
+ * into lines and paragraphs like upright text, and put back where it is,
+ * each line keeping its straightened frame (`TextLine.rotation`) so a drag
+ * across it can mark it along its direction. It can't be edited yet.
+ */
+function rotatedParagraphs(raw: RawPageText): TextParagraph[] {
+  const groups: { angle: number; chars: RawChar[] }[] = [];
+  for (const c of raw.chars) {
+    if (c.invisible || isHorizontal(c.angle)) continue;
+    // PDFium measures char angles clockwise; user space turns counterclockwise.
+    const angle = -normalAngle(c.angle);
+    const group = groups.find((g) => Math.abs(g.angle - angle) < SAME_ANGLE);
+    if (group) group.chars.push(c);
+    else groups.push({ angle, chars: [c] });
+  }
+  return groups.flatMap(({ angle, chars }) => {
+    const cos = Math.abs(Math.cos(angle));
+    const sin = Math.abs(Math.sin(angle));
+    const straight = chars.map((c) => {
+      // The glyph's own width and height from the box around it turned (W = w·cos + h·sin, H = w·sin + h·cos);
+      // near 45° that can't be solved, so the height comes from the font size there.
+      const { width: W, height: H } = c.box;
+      const det = cos * cos - sin * sin;
+      let w = Math.abs(det) > 0.2 ? (W * cos - H * sin) / det : 0;
+      let h = Math.abs(det) > 0.2 ? (H * cos - W * sin) / det : c.size * 1.15;
+      if (!(Math.abs(det) > 0.2)) w = Math.max(0.1, (W - h * sin) / Math.max(cos, 0.01));
+      w = Math.max(0.1, w);
+      h = Math.max(0.1, h);
+      const [cx, cy] = rotatePoint(c.box.x + W / 2, c.box.y + H / 2, -angle);
+      const [x, y] = rotatePoint(c.x, c.y, -angle);
+      return { ...c, x, y, box: { x: cx - w / 2, y: cy - h / 2, width: w, height: h }, angle: 0 };
+    });
+    return layoutChars(raw, straight).paragraphs.map((paragraph) => ({
+      ...paragraph,
+      box: rotateRect(paragraph.box, angle),
+      lines: paragraph.lines.map((line) => {
+        const lineChars = line.chars.map((c) => {
+          const [x, y] = rotatePoint(c.x, c.y, angle);
+          return { ...c, x, y, box: rotateRect(c.box, angle), straight: c.box };
+        });
+        return { ...line, chars: lineChars, box: rotateRect(line.box, angle), baseline: lineChars[0]!.y, rotation: { angle, box: line.box } };
+      }),
+      editable: false,
+      reason: 'Text that runs at an angle can’t be edited yet.',
+    }));
+  });
+}
+
 export function analyzePage(raw: RawPageText): PageText {
   const visible = raw.chars.filter((c) => !c.invisible && isHorizontal(c.angle));
   const { paragraphs: drawn, margins } = layoutChars(raw, visible);
   const recognized = recognizedParagraphs(raw);
-  const paragraphs = [...drawn, ...recognized.paragraphs]
+  const paragraphs = [...drawn, ...rotatedParagraphs(raw), ...recognized.paragraphs]
     .sort((a, b) => top(b.box) - top(a.box) || a.box.x - b.box.x)
     .map((paragraph, i) => ({ ...paragraph, id: `p${raw.pageIndex}-${i}` }));
   // A scan has no drawn text: its text block is that of the recognized text.

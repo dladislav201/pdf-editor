@@ -30,6 +30,7 @@ export type {
   TextLineAnnotation,
   InkAnnotation,
   Point,
+  Quad,
   Rect,
   CompressLevel,
   PageSource,

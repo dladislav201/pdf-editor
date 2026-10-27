@@ -42,6 +42,8 @@ export interface TextChar {
   isSpace: boolean;
   /** A hyphen at the end of a line, possibly inserted by hyphenation. */
   lineEndHyphen: boolean;
+  /** For text that runs at an angle: the glyph's box in its line's straightened frame (see `TextLine.rotation`). */
+  straight?: Rect;
   /**
    * The glyph's ink, for invisible (recognized) text only: there the glyph is
    * stretched over a word of the scan, so its ink box is where the scan's ink is.
@@ -76,6 +78,13 @@ export interface TextLine {
   /** Dominant visible font size. */
   size: number;
   box: Rect;
+  /**
+   * Text that runs at an angle (a label up the side of a table, a page turned
+   * in its content): its direction, counterclockwise from the x axis in
+   * radians, and its box in the frame turned back by it (about the origin),
+   * where its glyphs' `straight` boxes are. `box` is then the bounding box.
+   */
+  rotation?: { angle: number; box: Rect };
 }
 
 export type TextAlign = 'left' | 'right' | 'center' | 'justify';

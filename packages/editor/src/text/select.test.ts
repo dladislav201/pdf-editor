@@ -2,19 +2,21 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { init } from '@embedpdf/pdfium';
+import { PDFDocument, StandardFonts, degrees } from 'pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PdfiumDocument, initLibrary } from '../engine/pdfium-core';
 import type { Point } from '../types';
 import { analyzePage } from './analyze';
-import { nearestPosition, positionAt, selectableLines, selection } from './select';
+import { nearestPosition, positionAt, selectableLines, selection, wordAt } from './select';
 import type { PageText, TextLine } from './types';
 
 const require = createRequire(import.meta.url);
 const wasm = readFileSync(join(dirname(require.resolve('@embedpdf/pdfium')), 'pdfium.wasm'));
 let page: PageText;
+let lib: ReturnType<typeof initLibrary>;
 
 beforeAll(async () => {
-  const lib = initLibrary(await init({ wasmBinary: wasm }));
+  lib = initLibrary(await init({ wasmBinary: wasm }));
   const doc = new PdfiumDocument(lib, new Uint8Array(readFileSync(new URL('../../test/fixtures/chrome-contract.pdf', import.meta.url))));
   try {
     page = analyzePage(doc.extractText(0));
@@ -84,5 +86,54 @@ describe('selecting page text by dragging', () => {
     expect(positionAt(pushed, [point[0], point[1] - 30])).toEqual({ line: 0, at: 0 });
     const { rects } = selection(pushed, { line: 0, at: 0 }, { line: 0, at: 1 });
     expect(rects[0]!.y).toBeCloseTo(line.chars[0]!.box.y - 30, 3);
+  });
+
+  it('takes the whole word under a double click', () => {
+    const lines = selectableLines(page);
+    const index = lines.findIndex((l) => l.line.wordStarts.length >= 3);
+    const line = lines[index]!.line;
+    const second = line.wordStarts[1]!;
+    // Inside the second word's second glyph.
+    const word = wordAt(lines, edge(line, second + 1, 'left'))!;
+    expect(word).toEqual([
+      { line: index, at: second },
+      { line: index, at: line.wordStarts[2]! },
+    ]);
+    expect(selection(lines, ...word).text).toBe(line.text.split(' ')[1]);
+    expect(wordAt(lines, [2, 2])).toBeNull();
+  });
+
+  it('marks text up the side of a page along its direction', async () => {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const sheet = pdf.addPage([400, 400]);
+    sheet.drawText('Upright text', { x: 40, y: 350, size: 12, font });
+    sheet.drawText('Label going up', { x: 300, y: 100, size: 12, font, rotate: degrees(90) });
+    const doc = new PdfiumDocument(lib, await pdf.save());
+    let turned: PageText;
+    try {
+      turned = analyzePage(doc.extractText(0));
+    } finally {
+      doc.close();
+    }
+    const lines = selectableLines(turned);
+    const index = lines.findIndex((l) => l.line.text === 'Label going up');
+    const line = lines[index]!.line;
+    // A point on "going": up the page from the label's start, just left of its baseline.
+    const word = wordAt(lines, [300 - 4, 100 + line.rotation!.box.width * 0.5])!;
+    const picked = selection(lines, ...word);
+    expect(picked.text).toBe('going');
+    const [quad] = picked.quads;
+    const [topStart, topEnd, bottomStart, bottomEnd] = quad!;
+    // Along the text is up the page; its top is to the left.
+    expect(topEnd[1] - topStart[1]).toBeGreaterThan(20);
+    expect(bottomEnd[1] - bottomStart[1]).toBeCloseTo(topEnd[1] - topStart[1], 3);
+    expect(topStart[0]).toBeLessThan(bottomStart[0] - 8);
+    expect(bottomStart[0]).toBeCloseTo(300 + 2.7, 0);
+    expect(picked.rects[0]!.height).toBeCloseTo(topEnd[1] - topStart[1], 3);
+    // A drag from below the label to above it takes the whole label.
+    const start = positionAt(lines, [296, 101])!;
+    const end = nearestPosition(lines, [296, 300])!;
+    expect(selection(lines, start, end).text).toBe('Label going up');
   });
 });

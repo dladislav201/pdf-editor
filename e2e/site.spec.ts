@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, StandardFonts, degrees } from 'pdf-lib';
 import { readFormFields } from '../packages/editor/src/pdf/forms';
 import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfParagraphs, pdfText, waitForApp } from './helpers';
 
@@ -184,6 +184,19 @@ test('sets a word in another size and font', async ({ page }) => {
   expect(opening.text).toContain('"Parties". Signed.');
 });
 
+/** Each text markup annotation of a saved PDF's first page: its type and its quads as [x, y] corners. */
+async function marks(bytes: Uint8Array): Promise<{ subtype: string; quads: [number, number][][] }[]> {
+  const doc = await PDFDocument.load(bytes);
+  const annots = doc.getPage(0).node.Annots();
+  return Array.from({ length: annots?.size() ?? 0 }, (_, i) => {
+    const dict = annots!.lookup(i, PDFDict);
+    const values = dict.lookup(PDFName.of('QuadPoints'), PDFArray).asArray().map((n) => (n as PDFNumber).asNumber());
+    const quads = [];
+    for (let q = 0; q + 8 <= values.length; q += 8) quads.push([0, 1, 2, 3].map((k) => [values[q + k * 2]!, values[q + k * 2 + 1]!] as [number, number]));
+    return { subtype: dict.lookup(PDFName.of('Subtype'), PDFName).decodeText(), quads };
+  });
+}
+
 test('highlights, underlines and strikes out text by dragging across it', async ({ page, isMobile }) => {
   await openSample(page, 'A contract');
   const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
@@ -205,29 +218,61 @@ test('highlights, underlines and strikes out text by dragging across it', async 
   await page.getByRole('button', { name: 'Strike out' }).click();
   await drag([0.115, 0.372], [0.38, 0.372]);
 
-  const doc = await PDFDocument.load(await download(page));
-  const annots = doc.getPage(0).node.Annots()!;
-  const marks = Array.from({ length: annots.size() }, (_, i) => {
-    const dict = annots.lookup(i, PDFDict);
-    const quads = dict.lookup(PDFName.of('QuadPoints'), PDFArray).asArray().map((n) => (n as PDFNumber).asNumber());
-    // Each quad as its left, right, bottom and top.
-    const lines = [];
-    for (let q = 0; q + 8 <= quads.length; q += 8) lines.push({ left: quads[q]!, right: quads[q + 2]!, bottom: quads[q + 5]!, top: quads[q + 1]! });
-    return { subtype: dict.lookup(PDFName.of('Subtype'), PDFName).decodeText(), lines };
-  });
-  expect(marks.map((m) => [m.subtype, m.lines.length])).toEqual([
+  // Each quad as its left, right, bottom and top.
+  const marked = (await marks(await download(page))).map(({ subtype, quads }) => ({
+    subtype,
+    lines: quads.map(([top, end, bottom]) => ({ left: top![0], right: end![0], bottom: bottom![1], top: top![1] })),
+  }));
+  expect(marked.map((m) => [m.subtype, m.lines.length])).toEqual([
     ['Highlight', 3],
     ['Underline', 1],
     ['StrikeOut', 1],
   ]);
-  const [first, middle, last] = marks[0]!.lines;
+  const [first, middle, last] = marked[0]!.lines;
   // Line by line, each about as high as the text: the first starts mid-line, the middle one is whole, the last stops mid-line.
-  for (const line of marks[0]!.lines) expect(line.top - line.bottom).toBeGreaterThan(8);
+  for (const line of marked[0]!.lines) expect(line.top - line.bottom).toBeGreaterThan(8);
   expect(first!.left).toBeGreaterThan(middle!.left + 100);
   expect(last!.right).toBeLessThan(middle!.right - 100);
   expect(first!.bottom).toBeGreaterThan(middle!.top - 3);
-  expect(marks[1]!.lines[0]!.right - marks[1]!.lines[0]!.left).toBeGreaterThan(300);
-  expect(marks[2]!.lines[0]!.right - marks[2]!.lines[0]!.left).toBeLessThan(200);
+  expect(marked[1]!.lines[0]!.right - marked[1]!.lines[0]!.left).toBeGreaterThan(300);
+  expect(marked[2]!.lines[0]!.right - marked[2]!.lines[0]!.left).toBeLessThan(200);
+});
+
+test('marks a whole word with a double click, and text that runs up the page along it', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'Highlight' }).click();
+  const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
+  // "Services" in the opening paragraph.
+  await page.mouse.dblclick(box.x + box.width * 0.262, box.y + box.height * 0.2015);
+  const [word] = await marks(await download(page));
+  const [topStart, topEnd, bottomStart] = word!.quads[0]!;
+  expect(word!.subtype).toBe('Highlight');
+  expect(topEnd![0] - topStart![0]).toBeGreaterThan(25);
+  expect(topEnd![0] - topStart![0]).toBeLessThan(60);
+  expect(topStart![1] - bottomStart![1]).toBeGreaterThan(8);
+
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const sheet = pdf.addPage([400, 400]);
+  sheet.drawText('Upright text', { x: 40, y: 350, size: 12, font });
+  sheet.drawText('Label going up', { x: 300, y: 100, size: 12, font, rotate: degrees(90) });
+  await openFile(page, 'Label.pdf', await pdf.save());
+  await page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'Highlight' }).click();
+  const sheetBox = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
+  const at = (x: number, y: number) => [sheetBox.x + (sheetBox.width * x) / 400, sheetBox.y + (sheetBox.height * (400 - y)) / 400] as const;
+  // From the label's start up past its end, just left of its baseline.
+  await page.mouse.move(...at(296, 101));
+  await page.mouse.down();
+  await page.mouse.move(...at(296, 260), { steps: 6 });
+  await page.mouse.up();
+  const [label] = await marks(await download(page));
+  const [top, end, bottom, bottomEnd] = label!.quads[0]!;
+  expect(label!.subtype).toBe('Highlight');
+  // Along the text is up the page; its top edge is to the left of its bottom edge.
+  expect(end![1] - top![1]).toBeGreaterThan(70);
+  expect(bottomEnd![1] - bottom![1]).toBeGreaterThan(70);
+  expect(bottom![0] - top![0]).toBeGreaterThan(8);
+  expect(Math.abs(end![0] - top![0])).toBeLessThan(0.5);
 });
 
 test('opens a password-protected PDF after asking for its password', async ({ page }) => {

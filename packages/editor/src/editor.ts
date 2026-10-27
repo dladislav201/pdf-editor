@@ -2,7 +2,7 @@ import { EngineClient } from './engine/client';
 import { PageGeometry } from './engine/page-geometry';
 import { Emitter } from './events';
 import { exportPdf, type ExportOptions } from './export';
-import { TEXT_ASCENT, TEXT_LINE_HEIGHT, hitTest, rectFromPoints, round, translate } from './geometry';
+import { TEXT_ASCENT, TEXT_LINE_HEIGHT, hitTest, rectFromPoints, rectQuad, round, translate } from './geometry';
 import { History } from './history';
 import { shortcutKey } from './keys';
 import type { ScanInfo, ScanPatch } from './engine/pdfium-core';
@@ -36,7 +36,7 @@ import { buildWritePlan, type TextWritePlan } from './text/write-plan';
 import { searchPage, type SearchMatch, type SearchOptions } from './text/search';
 import type { StyledChar } from './text/layout';
 import { pushDown, type PushItem } from './text/push';
-import { nearestPosition, positionAt, selectableLines, selection, type SelectableLine, type TextPosition } from './text/select';
+import { nearestPosition, positionAt, selectableLines, selection, wordAt, type SelectableLine, type TextPosition } from './text/select';
 import type { ObjectMove, PageText, TextParagraph } from './text/types';
 import { createToolbar } from './toolbar';
 import type {
@@ -48,6 +48,7 @@ import type {
   EditorOptions,
   PageSource,
   Point,
+  Quad,
   RecognizeOptions,
   Rect,
   TextAnnotation,
@@ -102,6 +103,8 @@ type Interaction =
       lines: SelectableLine[] | null;
       anchor: TextPosition | null;
       focus: TextPosition | null;
+      /** A word marked by a double click: it stays whole unless the pointer moves off the spot. */
+      word?: boolean;
     }
   | { kind: 'ink'; view: PageView; points: Point[] }
   | { kind: 'move'; view: PageView; id: string; start: Point; before: Annotation[]; moved: boolean }
@@ -333,6 +336,8 @@ export class PdfEditor {
   private zoom = 1;
   private pageIndex = 0;
   private interaction: Interaction | null = null;
+  /** The last press of a text markup tool, to tell a double click (pointer events don't count clicks). */
+  private lastMarkupPress = { time: -Infinity, x: 0, y: 0 };
   private textEditor: TextEditorState | null = null;
   private loadToken = 0;
   private scrollFrame = 0;
@@ -1319,13 +1324,18 @@ export class PdfEditor {
   private buildMarkup(interaction: Extract<Interaction, { kind: 'markup' }>): Annotation | null {
     const { lines, anchor, focus } = interaction;
     if (!lines || !anchor || !focus) return null;
-    const segments = selection(lines, anchor, focus).rects.map((r) => ({
+    const picked = selection(lines, anchor, focus);
+    const segments = picked.rects.map((r) => ({
       x: round(r.x),
       y: round(r.y),
       width: round(r.width),
       height: round(r.height),
     }));
     if (!segments.length) return null;
+    // Text at an angle is marked along it: every line as its turned box.
+    const quads = picked.quads.some(Boolean)
+      ? picked.quads.map((q, i) => (q ?? rectQuad(segments[i]!)).map(([x, y]) => [round(x), round(y)]) as Quad)
+      : null;
     const x = Math.min(...segments.map((r) => r.x));
     const y = Math.min(...segments.map((r) => r.y));
     const rect = {
@@ -1334,7 +1344,12 @@ export class PdfEditor {
       width: round(Math.max(...segments.map((r) => r.x + r.width)) - x),
       height: round(Math.max(...segments.map((r) => r.y + r.height)) - y),
     };
-    const base = { ...this.newAnnotationBase(interaction.view.index, interaction.tool), rect, ...(segments.length > 1 ? { segments } : {}) };
+    const base = {
+      ...this.newAnnotationBase(interaction.view.index, interaction.tool),
+      rect,
+      ...(segments.length > 1 || quads ? { segments } : {}),
+      ...(quads ? { quads } : {}),
+    };
     return interaction.tool === 'highlight' ? { ...base, type: 'highlight', opacity: 0.4 } : { ...base, type: interaction.tool };
   }
 
@@ -2111,6 +2126,16 @@ export class PdfEditor {
         // On text: mark it, glyph by glyph and line by line. Elsewhere a highlight is a box drawn by hand.
         const lines = this.markupLines(view.index);
         const anchor = lines && positionAt(lines, point);
+        // A second click on the same spot marks the word there.
+        const last = this.lastMarkupPress;
+        const double = event.timeStamp - last.time < 500 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 5;
+        this.lastMarkupPress = { time: double ? -Infinity : event.timeStamp, x: event.clientX, y: event.clientY };
+        const word = double && lines ? wordAt(lines, point) : null;
+        if (lines && word) {
+          this.interaction = { kind: 'markup', view, tool: this.tool, start: point, current: point, lines, anchor: word[0], focus: word[1], word: true };
+          this.drawMarkup(this.interaction, false);
+          break;
+        }
         if (lines && !anchor) {
           if (this.tool !== 'highlight') return;
           this.interaction = { kind: 'shape', view, tool: 'highlight', start: point, current: point };
@@ -2194,6 +2219,8 @@ export class PdfEditor {
         break;
       case 'markup':
         interaction.current = point;
+        if (interaction.word && Math.hypot(point[0] - interaction.start[0], point[1] - interaction.start[1]) < 4 / this.zoom) return;
+        interaction.word = false;
         this.drawMarkup(interaction);
         break;
       case 'ink': {
@@ -2280,10 +2307,10 @@ export class PdfEditor {
     }
   };
 
-  /** Draws a drag across text so far, following the pointer to the nearest line. */
-  private drawMarkup(interaction: Extract<Interaction, { kind: 'markup' }>): void {
+  /** Draws a drag across text so far, following the pointer to the nearest line (or as it is, for a word just double-clicked). */
+  private drawMarkup(interaction: Extract<Interaction, { kind: 'markup' }>, follow = true): void {
     if (!interaction.lines || !interaction.anchor) return;
-    interaction.focus = nearestPosition(interaction.lines, interaction.current) ?? interaction.focus;
+    if (follow) interaction.focus = nearestPosition(interaction.lines, interaction.current) ?? interaction.focus;
     const markup = this.buildMarkup(interaction);
     interaction.view.draft.replaceChildren(...(markup ? [annotationElement(markup)] : []));
   }

@@ -4,6 +4,7 @@ import {
   PDFHexString,
   PDFString,
   beginText,
+  closePath,
   concatTransformationMatrix,
   drawObject,
   endText,
@@ -29,8 +30,8 @@ import {
   type PDFOperator,
   type PDFPage,
 } from 'pdf-lib';
-import { TEXT_ASCENT, TEXT_LINE_HEIGHT, bounds, textBaselines, textLine, textLines } from '../geometry';
-import type { Annotation, Rect, TextAnnotation } from '../types';
+import { TEXT_ASCENT, TEXT_LINE_HEIGHT, bounds, markLine, markQuads, textBaselines, textLines } from '../geometry';
+import type { Annotation, Quad, Rect, TextAnnotation } from '../types';
 import { hexToComponents, name, pdfDate, rectToArray } from './objects';
 
 /** `/F 4`: print the annotation together with the page. */
@@ -52,9 +53,8 @@ function textBox(annotation: TextAnnotation, font: PDFFont): Rect {
   return { x, y: top - height, width, height };
 }
 
-/** Quad points in the order Acrobat writes them: top-left, top-right, bottom-left, bottom-right. */
-const quadPoints = (segments: Rect[]) =>
-  segments.flatMap(({ x, y, width, height }) => [x, y + height, x + width, y + height, x, y, x + width, y]);
+/** Quad points in the order Acrobat writes them: top-left, top-right, bottom-left, bottom-right (as the text runs). */
+const quadPoints = (quads: Quad[]) => quads.flat(2);
 
 /** Key of the stream with a picture's original file, so the editor can read it back as it was. */
 export const IMAGE_SOURCE_KEY = 'PDFSDKSource';
@@ -64,7 +64,7 @@ function build(annotation: Annotation, font: PDFFont | null, images: Map<string,
 
   switch (annotation.type) {
     case 'highlight': {
-      const segments = annotation.segments ?? [annotation.rect];
+      const quads = markQuads(annotation);
       return {
         subtype: 'Highlight',
         rect: annotation.rect,
@@ -72,29 +72,29 @@ function build(annotation: Annotation, font: PDFFont | null, images: Map<string,
           pushGraphicsState(),
           setGraphicsState('GS0'),
           setFillingRgbColor(r, g, b),
-          ...segments.map(({ x, y, width, height }) => rectangle(x, y, width, height)),
+          ...quads.flatMap(([a, b2, c, d]) => [moveTo(...a), lineTo(...b2), lineTo(...d), lineTo(...c), closePath()]),
           fill(),
           popGraphicsState(),
         ],
         // Multiply keeps the text under the highlight readable. Opacity lives in the
         // appearance itself: Preview and pdf.js ignore the annotation-level /CA.
         resources: { ExtGState: { GS0: { Type: 'ExtGState', BM: 'Multiply', ca: annotation.opacity } } },
-        extra: { QuadPoints: quadPoints(segments) },
+        extra: { QuadPoints: quadPoints(quads) },
       };
     }
     case 'underline':
     case 'strikeout': {
-      const segments = annotation.segments ?? [annotation.rect];
+      const quads = markQuads(annotation);
       const ops: PDFOperator[] = [setStrokingRgbColor(r, g, b)];
-      for (const box of segments) {
-        const { y, width } = textLine(annotation.type, box);
-        ops.push(setLineWidth(width), moveTo(box.x, y), lineTo(box.x + box.width, y), stroke());
+      for (const quad of quads) {
+        const { from, to, width } = markLine(annotation.type, quad);
+        ops.push(setLineWidth(width), moveTo(...from), lineTo(...to), stroke());
       }
       return {
         subtype: annotation.type === 'underline' ? 'Underline' : 'StrikeOut',
         rect: annotation.rect,
         appearance: ops,
-        extra: { QuadPoints: quadPoints(segments) },
+        extra: { QuadPoints: quadPoints(quads) },
       };
     }
     case 'rectangle': {

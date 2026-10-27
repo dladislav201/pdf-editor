@@ -61,6 +61,25 @@ const sample: Annotation[] = [
     ],
   },
   { ...base, id: 'x1', pageIndex: 0, color: '#ef4444', type: 'strikeout', rect: { x: 60, y: 600, width: 140, height: 15 } },
+  // Text up the side of the page: its quad turned a quarter, its box the bounding box.
+  {
+    ...base,
+    id: 'h2',
+    pageIndex: 0,
+    color: '#22c55e',
+    type: 'highlight',
+    rect: { x: 488, y: 100, width: 14, height: 80 },
+    segments: [{ x: 488, y: 100, width: 14, height: 80 }],
+    quads: [
+      [
+        [488, 100],
+        [488, 180],
+        [502, 100],
+        [502, 180],
+      ],
+    ],
+    opacity: 0.4,
+  },
   { ...base, id: 'r1', pageIndex: 0, color: '#ef4444', type: 'rectangle', rect: { x: 50, y: 400, width: 200, height: 100 }, strokeWidth: 2 },
   {
     ...base,
@@ -111,7 +130,7 @@ describe('PDF annotations', () => {
 
   it('writes standard annotation objects with appearance streams', async () => {
     const saved = await exportPdf(await blankPdf(), sample, { fontBytes });
-    expect(await annotationSubtypes(saved, 0)).toEqual(['Highlight', 'Underline', 'StrikeOut', 'Square']);
+    expect(await annotationSubtypes(saved, 0)).toEqual(['Highlight', 'Underline', 'StrikeOut', 'Highlight', 'Square']);
     expect(await annotationSubtypes(saved, 1)).toEqual(['Ink', 'FreeText', 'Stamp']);
 
     const doc = await PDFDocument.load(saved);

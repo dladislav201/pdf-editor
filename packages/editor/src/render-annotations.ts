@@ -1,4 +1,4 @@
-import { bounds, textBaselines, textLine, textLines, type MeasureText } from './geometry';
+import { bounds, markLine, markQuads, textBaselines, textLines, type MeasureText } from './geometry';
 import type { PageView } from './page-view';
 import type { Annotation, Point } from './types';
 
@@ -24,17 +24,17 @@ export function annotationElement(annotation: Annotation): SVGElement {
     case 'highlight': {
       // One group with group opacity, so overlapping line boxes don't darken where they touch.
       const group = svg('g', { class: 'pdfsdk-highlight', fill: annotation.color, opacity: annotation.opacity });
-      for (const { x, y, width, height } of annotation.segments ?? [annotation.rect]) {
-        group.append(svg('rect', { x, y, width, height }));
+      for (const [a, b, c, d] of markQuads(annotation)) {
+        group.append(svg('polygon', { points: [a, b, d, c].map((p) => p.join(',')).join(' ') }));
       }
       return group;
     }
     case 'underline':
     case 'strikeout': {
       const group = svg('g', { stroke: annotation.color });
-      for (const box of annotation.segments ?? [annotation.rect]) {
-        const { y, width } = textLine(annotation.type, box);
-        group.append(svg('line', { x1: box.x, y1: y, x2: box.x + box.width, y2: y, 'stroke-width': width }));
+      for (const quad of markQuads(annotation)) {
+        const { from, to, width } = markLine(annotation.type, quad);
+        group.append(svg('line', { x1: from[0], y1: from[1], x2: to[0], y2: to[1], 'stroke-width': width }));
       }
       return group;
     }

@@ -1,4 +1,4 @@
-import type { Annotation, Point, Rect, TextAnnotation } from './types';
+import type { Annotation, HighlightAnnotation, Point, Quad, Rect, TextAnnotation, TextLineAnnotation } from './types';
 
 /** Text layout shared by the viewer and the exporter so both put glyphs in the same place. */
 export const TEXT_LINE_HEIGHT = 1.25;
@@ -81,15 +81,30 @@ function distanceToSegment([px, py]: Point, [ax, ay]: Point, [bx, by]: Point): n
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+/** An upright box as a quad: top edge left to right, then the bottom edge. */
+export const rectQuad = ({ x, y, width, height }: Rect): Quad => [
+  [x, y + height],
+  [x + width, y + height],
+  [x, y],
+  [x + width, y],
+];
+
+/** Each line of marked text as a quad: turned ones as they are, upright ones from their boxes. */
+export const markQuads = (annotation: HighlightAnnotation | TextLineAnnotation): Quad[] =>
+  annotation.quads ?? (annotation.segments ?? [annotation.rect]).map(rectQuad);
+
+const along = (from: Point, to: Point, t: number): Point => [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t];
+
 /**
- * Where a line under or through text goes in a box of text (one segment):
- * how thick it is and the height of its middle. An underline sits at the
- * bottom of the box (below the descenders), a strike-out at the middle of
- * lower-case letters, as Acrobat draws them.
+ * Where a line under or through a piece of text (one quad) goes, and how
+ * thick it is: an underline at the bottom of the box (below the descenders),
+ * a strike-out through the middle of lower-case letters, as Acrobat draws them.
  */
-export function textLine(type: 'underline' | 'strikeout', box: Rect): { y: number; width: number } {
-  const width = Math.max(0.5, box.height / 14);
-  return { y: type === 'underline' ? box.y + width / 2 : box.y + box.height * 0.42, width };
+export function markLine(type: 'underline' | 'strikeout', [topStart, topEnd, bottomStart, bottomEnd]: Quad): { from: Point; to: Point; width: number } {
+  const height = Math.hypot(topStart[0] - bottomStart[0], topStart[1] - bottomStart[1]);
+  const width = Math.max(0.5, height / 14);
+  const t = type === 'underline' ? width / 2 / Math.max(height, 0.01) : 0.42;
+  return { from: along(bottomStart, topStart, t), to: along(bottomEnd, topEnd, t), width };
 }
 
 export function hitTest(annotation: Annotation, point: Point, tolerance: number, measure: MeasureText): boolean {
@@ -132,8 +147,13 @@ export function translate(annotation: Annotation, dx: number, dy: number): Annot
     case 'rectangle':
     case 'image': {
       const move = (rect: Rect): Rect => ({ ...rect, x: round(rect.x + dx), y: round(rect.y + dy) });
-      if ('segments' in annotation && annotation.segments) {
-        return { ...annotation, rect: move(annotation.rect), segments: annotation.segments.map(move) };
+      if ('segments' in annotation && (annotation.segments || annotation.quads)) {
+        return {
+          ...annotation,
+          rect: move(annotation.rect),
+          ...(annotation.segments ? { segments: annotation.segments.map(move) } : {}),
+          ...(annotation.quads ? { quads: annotation.quads.map((q) => q.map(([x, y]) => [round(x + dx), round(y + dy)]) as Quad) } : {}),
+        };
       }
       return { ...annotation, rect: move(annotation.rect) };
     }
