@@ -26,11 +26,14 @@ export class EngineClient {
   private readonly ready: Promise<unknown>;
   private nextId = 1;
   private terminated = false;
+  /** Set by the worker's first answer: an error before it means its code never loaded. */
+  private started = false;
 
   constructor(createWorker: () => Worker, wasmUrl: string, subsetWasmUrl: string) {
     this.worker = createWorker();
     this.worker.onmessage = (event: MessageEvent<EngineResponse>) => {
       const response = event.data;
+      this.started = true;
       const pending = this.pending.get(response.id);
       if (!pending) {
         // A late bitmap for a request we stopped waiting for: free it right away.
@@ -43,7 +46,9 @@ export class EngineClient {
     };
     this.worker.onerror = (event) => {
       event.preventDefault();
-      this.failAll(new Error(event.message || 'The PDF engine crashed.'));
+      // E.g. a page left open over a deploy asking for the old build's worker, which is gone.
+      if (!this.started) this.failAll(Object.assign(new Error('The PDF engine couldn’t load.'), { name: 'EngineLoadError' }));
+      else this.failAll(new Error(event.message || 'The PDF engine crashed.'));
     };
     this.ready = this.send({ type: 'init', wasmUrl, subsetWasmUrl }).promise;
     // Init failures surface through `open()`; an editor destroyed before

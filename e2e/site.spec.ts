@@ -141,6 +141,52 @@ test('a tab left open over a deploy reloads for the new code instead of failing'
   expect(errors).toEqual([]);
 });
 
+test('an editor opened or used over a deploy reloads for the new code, keeping the changes', async ({ page, browserName }) => {
+  test.setTimeout(60_000);
+  test.skip(browserName === 'webkit', 'the same address stands in for the new chunk');
+  const gone = async (pattern: string) => {
+    let failed = 0;
+    await page.route(pattern, (route) => (failed++ ? route.continue() : route.fulfill({ status: 404, body: 'gone' })));
+    return () => failed;
+  };
+  const errors: string[] = [];
+  page.on('request', (request) => request.url().includes('/api/errors') && errors.push(request.postData() ?? ''));
+  let loads = 0;
+  page.on('load', () => loads++);
+
+  // A file closed, a deploy, then another opened: the old build's engine worker is gone.
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Back to start' }).click();
+  const worker = await gone('**/assets/worker-*.js');
+  await page.getByRole('button', { name: 'A scanned invoice', exact: true }).click();
+  await expectPainted(page);
+  await expect(page.getByText('Scanned invoice.pdf').filter({ visible: true })).toBeVisible();
+  expect(worker()).toBe(2);
+  expect(loads).toBe(2);
+
+  // A change of the last second, then a part of the editor loaded only now (the text reader): kept before the reload.
+  await page.evaluate(() => sessionStorage.removeItem('lovelydoc.reloaded'));
+  const drawn = page.locator('.pdfsdk-page[data-page-index="0"] path');
+  const before = await drawn.count();
+  await page.getByRole('button', { name: 'Draw' }).click();
+  const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.55, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  const after = await drawn.count();
+  expect(after).toBeGreaterThan(before);
+  const reader = await gone('**/assets/src-*.js');
+  await page.getByRole('button', { name: 'Recognize text' }).click();
+  await expect.poll(() => loads).toBe(3);
+  await expectPainted(page);
+  await expect(drawn).toHaveCount(after);
+  // The reader was asked for and gone (after the reload the editor's own chunk, also "src-", loads too).
+  expect(reader()).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
 test('clears copies kept for tabs that were closed, and gives a reloaded tab its own copy', async ({ page }) => {
   await openSample(page, 'A contract');
   /** The tab ids of the files kept in this browser, after `change` ran on the store. */

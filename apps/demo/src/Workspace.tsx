@@ -11,6 +11,7 @@ import { FeedbackDialog } from './FeedbackDialog';
 import { PasswordDialog } from './PasswordDialog';
 import { useI18n, type Locale } from './i18n';
 import { keepOpen } from './session';
+import { reloadsFor, whenReloading } from './reload';
 
 const TOOLS: { tool: 'select' | 'editText' | 'highlight' | 'ink' | 'rectangle' | 'text'; icon: IconName; key: string }[] = [
   { tool: 'select', icon: 'cursor', key: 'V' },
@@ -236,7 +237,7 @@ export function Workspace({
       }),
       editor.on('error', ({ error }) => {
         // A save in the background that failed isn't the person's business: the next change tries again.
-        if (keeping.current) return;
+        if (keeping.current || reloadsFor(error)) return;
         if ((error as Error)?.name !== 'AbortError') setMessage(error instanceof Error ? error.message : String(error));
       }),
       editor.on('documentLoaded', async ({ pageCount }) => {
@@ -338,6 +339,8 @@ export function Workspace({
   // The document as it is now is kept in this browser a moment after each change (session.ts), so a
   // reload opens it with the changes. Not a file opened with its password: it would be kept decrypted.
   const keepTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** The keep waiting for its timer, if any. */
+  const keepNext = useRef<(() => Promise<void>) | undefined>(undefined);
   const keepVersion = useRef(0);
   const unkept = useRef(false);
   const changed = useRef(false);
@@ -352,8 +355,10 @@ export function Workspace({
     const version = ++keepVersion.current;
     clearTimeout(keepTimer.current);
     const keep = async () => {
+      keepNext.current = undefined;
       // A paragraph or a note being typed would be closed by the export: wait for it.
       if (editor.isEditing()) {
+        keepNext.current = keep;
         keepTimer.current = setTimeout(keep, 1000);
         return;
       }
@@ -368,9 +373,21 @@ export function Workspace({
         keeping.current = false;
       }
     };
+    keepNext.current = keep;
     keepTimer.current = setTimeout(keep, 1000);
   }, [editor, file, initialTool]);
   useEffect(() => () => clearTimeout(keepTimer.current), []);
+  // A reload for a new version keeps the last changes first, so they open again after it.
+  useEffect(() => {
+    if (!editor) return;
+    return whenReloading(async () => {
+      clearTimeout(keepTimer.current);
+      // Work under way ends in a moment, e.g. reading a scan that failed for the same reason. A
+      // paragraph still open stays open: the browser asks before the page goes.
+      for (let waited = 0; editor.isEditing() && waited < 2000; waited += 100) await new Promise((done) => setTimeout(done, 100));
+      await keepNext.current?.();
+    });
+  }, [editor]);
   // Leaving with something not kept yet (a paragraph still open, a change of the last second) asks first.
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -417,7 +434,10 @@ export function Workspace({
           ocrLanguages={OCR_LANGUAGES[locale]}
           getPassword={getPassword}
           onReady={setEditor}
-          onError={reportError}
+          onError={(error) => {
+            // Code gone after a deploy: the page reloads for the new one instead.
+            if (!reloadsFor(error)) reportError(error);
+          }}
           onFormChange={() => {
             if (!formTracked.current) track('form.fill');
             formTracked.current = true;

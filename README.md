@@ -149,8 +149,10 @@ The site is built for search as well as for use (`apps/demo`):
   after a deploy, so a page that asks for one (the editor, a language, a
   sample) reloads once and gets the new build instead of failing with
   "Failed to fetch dynamically imported module" (`src/reload.ts`, Vite's
-  `vite:preloadError`). A file just opened is kept before the reload and
-  opens again. A second failure within 10 seconds is a real error and is
+  `vite:preloadError`). So does the editor's: its PDF engine worker when a
+  file is opened after the deploy (the SDK reports an `EngineLoadError`), or
+  the text reader for a scan. A file just opened is kept before the reload
+  and opens again, and so are changes not kept yet. A second failure within 10 seconds is a real error and is
   reported; errors while reloading aren't.
 - **Brand**: LovelyDoc, a page with a heart. The name (`SITE.name`) is in
   titles, the top bar and the footer; the mark is `src/Logo.tsx` and

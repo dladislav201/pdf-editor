@@ -10,8 +10,11 @@ const AGAIN_AFTER = 10_000;
 
 let reloading = false;
 const waiting = new Set<Promise<unknown>>();
+const finishing = new Set<() => Promise<unknown>>();
 
-const isGoneChunk = (error: unknown) => GONE.test(error instanceof Error ? error.message : String(error));
+/** A chunk of the old build, or the editor's worker (the SDK names its error). */
+const isGoneChunk = (error: unknown) =>
+  (error instanceof Error && error.name === 'EngineLoadError') || GONE.test(error instanceof Error ? error.message : String(error));
 const never = <T>() => new Promise<T>(() => undefined);
 
 /** True once the page is reloading for a new version: errors until then are its own doing. */
@@ -21,6 +24,12 @@ export const isReloading = () => reloading;
 export function beforeReload(work: Promise<unknown>): void {
   waiting.add(work);
   void work.catch(() => undefined).finally(() => waiting.delete(work));
+}
+
+/** Runs `finish` when a reload for a new version starts and waits for it, e.g. keeping changes not kept yet. Returns the undo. */
+export function whenReloading(finish: () => Promise<unknown>): () => void {
+  finishing.add(finish);
+  return () => finishing.delete(finish);
 }
 
 /** Reloads the page unless it just did; true if it's reloading. */
@@ -33,7 +42,8 @@ function reloadOnce(): boolean {
     return false;
   }
   reloading = true;
-  void Promise.allSettled(waiting).then(() => location.reload());
+  const finished = [...finishing].map((finish) => Promise.resolve().then(finish));
+  void Promise.allSettled([...waiting, ...finished]).then(() => location.reload());
   return true;
 }
 
@@ -47,6 +57,14 @@ export function load<T>(importer: () => Promise<T>): Promise<T> {
       throw error;
     },
   );
+}
+
+/**
+ * For an error the editor reports: true when it comes from code that's gone (the
+ * page then reloads) or from the page already reloading. Either way, not shown.
+ */
+export function reloadsFor(error: unknown): boolean {
+  return reloading || (isGoneChunk(error) && reloadOnce());
 }
 
 // Vite's loading of a chunk and its dependencies (scripts and styles). Not when prerendering.
