@@ -18,4 +18,4 @@ migrations_dir = "migrations"
 # Audience (AUD) tag. Left empty, every request answers 404.
 [vars]
 ACCESS_TEAM = "damp-base-9244"
-ACCESS_AUD = ""
+ACCESS_AUD = "e08e946fa93f99e5006ef0009471bf9baccb629e11f3d3f4ad0bf5fca624e166"
