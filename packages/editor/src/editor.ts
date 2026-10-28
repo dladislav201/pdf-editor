@@ -625,11 +625,13 @@ export class PdfEditor {
   }
 
   /**
-   * Whether a paragraph or a note is open for typing. `exportPdf` closes it
-   * first, so an app saving in the background waits until this is false.
+   * Whether a paragraph or a note is open for typing, one is about to open
+   * (a click with Edit text, on a scan after reading it), or text is being
+   * recognized. `exportPdf` would close or cancel it, so an app saving in the
+   * background waits until this is false.
    */
   isEditing(): boolean {
-    return this.textSession !== null || this.textEditor !== null;
+    return this.textSession !== null || this.textEditor !== null || this.opening !== null || this.recognizing;
   }
 
   /** Exports and saves the PDF through the browser's download flow. */
