@@ -36,6 +36,7 @@ export const sv: Messages = {
   footer: {
     allTools: 'Alla verktyg',
     guides: 'Guider (engelska)',
+    sdk: 'PDF-SDK för utvecklare',
     privacy:
       'Ingen registrering, ingen uppladdning: filerna öppnas och sparas på din enhet. Vi räknar bara vilka verktyg som används, utan cookies.',
   },

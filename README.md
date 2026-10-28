@@ -198,7 +198,36 @@ so in one line.
 npm run stats      # uses per event, last 30 days
 npm run errors     # errors seen, last 30 days
 npm run feedback   # latest 50 notes
+npm run trials     # latest 50 trial key requests (SDK)
 ```
+
+**The SDK page** (`/sdk`, `src/Sdk.tsx`, English): what the SDK does, a few
+lines of code (JavaScript and React), prices to start the conversation
+with (`PLANS`, set by the owner) and a form asking for a 30-day trial key.
+`POST /api/trial` takes a name, a work email, a company, the host names the
+key should cover (checked: host names only, `*.` allowed, at most ten) and
+what they build, into the `trials` table; the dashboard lists them. Keys are
+sent by hand: `node scripts/license.mjs issue --customer "…" --domains "…"
+--plan trial --expires <30 days on>`. The page is prerendered for search
+(`SoftwareApplication` and `FAQPage` data) and linked from every footer.
+
+**Dashboard** at `/admin` (`apps/demo/worker/admin.ts`): page views, files
+opened and downloads per day, tools used, pages people land on, languages,
+how files are opened and saved, feedback and errors, for 7, 30, 90 or 365
+days. It is behind Cloudflare Access: the Worker checks the token Access
+signs for each request (RS256 by the team's keys, issuer, the application's
+audience, expiry) and answers 404 otherwise, or while `ACCESS_TEAM` and
+`ACCESS_AUD` in `wrangler.toml` are empty. The page shows feedback as text
+only and its content security policy runs nothing but its own script. To
+switch it on:
+
+1. Cloudflare dashboard › Zero Trust (the free plan): pick a team name; it
+   is the `<team>` of `<team>.cloudflareaccess.com`.
+2. Access › Applications › Add an application › Self-hosted: domain
+   `lovelydoc.com`, path `admin`; a policy that allows only your email
+   (sign-in with a one-time code by email is on by default).
+3. Copy the application's Audience (AUD) tag; put it and the team name in
+   `[vars]` in `apps/demo/wrangler.toml`, and deploy.
 
 `npm run deploy:demo` applies new migrations before deploying. Locally,
 `npx wrangler dev --local` in `apps/demo` (after a build and

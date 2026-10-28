@@ -36,6 +36,7 @@ export const de: Messages = {
   footer: {
     allTools: 'Alle Werkzeuge',
     guides: 'Anleitungen (Englisch)',
+    sdk: 'PDF-SDK für Entwickler',
     privacy:
       'Ohne Anmeldung, ohne Upload: Dateien werden auf Ihrem Gerät geöffnet und gespeichert. Wir zählen nur, welche Werkzeuge genutzt werden – ohne Cookies.',
   },

@@ -801,6 +801,34 @@ test('every page in the sitemap is plain HTML with its own title, heading and st
   expect(await (await request.get('/robots.txt')).text()).toContain('Sitemap:');
 });
 
+test('the SDK page is plain HTML for search, and its form asks for a trial key', async ({ page, request }, info) => {
+  if (info.project.name === 'chromium') {
+    const html = await (await request.get('/sdk')).text();
+    expect(html).toContain('<h1>A PDF editor for your web app.</h1>');
+    expect(html).toContain('"@type":"SoftwareApplication"');
+    expect(await (await request.get('/robots.txt')).text()).toContain('Disallow: /admin');
+  }
+  // The Worker isn't in the preview: answer for it, and see what the form sends.
+  const sent: unknown[] = [];
+  await page.route('**/api/trial', async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({ status: sent.length === 1 ? 400 : 204 });
+  });
+  await gotoApp(page, '/sdk');
+  await page.getByRole('link', { name: 'Get a trial key' }).click();
+  await page.getByLabel('Your name').fill('Jane Doe');
+  await page.getByLabel('Work email').fill('jane@acme.com');
+  await page.getByLabel('Company').fill('Acme');
+  await page.getByLabel('Domains the key should cover').fill('app.acme.com');
+  await page.getByLabel('What are you building?').fill('Contracts in our CRM');
+  // Turned away (say, a domain it can't take): it says so, and keeps what was typed.
+  await page.getByRole('button', { name: 'Request a trial key' }).click();
+  await expect(page.getByText('That didn’t go through.')).toBeVisible();
+  await page.getByRole('button', { name: 'Request a trial key' }).click();
+  await expect(page.getByText('We’ll send your key to jane@acme.com')).toBeVisible();
+  expect(sent[1]).toEqual({ name: 'Jane Doe', email: 'jane@acme.com', company: 'Acme', domains: 'app.acme.com', message: 'Contracts in our CRM', website: '' });
+});
+
 test('a tool page opens its tool', async ({ page }) => {
   const bytes = await longPdf(1);
   await gotoApp(page, '/compress-pdf');

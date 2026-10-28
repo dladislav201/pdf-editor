@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const { ALL_PAGES, LANDING_IDS, LOCALES, MESSAGES, POSTS, REGIONS, SITE, landingPath, renderPage, renderBlogIndex, renderPost } =
+const { ALL_PAGES, LANDING_IDS, LOCALES, MESSAGES, POSTS, REGIONS, SDK_FAQ, SITE, landingPath, renderPage, renderBlogIndex, renderPost, renderSdk } =
   await import(pathToFileURL('dist-ssr/entry-server.js').href);
 const template = readFileSync('dist/index.html', 'utf8');
 const escape = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -140,6 +140,34 @@ for (const post of posts) {
   write(path, html(renderPost(post), head({ path, title: post.title, description: post.description }, { article: true, data }), { isStatic: true }));
 }
 
+// The SDK's page for developers (English; its trial form runs, so it isn't a static page).
+{
+  const page = {
+    path: '/sdk',
+    title: 'PDF SDK for web apps: view, annotate and edit PDFs in the browser',
+    description:
+      'Add a PDF editor to your web app: real text editing, OCR, annotations, forms, signatures and pages, all in the browser with no server. Free 30-day trial key.',
+  };
+  const data = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: `${SITE.name} PDF SDK`,
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Web browser',
+      url: url('/sdk'),
+      offers: { '@type': 'Offer', price: '990', priceCurrency: 'USD' },
+      publisher,
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: SDK_FAQ.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+    },
+  ];
+  write('/sdk', html(renderSdk(), head(page, { data })));
+}
+
 // The sitemap lists each page with its versions in the other languages (and
 // x-default, as the pages do). Only guides have a date: a build's date would
 // claim every tool page changed on every deploy.
@@ -161,13 +189,14 @@ writeFileSync(
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',
     ...ALL_PAGES.map(({ id, path }) => entry(path, undefined, alternatesOf(id))),
+    entry('/sdk'),
     ...(posts.length ? [entry('/blog', posts[0].date)] : []),
     ...posts.map((post) => entry(`/blog/${post.slug}`, post.date)),
     '</urlset>',
     '',
   ].join('\n'),
 );
-writeFileSync('dist/robots.txt', `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${url('/sitemap.xml')}\n`);
+writeFileSync('dist/robots.txt', `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\n\nSitemap: ${url('/sitemap.xml')}\n`);
 
 rmSync('dist-ssr', { recursive: true, force: true });
 console.log(`prerendered ${ALL_PAGES.length} pages in ${LOCALES.length} languages, ${posts.length} guides, 404, sitemap.xml and robots.txt`);

@@ -4,6 +4,8 @@
 import { renderToString } from 'react-dom/server';
 import { BlogIndex, BlogPost } from './Blog';
 import { Home } from './Home';
+import { SdkPage } from './Sdk';
+export { SDK_FAQ } from './Sdk';
 import { I18nProvider, type Locale, type Messages } from './i18n';
 import { de } from './i18n/de';
 import { en } from './i18n/en';
@@ -37,3 +39,4 @@ const english = (node: React.ReactNode) =>
   );
 export const renderBlogIndex = (posts: Post[]) => english(<BlogIndex posts={posts} />);
 export const renderPost = (post: Post) => english(<BlogPost post={post} />);
+export const renderSdk = () => english(<SdkPage />);

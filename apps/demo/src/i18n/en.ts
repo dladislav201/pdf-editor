@@ -52,6 +52,7 @@ export const en = {
   footer: {
     allTools: 'All tools',
     guides: 'Guides',
+    sdk: 'PDF SDK for developers',
     privacy: 'No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.',
   },
   workspace: {

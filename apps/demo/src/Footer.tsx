@@ -3,7 +3,7 @@ import { Logo } from './Logo';
 import { LANDING_IDS, landingPath, SITE, type LandingId } from './site';
 
 /** Links to every tool page (in the page's language) and the guides: how people and search engines find the rest. */
-export function Footer({ current }: { current?: LandingId | 'blog' }) {
+export function Footer({ current }: { current?: LandingId | 'blog' | 'sdk' }) {
   const { locale, t } = useI18n();
   return (
     <footer className="footer">
@@ -13,6 +13,9 @@ export function Footer({ current }: { current?: LandingId | 'blog' }) {
             {t.landings[id].name}
           </a>
         ))}
+        <a href="/sdk" hrefLang="en" aria-current={current === 'sdk' ? 'page' : undefined}>
+          {t.footer.sdk}
+        </a>
         {__GUIDES__ && (
           <a href="/blog" hrefLang="en" aria-current={current === 'blog' ? 'page' : undefined}>
             {t.footer.guides}

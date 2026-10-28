@@ -14,7 +14,8 @@
     "test": "vitest run worker",
     "stats": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT name, SUM(count) AS uses FROM counts WHERE day >= date('now', '-30 day') GROUP BY name ORDER BY uses DESC\"",
     "errors": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT message, SUM(count) AS times, MAX(day) AS last FROM errors WHERE day >= date('now', '-30 day') GROUP BY message ORDER BY times DESC LIMIT 50\"",
-    "feedback": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT at, browser, email, message FROM feedback ORDER BY id DESC LIMIT 50\""
+    "feedback": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT at, browser, email, message FROM feedback ORDER BY id DESC LIMIT 50\"",
+    "trials": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT at, name, email, company, domains, message FROM trials ORDER BY id DESC LIMIT 50\""
   },
   "dependencies": {
     "@pdfsdk/editor": "0.1.0",

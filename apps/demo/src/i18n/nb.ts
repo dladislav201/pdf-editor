@@ -36,6 +36,7 @@ export const nb: Messages = {
   footer: {
     allTools: 'Alle verktøy',
     guides: 'Veiledninger (engelsk)',
+    sdk: 'PDF-SDK for utviklere',
     privacy:
       'Ingen registrering, ingen opplasting: filene åpnes og lagres på enheten din. Vi teller bare hvilke verktøy som brukes, uten informasjonskapsler.',
   },

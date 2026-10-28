@@ -16,7 +16,8 @@
     "e2e": "playwright test",
     "stats": "npm run stats -w apps/demo --silent",
     "errors": "npm run errors -w apps/demo --silent",
-    "feedback": "npm run feedback -w apps/demo --silent"
+    "feedback": "npm run feedback -w apps/demo --silent",
+    "trials": "npm run trials -w apps/demo --silent"
   },
   "engines": {
     "node": ">=22.13"
