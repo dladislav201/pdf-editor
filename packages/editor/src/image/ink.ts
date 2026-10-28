@@ -116,8 +116,18 @@ function paper(image: Raster): Float32Array[] {
 }
 
 /** Reads a photo for `liftInk`: done once, then lifting with other settings is quick. */
-export function readInk(image: Raster): InkPhoto {
-  const { width, height, rgba } = image;
+export function readInk(source: Raster): InkPhoto {
+  // A picture with transparency (a signature already cut out) is paper where it is transparent:
+  // laid on white first, as it would look printed.
+  const { width, height } = source;
+  const rgba = new Uint8ClampedArray(source.rgba);
+  for (let i = 0; i < rgba.length; i += 4) {
+    const a = rgba[i + 3]! / 255;
+    if (a === 1) continue;
+    for (let c = 0; c < 3; c++) rgba[i + c] = rgba[i + c]! * a + 255 * (1 - a);
+    rgba[i + 3] = 255;
+  }
+  const image: Raster = { width, height, rgba };
   const [pr, pg, pb] = paper(image);
   const darkness = new Float32Array(width * height);
   const color = new Uint8ClampedArray(width * height * 3);

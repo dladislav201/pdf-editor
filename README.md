@@ -131,9 +131,14 @@ The site is built for search as well as for use (`apps/demo`):
 - **A reload keeps the file open**: the file a tab opens is kept in this
   browser (IndexedDB, `src/session.ts`, keyed by a per-tab id in
   sessionStorage) and opened again after a reload, the start page hidden
-  meanwhile; going back to the start page removes it, and copies left by
-  closed tabs go after a day. Edits aren't kept: with changes not downloaded
-  the browser asks before the page reloads or closes.
+  meanwhile (only on a reload or Back, not when the address is opened
+  afresh). It keeps the tool it opened in, not one-off actions (reading a
+  scan, a dialog). Going back to the start page removes it; a tab marks its
+  copy alive every 5 minutes, and any page of the site clears copies nobody
+  marked for half an hour (closed tabs'). A restored tab moves its copy to a
+  new id, so a duplicated tab gets its own. Edits aren't kept: with changes
+  not downloaded (undoable ones, form entries, rearranged pages) the browser
+  asks before the page reloads or closes.
 - **Brand**: LovelyDoc, a page with a heart. The name (`SITE.name`) is in
   titles, the top bar and the footer; the mark is `src/Logo.tsx` and
   `public/favicon.svg`. PNG icons and `public/og.png` (1200×630) are drawn
@@ -282,7 +287,10 @@ and pushed ones are marked where they now are. Off text, a highlight is a box
 drawn by hand; underline and strike-out mark nothing. Recognized (OCR) text
 of a scan is marked like any other. A double click marks the word under it.
 Text that runs at an angle (a label up the side of a table, content turned
-on its page) is marked along its direction: such annotations keep `quads`,
+on its page) is marked along its direction (it is hit-tested by its own
+lines, not its bounding box, so a watermark across the page doesn't get in
+the way of the text under it, and growing text doesn't push it): such
+annotations keep `quads`,
 each line's turned box, written as they are to `/QuadPoints` and read back
 (also from other tools, which used to come in as upright boxes).
 

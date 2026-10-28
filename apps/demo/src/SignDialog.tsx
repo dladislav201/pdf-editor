@@ -119,6 +119,7 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
   const [font, setFont] = useState(0);
   const [drawn, setDrawn] = useState(false);
   const [photo, setPhoto] = useState<InkPhoto | null>(null);
+  const [photoError, setPhotoError] = useState(false);
   const [strength, setStrength] = useState(0.5);
   // The photo's own colours (a stamp stays blue), or one ink.
   const [photoInk, setPhotoInk] = useState<string | null>(null);
@@ -283,11 +284,20 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   e.target.value = '';
-                  if (file) setPhoto(await readPhoto(file));
+                  if (!file) return;
+                  // A format the browser can't draw (HEIC on a desktop, say) says so instead of doing nothing.
+                  try {
+                    setPhoto(await readPhoto(file));
+                    setPhotoError(false);
+                  } catch {
+                    setPhotoError(true);
+                  }
                 }}
               />
               {photo ? (
                 <>
+                  {/* Phones have no preview beside the dialog: the result shows here, on a checkerboard. */}
+                  {uploaded && <img className="sign-upload__preview narrow-only" src={uploaded.src} alt="" />}
                   <label className="sign-upload__strength">
                     <span>{s.cleanup}</span>
                     <input type="range" min={0} max={1} step={0.05} value={strength} onChange={(e) => setStrength(Number(e.target.value))} />
@@ -305,6 +315,7 @@ export function SignDialog({ onPlace, onClose }: { onPlace: (signature: Signatur
                   <p>{s.imageHint}</p>
                 </>
               )}
+              {photoError && <p className="dialog__error">{s.imageError}</p>}
             </div>
           )}
 

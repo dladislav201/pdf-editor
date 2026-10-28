@@ -7,7 +7,7 @@ import scanUk from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url'
 import type { PageImage } from '@pdfsdk/editor';
 import { Home, type OpenRequest } from './Home';
 import { useI18n, type Locale } from './i18n';
-import { forget, keepOpen, reopen } from './session';
+import { ALIVE_EVERY, clearStale, forget, keepAlive, keepOpen, reopen } from './session';
 import { routeOf } from './site';
 import { track } from './telemetry';
 import { applyTheme, initialTheme, type Theme } from './theme';
@@ -56,6 +56,14 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.app = 'ready';
   }, []);
+
+  // Copies of files left by closed tabs go; this tab's copy is marked alive while it has a file open.
+  useEffect(() => void clearStale(), []);
+  useEffect(() => {
+    if (!open) return;
+    const timer = setInterval(() => void keepAlive(), ALIVE_EVERY);
+    return () => clearInterval(timer);
+  }, [open]);
 
   // The browser's back button returns to the start page.
   useEffect(() => {

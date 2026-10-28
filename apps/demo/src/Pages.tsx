@@ -66,11 +66,14 @@ function Thumbnail({ source, page, rotate }: { source: PageSource; page: number;
 export function Pages({
   editor,
   fileName,
+  onApplied,
   onClose,
   onMessage,
 }: {
   editor: PdfEditorInstance;
   fileName: string;
+  /** The document was rearranged (pages moved, rotated, deleted or added). */
+  onApplied: () => void;
   onClose: () => void;
   onMessage: (message: string) => void;
 }) {
@@ -185,6 +188,7 @@ export function Pages({
     try {
       track('pages.apply');
       await editor.applyPageArrangement(plan(items), others());
+      onApplied();
       onClose();
     } catch (error) {
       onMessage(error instanceof Error ? error.message : String(error));

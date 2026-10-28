@@ -620,6 +620,18 @@ a.pill {
   color: var(--text-3);
   font-size: 13px;
 }
+/* Phones: the question above, the samples under it, wrapping when the words are long (German). */
+@media (max-width: 720px) {
+  .samples {
+    flex-direction: column;
+    max-width: 100%;
+  }
+  .samples .group {
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 22px;
+  }
+}
 
 /* ------------------------------------------------------------ workspace */
 
@@ -1119,6 +1131,15 @@ a.pill {
   margin: 0;
   color: var(--text-2);
   font-size: 13px;
+}
+.sign-upload__preview {
+  align-self: center;
+  max-width: 100%;
+  max-height: 120px;
+  padding: 6px;
+  border-radius: 10px;
+  background: repeating-conic-gradient(#e6e6e3 0 25%, #ffffff 0 50%) 0 0 / 14px 14px;
+  object-fit: contain;
 }
 .sign-upload__strength {
   display: flex;

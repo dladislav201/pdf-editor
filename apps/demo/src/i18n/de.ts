@@ -139,6 +139,7 @@ export const de: Messages = {
     cleanup: 'Hintergrund bereinigen',
     another: 'Anderes Foto',
     noInk: 'Auf diesem Foto wurde keine Tinte gefunden. Versuchen Sie es mit weniger Bereinigung.',
+    imageError: 'Dieses Bild kann hier nicht gelesen werden. Versuchen Sie JPG oder PNG.',
     ink: 'Tintenfarbe',
     inks: { black: 'Schwarz', blue: 'Blau', original: 'Wie auf dem Foto' },
     saved: 'Gespeichert',

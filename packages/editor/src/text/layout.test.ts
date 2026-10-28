@@ -88,3 +88,24 @@ describe('paragraph layout', () => {
     expect(layout.vertical(41, 1)).toBe(43);
   });
 });
+
+describe('leading with text of several sizes', () => {
+  const measure = () => 5;
+  const styled = (text: string, size: number, big = -1) =>
+    [...text].map((char, i) => ({ char, style: { font: 1, size: i === big ? size * 1.1 : size, color: '#000000', rise: 0 } }));
+  const frame = { x: 0, width: 100, firstBaseline: 100, baselines: [100, 88], leading: 12, indent: 0, align: 'left' as const, size: 10 };
+
+  it('keeps the original baselines of a paragraph with one larger character, as it was on the page', () => {
+    // 20 characters of 5 pt fill the first line; the larger one sits on the second.
+    const chars = styled('aaaaaaaaaaaaaaaaaaa bbbbbbbbbb', 10, 25);
+    const lines = layoutParagraph(chars, { ...frame, lineSizes: [10, 11] }, measure).lines;
+    expect(lines.map((l) => l.baseline)).toEqual([100, 88]);
+  });
+
+  it('gives a line more room once its text is made larger than it was', () => {
+    const chars = styled('aaaaaaaaaaaaaaaaaaa bbbbbbbbbb', 15);
+    const lines = layoutParagraph(chars, { ...frame, lineSizes: [10, 10] }, measure).lines;
+    expect(lines[0]!.baseline).toBeLessThan(100);
+    expect(lines[0]!.baseline - lines[1]!.baseline).toBeGreaterThan(12 * 1.4);
+  });
+});

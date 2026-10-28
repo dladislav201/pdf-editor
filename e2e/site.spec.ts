@@ -27,11 +27,15 @@ test('the site key covers the site\'s own domains, so it never runs as a trial t
   }
 });
 
-test('start page fits the screen', async ({ page }) => {
+test('start page fits the screen, in every language', async ({ page }) => {
   await gotoApp(page, '/');
   await expect(page.getByRole('button', { name: 'A contract', exact: true })).toBeVisible();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+  // German words are the longest: the samples wrap on a phone rather than push the page sideways.
+  for (const path of ['/', '/de', '/nb', '/sv', '/uk']) {
+    await gotoApp(page, path);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, path).toBeLessThanOrEqual(0);
+  }
 });
 
 test('opens a PDF and keeps the bars on screen', async ({ page }) => {
@@ -55,9 +59,29 @@ test('a reload opens the same file again, and asks first when there are changes'
     });
   // Nothing changed yet: leaving needs no question.
   expect(await leaving()).toBe(false);
+  /** What a reload goes by: the history state, the navigation, this tab's id and the files kept in this browser. */
+  const kept = () =>
+    page.evaluate(
+      () =>
+        new Promise<string>((resolve) => {
+          const open = indexedDB.open('lovelydoc', 1);
+          open.onupgradeneeded = () => open.result.createObjectStore('open-files', { keyPath: 'tab' });
+          open.onsuccess = () => {
+            const all = open.result.transaction('open-files').objectStore('open-files').getAll();
+            all.onsuccess = () => {
+              const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+              resolve(JSON.stringify({ state: history.state, navigation: navigation?.type, tab: sessionStorage.getItem('tab'), kept: all.result.map((k: { tab: string; name: string }) => [k.tab, k.name]) }));
+              open.result.close();
+            };
+          };
+        }),
+    );
+  // The file is kept before the page goes (a person doesn't reload within the same instant).
+  await expect.poll(async () => JSON.parse(await kept()).kept.length).toBe(1);
 
   await page.reload();
   await waitForApp(page);
+  await expect(page.locator('.workspace'), await kept()).toBeVisible();
   await expectPainted(page);
   await expect(page.getByText('Services agreement.pdf').filter({ visible: true })).toBeVisible();
   await expect(page.getByText('1 / 3').filter({ visible: true })).toBeVisible();
@@ -78,6 +102,44 @@ test('a reload opens the same file again, and asks first when there are changes'
   await page.reload();
   await waitForApp(page);
   await expect(page.getByRole('button', { name: 'A contract', exact: true })).toBeVisible();
+});
+
+test('clears copies kept for tabs that were closed, and gives a reloaded tab its own copy', async ({ page }) => {
+  await openSample(page, 'A contract');
+  /** The tab ids of the files kept in this browser, after `change` ran on the store. */
+  const store = (change: 'read' | 'plant') =>
+    page.evaluate(
+      (change) =>
+        new Promise<string[]>((resolve) => {
+          const open = indexedDB.open('lovelydoc', 1);
+          open.onupgradeneeded = () => open.result.createObjectStore('open-files', { keyPath: 'tab' });
+          open.onsuccess = () => {
+            const tx = open.result.transaction('open-files', 'readwrite');
+            const files = tx.objectStore('open-files');
+            // A copy a closed tab left an hour ago.
+            if (change === 'plant') files.put({ tab: 'closed-tab', at: Date.now() - 3_600_000, name: 'Old.pdf', type: 'application/pdf', lastModified: 0, bytes: new ArrayBuffer(8), options: {} });
+            const all = files.getAllKeys();
+            tx.oncomplete = () => {
+              resolve((all.result as string[]).sort());
+              open.result.close();
+            };
+          };
+        }),
+      change,
+    );
+  await expect.poll(async () => (await store('read')).length).toBe(1);
+  const [own] = await store('read');
+  expect(await store('plant')).toContain('closed-tab');
+
+  await page.reload();
+  await waitForApp(page);
+  await expectPainted(page);
+  // The closed tab's copy is gone; this tab now keeps its file under a new id (a duplicated tab would too).
+  const after = await store('read');
+  expect(after).not.toContain('closed-tab');
+  const tab = await page.evaluate(() => sessionStorage.getItem('tab'));
+  expect(tab).not.toBe(own);
+  expect(after).toContain(tab);
 });
 
 test('lets a finger scroll the pages, except while drawing', async ({ page }) => {
@@ -186,6 +248,48 @@ test('takes edits from on-screen keyboards that change the input themselves, as 
   expect(squash(first!)).toContain(ending);
   expect(squash(first!)).not.toContain('"Parties".');
   expect(squash(first!)).not.toContain('okok');
+});
+
+test('deletes a word with the system\'s word key: Option on a Mac, Ctrl elsewhere', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  const mac = await page.evaluate(() => /Mac|iPhone|iPad/.test(navigator.platform));
+  await page.keyboard.press('ControlOrMeta+ArrowDown');
+  await page.keyboard.press(`${mac ? 'Alt' : 'Control'}+Backspace`);
+  await page.keyboard.press(`${mac ? 'Alt' : 'Control'}+Backspace`);
+  await page.keyboard.press('Escape');
+  const [first] = await pdfText(await download(page));
+  // The last word and its punctuation go, then "the": the rest of the line stays.
+  expect(squash(first!)).toContain('andCustomerareeacha"Party"andtogether');
+  expect(squash(first!)).not.toContain('togetherthe');
+});
+
+test('opens text under a watermark across the page, and leaves the watermark where it is', async ({ page }) => {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const sheet = pdf.addPage([400, 400]);
+  ['The supplier delivers the goods to the address', 'given in the order within ten working days.'].forEach((text, i) =>
+    sheet.drawText(text, { x: 40, y: 250 - i * 14, size: 11, font }),
+  );
+  sheet.drawText('Payment is due within thirty days.', { x: 40, y: 200, size: 11, font });
+  sheet.drawText('CONFIDENTIAL', { x: 60, y: 80, size: 48, font, rotate: degrees(45), opacity: 0.2 });
+  const bytes = await pdf.save();
+  const watermark = (await pdfParagraphs(bytes)).find((p) => p.text === 'CONFIDENTIAL')!;
+  await openFile(page, 'Watermarked.pdf', bytes);
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  // Inside the watermark's bounding box, on the paragraph's first line.
+  await clickPage(page, 0.3, 1 - 250 / 400 - 0.005);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  await page.keyboard.press('ControlOrMeta+ArrowDown');
+  await page.keyboard.type(' Partial deliveries are allowed when the customer agrees to them in writing.');
+  await page.keyboard.press('Escape');
+  const after = await pdfParagraphs(await download(page));
+  expect(after.find((p) => p.text.startsWith('The supplier'))!.text).toContain('in writing.');
+  // The paragraph under it grew and pushed the next one down; the watermark stays.
+  expect(after.find((p) => p.text.startsWith('Payment'))!.baseline).toBeLessThan(200 - 5);
+  expect(after.find((p) => p.text === 'CONFIDENTIAL')!.baseline).toBeCloseTo(watermark.baseline, 1);
 });
 
 test('makes text bold and pushes what is below down when a paragraph grows', async ({ page }) => {
@@ -431,6 +535,19 @@ test('finds text on every page', async ({ page }) => {
   await expect(page.getByText(/^2 of \d+$/)).toBeVisible();
 });
 
+test('asks before a reload drops form entries, which undo doesn\'t hold', async ({ page }) => {
+  await openSample(page, 'A form');
+  const leaving = () =>
+    page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  expect(await leaving()).toBe(false);
+  await page.locator('input.pdfsdk-field').first().fill('Olena');
+  await expect.poll(leaving).toBe(true);
+});
+
 test('fills a form and saves the values', async ({ page }) => {
   await openSample(page, 'A form');
   await expect(page.getByText('7 fields to fill.')).toBeVisible();
@@ -470,7 +587,7 @@ test('types a signature and places it', async ({ page }) => {
   expect(stamps?.length).toBe(1);
 });
 
-test('lifts a signature and a stamp off a photo of paper in shadow, and places them', async ({ page }) => {
+test('lifts a signature and a stamp off a photo of paper in shadow, and places them', async ({ page, isMobile }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Sign' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add your signature' });
@@ -500,8 +617,14 @@ test('lifts a signature and a stamp off a photo of paper in shadow, and places t
     const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.9));
     return [...new Uint8Array(await blob.arrayBuffer())];
   });
+  // A picture the browser can't read says so.
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'photo.heic', mimeType: 'image/heic', buffer: Buffer.from('not a picture') });
+  await expect(dialog.getByText('This picture can’t be read here.')).toBeVisible();
   await dialog.locator('input[type=file]').setInputFiles({ name: 'photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg) });
+  await expect(dialog.getByText('This picture can’t be read here.')).toBeHidden();
   await expect(dialog.getByLabel('Clean up the background')).toBeVisible();
+  // Phones have no preview beside the dialog: the result shows in the tab.
+  await expect(dialog.locator('.sign-upload__preview')).toBeVisible({ visible: !!isMobile });
 
   /** The preview's pixels: its size, the top-left corner's alpha, and the opaque ones by colour. */
   const preview = () =>

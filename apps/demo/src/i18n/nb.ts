@@ -139,6 +139,7 @@ export const nb: Messages = {
     cleanup: 'Rens bakgrunnen',
     another: 'Et annet bilde',
     noInk: 'Fant ikke blekk på bildet. Prøv mindre rensing.',
+    imageError: 'Dette bildet kan ikke leses her. Prøv JPG eller PNG.',
     ink: 'Blekkfarge',
     inks: { black: 'Svart', blue: 'Blå', original: 'Som på bildet' },
     saved: 'Lagret',

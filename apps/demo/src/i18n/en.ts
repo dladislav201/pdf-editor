@@ -154,6 +154,7 @@ export const en = {
     cleanup: 'Clean up the background',
     another: 'Another photo',
     noInk: 'No ink found in this photo. Try less clean-up.',
+    imageError: 'This picture can’t be read here. Try a JPG or PNG.',
     ink: 'Ink colour',
     inks: { black: 'Black', blue: 'Blue', original: 'As in the photo' },
     saved: 'Saved',

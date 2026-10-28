@@ -1473,16 +1473,20 @@ export class PdfEditor {
     }
     const model = await this.getPageText(view.index);
     const pad = PARAGRAPH_HIT_PADDING;
+    const inBox = (box: Rect, [x, y]: Point) =>
+      x >= box.x - pad && x <= box.x + box.width + pad && y >= box.y - pad && y <= box.y + box.height + pad;
+    // Text at an angle (a watermark across the page) has a bounding box over everything: it counts only over its own lines, and after upright text.
+    const turned = (paragraph: TextParagraph) => paragraph.lines.some((l) => l.rotation);
+    const overLine = (paragraph: TextParagraph) =>
+      paragraph.lines.some(({ rotation }) => {
+        if (!rotation) return false;
+        const [cos, sin] = [Math.cos(rotation.angle), Math.sin(rotation.angle)];
+        return inBox(rotation.box, [point[0] * cos + point[1] * sin, -point[0] * sin + point[1] * cos]);
+      });
     return (
-      model.paragraphs.find(
-        (paragraph) => {
-          const box = this.paragraphBox(paragraph);
-          return point[0] >= box.x - pad &&
-          point[0] <= box.x + box.width + pad &&
-          point[1] >= box.y - pad &&
-          point[1] <= box.y + box.height + pad;
-        },
-      ) ?? null
+      model.paragraphs.find((paragraph) => !turned(paragraph) && inBox(this.paragraphBox(paragraph), point)) ??
+      model.paragraphs.find((paragraph) => turned(paragraph) && overLine(paragraph)) ??
+      null
     );
   }
 
@@ -1582,7 +1586,8 @@ export class PdfEditor {
     if (model && geometry && sessions.some((s) => Math.abs(s.growth) > 0.01) && !model.paragraphs.some((p) => p.recognized)) {
       const edited = new Map(sessions.map((s) => [s.paragraph.id, s]));
       const items: PushItem[] = [
-        ...model.paragraphs.map((paragraph): PushItem => {
+        // Text at an angle (a watermark, a label up a margin) stays where it is.
+        ...model.paragraphs.filter((paragraph) => !paragraph.lines.some((l) => l.rotation)).map((paragraph): PushItem => {
           const session = edited.get(paragraph.id);
           if (!session) {
             const fixed = paragraph.lines.some((l) => l.chars.some((c) => c.object < 0));

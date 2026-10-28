@@ -139,6 +139,7 @@ export const sv: Messages = {
     cleanup: 'Rensa bakgrunden',
     another: 'Ett annat foto',
     noInk: 'Hittade inget bläck på fotot. Prova mindre rensning.',
+    imageError: 'Den här bilden kan inte läsas här. Prova JPG eller PNG.',
     ink: 'Bläckfärg',
     inks: { black: 'Svart', blue: 'Blå', original: 'Som på fotot' },
     saved: 'Sparade',

@@ -50,6 +50,26 @@ function boundingRect(rects: Rect[]): Rect {
 }
 
 /**
+ * A quad's corners in the order the editor uses (top edge start to end, then
+ * the bottom edge), whichever order the file has them in: Acrobat writes
+ * that order, the specification goes round the quad. The two edges along the
+ * text are the parallel pair; the one further up across the text is the top.
+ */
+function orderQuad(corners: Point[]): Quad {
+  const [p0, p1, p2, p3] = corners as [Point, Point, Point, Point];
+  const along = (a: Point, b: Point): Point => [b[0] - a[0], b[1] - a[1]];
+  const dot = (a: Point, b: Point) => a[0] * b[0] + a[1] * b[1];
+  // Acrobat's order has p0→p1 and p2→p3 running the same way; going round, p3→p2 does.
+  const first: [Point, Point] = [p0, p1];
+  const second: [Point, Point] = dot(along(p0, p1), along(p2, p3)) > 0 ? [p2, p3] : [p3, p2];
+  const direction = along(p0, p1);
+  const up: Point = [-direction[1], direction[0]];
+  const height = (edge: [Point, Point]) => dot(up, edge[0]);
+  const [top, bottom] = height(first) >= height(second) ? [first, second] : [second, first];
+  return [top[0], top[1], bottom[0], bottom[1]];
+}
+
+/**
  * The lines of a text markup annotation: the box of each quad, and the quads
  * themselves when the text runs at an angle (a box would lose its direction).
  */
@@ -63,7 +83,7 @@ function markedLines(dict: PDFDict, rect: Rect): { rect: Rect; segments?: Rect[]
     const x = Math.min(...xs);
     const y = Math.min(...ys);
     boxes.push(roundRect({ x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }));
-    quads.push([0, 1, 2, 3].map((k) => [round(xs[k]!), round(ys[k]!)]) as Quad);
+    quads.push(orderQuad([0, 1, 2, 3].map((k) => [round(xs[k]!), round(ys[k]!)] as Point)));
   }
   if (!boxes.length) return { rect: roundRect(rect) };
   // Upright when each quad's top edge is level and its sides are plumb.

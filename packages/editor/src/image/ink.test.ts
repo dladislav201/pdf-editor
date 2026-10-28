@@ -110,6 +110,19 @@ describe('lifting ink off a photo of paper', () => {
     expect(at(strong, [strong.width === out.width ? origin[0] : 0, origin[1]], stroke[2]!)[3]).toBeGreaterThan(200);
   });
 
+  it('takes a picture with a transparent background as ink on paper', () => {
+    // A signature already cut out: transparent black around dark strokes.
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    for (let x = 50; x < 350; x++) for (let t = -2; t <= 2; t++) rgba.set([20, 20, 30, 255], ((150 + t) * W + x) * 4);
+    const cut = liftInk(readInk({ width: W, height: H, rgba }))!;
+    let opaque = 0;
+    for (let i = 3; i < cut.rgba.length; i += 4) if (cut.rgba[i]! > 128) opaque++;
+    // The strokes stay; what was transparent stays transparent.
+    expect(opaque).toBeGreaterThan(300 * 4);
+    expect(opaque).toBeLessThan(300 * 6);
+    expect(cut.height).toBeLessThan(5 + 12 + 2);
+  });
+
   it('finds no ink on blank paper', () => {
     const blank = new Uint8ClampedArray(W * H * 4);
     for (let i = 0; i < blank.length; i += 4) blank.set([240 - (i % (W * 4)) / 20, 238, 230, 255], i);

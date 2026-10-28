@@ -151,6 +151,31 @@ describe('PDF annotations', () => {
     expect((await importAnnotations(saved)).annotations).toEqual([]);
   });
 
+  it('reads quads in either corner order: Acrobat\'s, or going round as the specification has it', async () => {
+    const bytes = await withRawAnnotations((doc) => [
+      // Upright text, corners counterclockwise from the bottom left.
+      doc.context.obj({ Type: 'Annot', Subtype: 'Underline', Rect: [70, 600, 200, 615], QuadPoints: [70, 600, 200, 600, 200, 615, 70, 615] }),
+      // Text going up the page, corners going round.
+      doc.context.obj({ Type: 'Annot', Subtype: 'Highlight', Rect: [300, 100, 314, 180], QuadPoints: [314, 100, 314, 180, 300, 180, 300, 100] }),
+    ]);
+    const [underline, turned] = (await importAnnotations(bytes)).annotations;
+    // Upright: read as a plain box, the underline at its bottom.
+    expect(underline).toMatchObject({ type: 'underline', rect: { x: 70, y: 600, width: 130, height: 15 } });
+    expect(underline).not.toHaveProperty('quads');
+    // Up the page: top edge on the left (up across the text), from the start to the end of the text.
+    expect(turned).toMatchObject({
+      type: 'highlight',
+      quads: [
+        [
+          [300, 100],
+          [300, 180],
+          [314, 100],
+          [314, 180],
+        ],
+      ],
+    });
+  });
+
   it('returns the original bytes when there is nothing to import', async () => {
     const original = await blankPdf();
     const result = await importAnnotations(original);

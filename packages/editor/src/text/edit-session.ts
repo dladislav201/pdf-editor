@@ -156,6 +156,7 @@ export function paragraphFrame(paragraph: TextParagraph, block: TextBlock): Para
     indent: paragraph.indent,
     align: paragraph.align,
     size,
+    lineSizes: lines.map((l) => Math.max(...l.chars.map((c) => Math.round(c.size * 100) / 100))),
   };
 }
 
@@ -672,6 +673,8 @@ export class TextEditSession {
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     const mod = mac ? event.metaKey : event.ctrlKey;
     const word = mac ? event.altKey : event.ctrlKey;
+    // To the line's end with Cmd on a Mac; elsewhere Ctrl means a word, and Home/End take the line.
+    const line = mac && event.metaKey;
     const [from, to] = this.selection;
     const collapsed = from === to;
     const extend = event.shiftKey;
@@ -683,16 +686,16 @@ export class TextEditSession {
         return;
       case 'ArrowLeft':
         event.preventDefault();
-        if (!extend && !collapsed && !word && !mod) return this.move(from, false);
+        if (!extend && !collapsed && !word && !line) return this.move(from, false);
         return this.move(
-          mod ? this.lineBoundary(this.caretOffset, -1) : word ? this.wordBoundary(this.caretOffset, -1) : this.caretOffset - 1,
+          line ? this.lineBoundary(this.caretOffset, -1) : word ? this.wordBoundary(this.caretOffset, -1) : this.caretOffset - 1,
           extend,
         );
       case 'ArrowRight':
         event.preventDefault();
-        if (!extend && !collapsed && !word && !mod) return this.move(to, false);
+        if (!extend && !collapsed && !word && !line) return this.move(to, false);
         return this.move(
-          mod ? this.lineBoundary(this.caretOffset, 1) : word ? this.wordBoundary(this.caretOffset, 1) : this.caretOffset + 1,
+          line ? this.lineBoundary(this.caretOffset, 1) : word ? this.wordBoundary(this.caretOffset, 1) : this.caretOffset + 1,
           extend,
         );
       case 'ArrowUp':
@@ -717,7 +720,7 @@ export class TextEditSession {
         event.preventDefault();
         if (!collapsed) return this.deleteRange(from, to);
         return this.deleteRange(
-          mod ? this.lineBoundary(this.caretOffset, -1) : word ? this.wordBoundary(this.caretOffset, -1) : this.caretOffset - 1,
+          line ? this.lineBoundary(this.caretOffset, -1) : word ? this.wordBoundary(this.caretOffset, -1) : this.caretOffset - 1,
           this.caretOffset,
         );
       case 'Delete':
@@ -725,7 +728,7 @@ export class TextEditSession {
         if (!collapsed) return this.deleteRange(from, to);
         return this.deleteRange(
           this.caretOffset,
-          mod ? this.lineBoundary(this.caretOffset, 1) : word ? this.wordBoundary(this.caretOffset, 1) : this.caretOffset + 1,
+          line ? this.lineBoundary(this.caretOffset, 1) : word ? this.wordBoundary(this.caretOffset, 1) : this.caretOffset + 1,
         );
     }
     const key = shortcutKey(event);

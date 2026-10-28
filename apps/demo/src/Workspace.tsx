@@ -141,6 +141,8 @@ export function Workspace({
   }, [tool]);
   const [color, setColor] = useState<string | null>(null);
   const [history, setHistory] = useState({ canUndo: false, canRedo: false });
+  // Changes outside the undo history: form entries, rearranged pages.
+  const [untracked, setUntracked] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [page, setPage] = useState({ index: 0, count: 0 });
@@ -323,16 +325,17 @@ export function Workspace({
     return () => removeEventListener('keydown', key);
   }, [mode, openSearch]);
 
-  // Changes not downloaded yet go with a reload or a closed tab: the browser asks first.
+  // Changes not downloaded yet go with a reload or a closed tab: the browser asks first. Form entries
+  // and rearranged pages aren't in the undo history, so they count on their own.
   useEffect(() => {
-    if (!history.canUndo) return;
+    if (!history.canUndo && !untracked) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = '';
     };
     addEventListener('beforeunload', warn);
     return () => removeEventListener('beforeunload', warn);
-  }, [history.canUndo]);
+  }, [history.canUndo, untracked]);
 
   const drawing = isMarkup(tool) || tool === 'ink' || tool === 'rectangle' || tool === 'text';
   // Highlight, underline or strike out: with the colors on wide screens, in place of the hint on phones.
@@ -372,6 +375,7 @@ export function Workspace({
           onFormChange={() => {
             if (!formTracked.current) track('form.fill');
             formTracked.current = true;
+            setUntracked(true);
           }}
         />
       </div>
@@ -458,7 +462,7 @@ export function Workspace({
       </div>
 
       {mode === 'pages' && editor && (
-        <Pages editor={editor} fileName={file.name} onClose={() => setMode('edit')} onMessage={setMessage} />
+        <Pages editor={editor} fileName={file.name} onApplied={() => setUntracked(true)} onClose={() => setMode('edit')} onMessage={setMessage} />
       )}
 
       <div className="status" aria-live="polite">

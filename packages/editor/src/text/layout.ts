@@ -41,6 +41,8 @@ export interface ParagraphFrame {
    * follow), so text made larger doesn't run into the line above.
    */
   size?: number;
+  /** The largest text size on each of the original lines: a line set as it was keeps its baseline. */
+  lineSizes?: number[];
 }
 
 export type Measure = (style: CharStyle, char: string) => number;
@@ -175,7 +177,8 @@ export function layoutParagraph(chars: StyledChar[], frame: ParagraphFrame, meas
     let largest = 0;
     for (let k = range.start; k < range.end; k++) if (chars[k]!.char !== '\n') largest = Math.max(largest, chars[k]!.style.size);
     if (!largest) largest = chars[Math.min(range.start, chars.length - 1)]?.style.size ?? 0;
-    const scale = frame.size && largest ? largest / frame.size : 1;
+    const reference = (lineIndex < known.length ? frame.lineSizes?.[lineIndex] : undefined) ?? frame.size;
+    const scale = reference && largest ? largest / reference : 1;
     resized ||= Math.abs(scale - 1) > 0.02;
     const gap =
       lineIndex === 0 ? 0 : lineIndex < known.length ? known[lineIndex - 1]! - known[lineIndex]! : frame.leading;
