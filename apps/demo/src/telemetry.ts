@@ -4,6 +4,7 @@
  * file or who uses it. No cookies, no identifiers. Events are batched and
  * sent every few seconds, and when the page is hidden or closed.
  */
+import { isReloading } from './reload';
 
 const FLUSH_MS = 5000;
 /** The same error over and over is reported once per page view. */
@@ -84,7 +85,7 @@ export function track(name: string): void {
 
 /** Reports an error message (links are stripped on the server). */
 export function reportError(error: unknown): void {
-  if (!enabled) return;
+  if (!enabled || isReloading()) return;
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   // Cancelling is not an error.
   if (/AbortError/.test(message) || reported.has(message)) return;

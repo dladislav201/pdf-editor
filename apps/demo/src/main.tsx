@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { I18nProvider, loadMessages, localeOfPath } from './i18n';
+import { load } from './reload';
 import { track } from './telemetry';
 import { applyTheme, initialTheme } from './theme';
 import './styles.css';
@@ -30,7 +31,7 @@ if (root.dataset.static !== undefined) {
   track(path === '/blog' ? 'view.blog' : `view.blog.${path.slice('/blog/'.length).slice(0, 32)}`);
 } else if (path === '/sdk') {
   // The SDK's page for developers, in English: its form needs the page to run.
-  const SdkRoute = lazy(() => import('./Sdk').then((m) => ({ default: m.SdkPage })));
+  const SdkRoute = lazy(() => load(() => import('./Sdk')).then((m) => ({ default: m.SdkPage })));
   applyTheme(initialTheme());
   render(
     <Suspense fallback={null}>
@@ -38,7 +39,7 @@ if (root.dataset.static !== undefined) {
     </Suspense>,
   );
 } else if (isBlog) {
-  const BlogRoute = lazy(() => import('./BlogRoute'));
+  const BlogRoute = lazy(() => load(() => import('./BlogRoute')));
   applyTheme(initialTheme());
   render(
     <Suspense fallback={null}>

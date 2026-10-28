@@ -145,6 +145,13 @@ The site is built for search as well as for use (`apps/demo`):
   paragraph still open, the last second's change) makes the browser ask. A
   file opened with its password isn't kept with changes, as that copy would
   be decrypted; leaving it after changes asks.
+- **A tab open over a deploy reloads**: the old build's code chunks are gone
+  after a deploy, so a page that asks for one (the editor, a language, a
+  sample) reloads once and gets the new build instead of failing with
+  "Failed to fetch dynamically imported module" (`src/reload.ts`, Vite's
+  `vite:preloadError`). A file just opened is kept before the reload and
+  opens again. A second failure within 10 seconds is a real error and is
+  reported; errors while reloading aren't.
 - **Brand**: LovelyDoc, a page with a heart. The name (`SITE.name`) is in
   titles, the top bar and the footer; the mark is `src/Logo.tsx` and
   `public/favicon.svg`. PNG icons and `public/og.png` (1200×630) are drawn

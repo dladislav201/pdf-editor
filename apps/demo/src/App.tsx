@@ -7,13 +7,14 @@ import scanUk from '../../../packages/editor/test/fixtures/scan-invoice.pdf?url'
 import type { PageImage } from '@pdfsdk/editor';
 import { Home, type OpenRequest } from './Home';
 import { useI18n, type Locale } from './i18n';
+import { beforeReload, load } from './reload';
 import { ALIVE_EVERY, clearStale, forget, keepAlive, keepOpen, reopen } from './session';
 import { routeOf } from './site';
 import { track } from './telemetry';
 import { applyTheme, initialTheme, type Theme } from './theme';
 
 // The editor, PDFium and pdf-lib load when a file is opened, so the start page stays light.
-const Workspace = lazy(() => import('./Workspace').then((m) => ({ default: m.Workspace })));
+const Workspace = lazy(() => load(() => import('./Workspace')).then((m) => ({ default: m.Workspace })));
 
 /** The scanned sample invoice in the page's language, so it's read with the language the page reads scans in. */
 const SCAN_SAMPLES: Record<Locale, string> = { en: scanEn, de: scanDe, nb: scanNb, sv: scanSv, uk: scanUk };
@@ -77,17 +78,17 @@ export function App() {
   const show = (request: OpenRequest) => {
     window.history.pushState({ editing: true }, '');
     setOpen(request);
-    void keepOpen(request);
+    beforeReload(keepOpen(request));
   };
 
   const sample = async (kind: 'contract' | 'scan' | 'form') => {
     track(`open.sample.${kind}`);
     if (kind === 'form') {
-      const { createSampleForm } = await import('./sample-form');
+      const { createSampleForm } = await load(() => import('./sample-form'));
       const bytes = await createSampleForm();
       show({ file: new File([bytes as BlobPart], 'Membership application.pdf', { type: 'application/pdf' }) });
     } else if (kind === 'contract') {
-      const { createSamplePdf } = await import('./sample-pdf');
+      const { createSamplePdf } = await load(() => import('./sample-pdf'));
       const bytes = await createSamplePdf();
       show({ file: new File([bytes as BlobPart], 'Services agreement.pdf', { type: 'application/pdf' }), tool: 'editText' });
     } else {
@@ -111,7 +112,7 @@ export function App() {
         images.push({ bytes: new Uint8Array(await blob.arrayBuffer()), type: 'png' });
       }
     }
-    const { imagesToPdf } = await import('@pdfsdk/editor');
+    const { imagesToPdf } = await load(() => import('@pdfsdk/editor'));
     const bytes = await imagesToPdf(images);
     const name = files.length === 1 ? `${files[0]!.name.replace(/\.[^.]+$/, '')}.pdf` : 'Pictures.pdf';
     show({ file: new File([bytes as BlobPart], name, { type: 'application/pdf' }), pages: files.length > 1 });

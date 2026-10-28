@@ -1,4 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react';
+import { load } from '../reload';
 import { en, type Messages } from './en';
 
 export type { LandingText, Messages } from './en';
@@ -47,13 +48,13 @@ export function browserLocale(): Locale | null {
 export async function loadMessages(locale: Locale): Promise<Messages> {
   switch (locale) {
     case 'de':
-      return (await import('./de')).de;
+      return (await load(() => import('./de'))).de;
     case 'nb':
-      return (await import('./nb')).nb;
+      return (await load(() => import('./nb'))).nb;
     case 'sv':
-      return (await import('./sv')).sv;
+      return (await load(() => import('./sv'))).sv;
     case 'uk':
-      return (await import('./uk')).uk;
+      return (await load(() => import('./uk'))).uk;
     default:
       return en;
   }

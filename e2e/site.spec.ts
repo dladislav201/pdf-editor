@@ -109,6 +109,38 @@ test('a reload opens the same file again, with its changes kept a moment after e
   await expect(page.getByRole('button', { name: 'A contract', exact: true })).toBeVisible();
 });
 
+test('a tab left open over a deploy reloads for the new code instead of failing', async ({ page, browserName }) => {
+  // WebKit keeps a failed chunk for its address, even across the reload; after a real deploy the reloaded page asks for new ones.
+  test.skip(browserName === 'webkit', 'the same address stands in for the new chunk');
+  // After a deploy the old build's chunks are gone: the first request for one fails, as it would then.
+  const gone = async (pattern: string) => {
+    let failed = 0;
+    await page.route(pattern, (route) => (failed++ ? route.continue() : route.fulfill({ status: 404, body: 'gone' })));
+    return () => failed;
+  };
+  const errors: string[] = [];
+  page.on('request', (request) => request.url().includes('/api/errors') && errors.push(request.postData() ?? ''));
+  let loads = 0;
+  page.on('load', () => loads++);
+
+  await gotoApp(page);
+  const workspace = await gone('**/assets/Workspace-*.js');
+  await page.getByRole('button', { name: 'A contract', exact: true }).click();
+  // One reload, and the file chosen before it opens.
+  await expectPainted(page);
+  await expect(page.getByText('Services agreement.pdf').filter({ visible: true })).toBeVisible();
+  expect(workspace()).toBe(2);
+  expect(loads).toBe(2);
+
+  // The page's language, which the page can't show without (a later deploy: its own reload).
+  await page.evaluate(() => sessionStorage.removeItem('lovelydoc.reloaded'));
+  const german = await gone('**/assets/de-*.js');
+  await gotoApp(page, '/de');
+  await expect(page.getByRole('button', { name: 'Einen Vertrag', exact: true })).toBeVisible();
+  expect(german()).toBe(2);
+  expect(errors).toEqual([]);
+});
+
 test('clears copies kept for tabs that were closed, and gives a reloaded tab its own copy', async ({ page }) => {
   await openSample(page, 'A contract');
   /** The tab ids of the files kept in this browser, after `change` ran on the store. */
