@@ -26,10 +26,12 @@ function memory() {
   return { store, counts, errors, feedback, trials };
 }
 
+const BROWSER = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
   new Request(`${SITE}${path}`, {
     method: 'POST',
-    headers: { origin: SITE, 'content-type': 'application/json', ...headers },
+    headers: { origin: SITE, 'content-type': 'application/json', 'user-agent': BROWSER, ...headers },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 
@@ -120,5 +122,21 @@ describe('site API', () => {
     expect(parseDomains('localhost')).toBeNull();
     expect(parseDomains('acme.com:8080/x  *.acme.com')).toEqual(['acme.com', '*.acme.com']);
     expect(parseDomains('a..com')).toBeNull();
+  });
+
+  it('leaves robots out of the counts and errors: crawlers, link previews, headless browsers, scripts', async () => {
+    const { store, counts, errors } = memory();
+    for (const agent of [
+      'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.0.0 Safari/537.36',
+      'facebookexternalhit/1.1',
+      'curl/8.7.1',
+      '',
+    ]) {
+      expect((await handle(post('/api/events', { names: ['view.home.en'] }, { 'user-agent': agent }), store, NOW))!.status).toBe(204);
+      await handle(post('/api/errors', { message: 'Boom' }, { 'user-agent': agent }), store, NOW);
+    }
+    expect(counts.size).toBe(0);
+    expect(errors).toEqual([]);
   });
 });

@@ -1533,3 +1533,12 @@ a.pill {
     grid-template-columns: 1fr;
   }
 }
+
+/* Says that this browser is (no longer) counted, after ?notrack (telemetry.ts). */
+.notrack-note {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 100;
+  transform: translateX(-50%);
+}

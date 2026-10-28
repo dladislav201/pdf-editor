@@ -869,6 +869,36 @@ test('every language has its own pages, linked to each other, and a German page 
   await expect(page.getByRole('button', { name: /^Herunterladen/ })).toBeVisible();
 });
 
+test('counts visits, except from a browser marked with ?notrack', async ({ page }) => {
+  // What each count sent; WebKit doesn't show a beacon's body, only that it went.
+  const sent: string[] = [];
+  await page.route('**/api/events', async (route) => {
+    sent.push(route.request().postData() ?? '');
+    await route.fulfill({ status: 204 });
+  });
+  // Counts go out when the page is hidden (or every few seconds).
+  const hide = () => page.evaluate(() => dispatchEvent(new Event('pagehide')));
+  await gotoApp(page, '/');
+  await hide();
+  await expect.poll(() => sent.length).toBeGreaterThan(0);
+  expect(sent.join()).toMatch(/view\.home\.en|^$/);
+
+  sent.length = 0;
+  await gotoApp(page, '/?notrack=1');
+  await expect(page.getByText('Visits from this browser are no longer counted.')).toBeVisible();
+  // The address is clean again; the mark stays for the next visits.
+  expect(new URL(page.url()).search).toBe('');
+  await gotoApp(page, '/sdk');
+  await hide();
+  await page.waitForTimeout(500);
+  expect(sent).toEqual([]);
+
+  await gotoApp(page, '/?notrack=0');
+  await expect(page.getByText('Visits from this browser are counted again.')).toBeVisible();
+  await hide();
+  await expect.poll(() => sent.length).toBeGreaterThan(0);
+});
+
 test('a page opens in the dark theme picked before, without waiting for the app', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('theme', 'dark'));
   // No app code at all: what the page looks like before it loads.

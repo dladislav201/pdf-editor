@@ -11,8 +11,46 @@ const reported = new Set<string>();
 let queue: string[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-// Only the deployed site has the API; local development stays quiet.
-const enabled = !import.meta.env.DEV && typeof window !== 'undefined';
+const NOT_COUNTED = 'lovelydoc.notrack';
+
+/**
+ * Whether this browser is left out of the counts: the site's own people mark
+ * theirs with `?notrack=1` (the dashboard links to it), `?notrack=0` undoes
+ * it. The address is cleaned up after, and a note says what happened.
+ */
+function notCounted(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const params = new URLSearchParams(location.search);
+    const choice = params.get('notrack');
+    if (choice !== null) {
+      if (choice === '0') localStorage.removeItem(NOT_COUNTED);
+      else localStorage.setItem(NOT_COUNTED, '1');
+      params.delete('notrack');
+      const query = params.toString();
+      history.replaceState(history.state, '', location.pathname + (query ? `?${query}` : '') + location.hash);
+      const text = choice === '0' ? 'Visits from this browser are counted again.' : 'Visits from this browser are no longer counted.';
+      if (document.readyState === 'loading') addEventListener('DOMContentLoaded', () => note(text));
+      else note(text);
+    }
+    return localStorage.getItem(NOT_COUNTED) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** A short note at the bottom of the page. */
+function note(text: string): void {
+  const el = document.createElement('div');
+  el.className = 'notice notice--plain notrack-note';
+  el.setAttribute('role', 'status');
+  el.textContent = text;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+// Only the deployed site has the API; local development and marked browsers stay quiet.
+const enabled = !import.meta.env.DEV && !notCounted();
 
 function send(path: string, body: unknown): void {
   const data = JSON.stringify(body);

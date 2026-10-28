@@ -191,7 +191,11 @@ event name (`open.sample.scan`, `tool.editText`, `download.compressed.strong`,
 feedback keeps the message, an optional email and the browser family only
 ("Safari on iOS"). Only same-origin posts are taken; a hidden field catches
 form bots. The site batches counts (`src/telemetry.ts`, sent every 5 s and
-when the page is hidden) and stays quiet in development. The start page says
+when the page is hidden) and stays quiet in development. Our own visits stay
+out: `?notrack=1` on any page marks a browser as not counted (localStorage;
+`?notrack=0` undoes it; the dashboard links to it), and the Worker drops
+counts and errors from robots (crawlers, link previews, headless and
+scripted browsers, no user agent). The start page says
 so in one line.
 
 ```bash

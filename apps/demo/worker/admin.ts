@@ -237,6 +237,7 @@ const PAGE = `<!doctype html>
   h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
   h2 { margin: 0 0 12px; font-size: 15px; }
   .muted { color: var(--muted); }
+  a.muted { font-size: 12px; }
   select { font: inherit; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
   .card { background: var(--card); border-radius: 16px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); min-width: 0; }
@@ -261,7 +262,7 @@ const PAGE = `<!doctype html>
 <body>
 <main>
   <header>
-    <div><h1>LovelyDoc · Admin</h1><div class="muted" id="who"></div></div>
+    <div><h1>LovelyDoc · Admin</h1><div class="muted" id="who"></div><a id="notrack" class="muted" target="_blank" rel="noopener">Don’t count this browser’s visits to the site</a></div>
     <label class="muted">Period
       <select id="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">A year</option></select>
     </label>
@@ -386,6 +387,8 @@ const PAGE = `<!doctype html>
       er.append(table);
     }
   }
+  // The site is this host without "admin.": ?notrack=1 there marks this browser as not counted.
+  $('notrack').href = 'https://' + location.host.replace(/^admin\./, '') + '/?notrack=1';
   $('days').addEventListener('change', load);
   load();
 </script>

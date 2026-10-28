@@ -45,6 +45,11 @@ const MAX_BODY = 16 * 1024;
 const MAX_ERROR = 300;
 const MAX_FEEDBACK = 4000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Crawlers, link previews, headless and scripted browsers: what they do isn't people using the site. */
+const ROBOT = /bot|crawl|spider|slurp|headless|lighthouse|pagespeed|preview|facebookexternalhit|curl|wget|python|go-http|java\//i;
+
+/** Whether a request comes from a robot rather than a person's browser. */
+export const isRobot = (agent: string) => !agent || ROBOT.test(agent);
 
 const empty = (status = 204) => new Response(null, { status });
 
@@ -105,6 +110,8 @@ export async function handle(request: Request, store: Store, now = new Date()): 
   const body = (await readJson(request)) as Record<string, unknown> | undefined;
   if (!body || typeof body !== 'object') return empty(400);
   const day = now.toISOString().slice(0, 10);
+  // Robots aren't counted: their visits and errors are dropped, quietly.
+  const robot = isRobot(request.headers.get('user-agent') ?? '');
 
   switch (url.pathname) {
     case '/api/events': {
@@ -115,13 +122,13 @@ export async function handle(request: Request, store: Store, now = new Date()): 
         if (typeof name !== 'string' || !NAME.test(name)) return empty(400);
         counts.set(name, (counts.get(name) ?? 0) + 1);
       }
-      if (counts.size) await store.count(day, counts);
+      if (counts.size && !robot) await store.count(day, counts);
       return empty();
     }
     case '/api/errors': {
       if (typeof body.message !== 'string') return empty(400);
       const message = cleanError(body.message);
-      if (message) await store.error(day, message);
+      if (message && !robot) await store.error(day, message);
       return empty();
     }
     case '/api/feedback': {
