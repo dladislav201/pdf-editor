@@ -5,7 +5,7 @@ import { DEMO_LICENSE_KEY } from '../apps/demo/src/license';
 import { SITE } from '../apps/demo/src/site';
 import { checkLicense } from '../packages/editor/src/license';
 import { readFormFields } from '../packages/editor/src/pdf/forms';
-import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfParagraphs, pdfText, waitForApp } from './helpers';
+import { downloadBytes, expectPainted, gotoApp, longPdf, openFile, openSample, pdfParagraphs, pdfText, reloadApp, waitForApp } from './helpers';
 
 /** Clicks a point of a page given as fractions of its width and height. */
 async function clickPage(page: Page, x: number, y: number, index = 0) {
@@ -79,8 +79,7 @@ test('a reload opens the same file again, with its changes kept a moment after e
   // The file is kept before the page goes (a person doesn't reload within the same instant).
   await expect.poll(async () => JSON.parse(await kept()).kept.length).toBe(1);
 
-  await page.reload();
-  await waitForApp(page);
+  await reloadApp(page);
   await expect(page.locator('.workspace'), await kept()).toBeVisible();
   await expectPainted(page);
   await expect(page.getByText('Services agreement.pdf').filter({ visible: true })).toBeVisible();
@@ -97,16 +96,14 @@ test('a reload opens the same file again, with its changes kept a moment after e
   // Just changed: not kept yet, so leaving asks; a moment later it's kept and leaving needn't.
   expect(await leaving()).toBe(true);
   await expect.poll(leaving, { timeout: 10_000 }).toBe(false);
-  await page.reload();
-  await waitForApp(page);
+  await reloadApp(page);
   await expectPainted(page);
   await expect(page.locator('.pdfsdk-highlight')).toHaveCount(1);
 
   // Back on the start page, the file is let go: a reload stays there.
   await page.getByRole('button', { name: 'Back to start' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  await page.reload();
-  await waitForApp(page);
+  await reloadApp(page);
   await expect(page.getByRole('button', { name: 'A contract', exact: true })).toBeVisible();
 });
 
@@ -137,8 +134,7 @@ test('clears copies kept for tabs that were closed, and gives a reloaded tab its
   const [own] = await store('read');
   expect(await store('plant')).toContain('closed-tab');
 
-  await page.reload();
-  await waitForApp(page);
+  await reloadApp(page);
   await expectPainted(page);
   // The closed tab's copy is gone; this tab now keeps its file under a new id (a duplicated tab would too).
   const after = await store('read');
@@ -192,8 +188,7 @@ test('keeps an edited paragraph across a reload', async ({ page }) => {
   expect(await leaving()).toBe(true);
   await page.keyboard.press('Escape');
   await expect.poll(leaving, { timeout: 10_000 }).toBe(false);
-  await page.reload();
-  await waitForApp(page);
+  await reloadApp(page);
   await expectPainted(page);
   const [first] = await pdfText(await download(page));
   expect(squash(first!)).toContain('Keptacrossareload.');
@@ -578,8 +573,7 @@ test('keeps form entries across a reload', async ({ page }) => {
   await page.locator('input.pdfsdk-field').first().fill('Olena');
   await expect.poll(leaving).toBe(true);
   await expect.poll(leaving, { timeout: 10_000 }).toBe(false);
-  await page.reload();
-  await waitForApp(page);
+  await reloadApp(page);
   await expect(page.locator('input.pdfsdk-field').first()).toHaveValue('Olena');
 });
 
@@ -617,8 +611,7 @@ test('types a signature and places it', async ({ page }) => {
       }),
     )
     .toBe(false);
-  await page.reload();
-  await waitForApp(page);
+  await reloadApp(page);
   await expectPainted(page);
   await expect(page.locator('.pdfsdk-page image')).toHaveCount(1);
   const doc = await PDFDocument.load(await download(page));

@@ -90,6 +90,16 @@ export async function waitForApp(page: Page): Promise<void> {
   await page.locator('html[data-app="ready"]').waitFor({ state: 'attached' });
 }
 
+/**
+ * Reloads the page the way a person does (F5): from the page itself.
+ * Playwright's own reload is a fresh navigation in Firefox, without the
+ * history state a real reload keeps.
+ */
+export async function reloadApp(page: Page): Promise<void> {
+  await Promise.all([page.waitForEvent('domcontentloaded'), page.evaluate(() => location.reload())]);
+  await waitForApp(page);
+}
+
 export async function gotoApp(page: Page, path = '/'): Promise<void> {
   await page.goto(path);
   await waitForApp(page);
