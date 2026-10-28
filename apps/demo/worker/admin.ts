@@ -1,9 +1,10 @@
 /**
- * The site's private dashboard: what the anonymous counts, error reports and
- * feedback say, at /admin. Only Cloudflare Access lets anyone in: the Worker
- * checks the token Access signs for every request (its team's keys, the
- * application's audience, the expiry) and answers 404 to anything else, or
- * when Access isn't set up (ACCESS_TEAM and ACCESS_AUD unset).
+ * The site's private dashboard: what the anonymous counts, error reports,
+ * feedback and trial requests say, on its own host (admin.lovelydoc.com, a
+ * Worker of its own: admin-main.ts). Only Cloudflare Access lets anyone in:
+ * the Worker checks the token Access signs for every request (its team's
+ * keys, the application's audience, the expiry) and answers 404 to anything
+ * else, or when Access isn't set up (ACCESS_TEAM and ACCESS_AUD unset).
  */
 
 import type { TrialRequest } from './api';
@@ -191,24 +192,23 @@ const PAGE_HEADERS = {
   'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
 
-/** Answers `/admin` and `/admin/*` for people Access let in; null for other paths. */
+/** The dashboard (`/`) and its numbers (`/api/summary`) for people Access let in; 404 for anything else. */
 export async function handleAdmin(
   request: Request,
   store: AdminStore,
   config: Partial<AccessConfig>,
   now = new Date(),
   fetchKeys?: FetchKeys,
-): Promise<Response | null> {
+): Promise<Response> {
   const url = new URL(request.url);
-  if (url.pathname !== '/admin' && !url.pathname.startsWith('/admin/')) return null;
   const notFound = () => new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   // No Access set up: no dashboard. With it, only a token Access signed gets in.
   if (!config.team || !config.aud || request.method !== 'GET') return notFound();
   const email = await accessEmail(request, config as AccessConfig, now.getTime(), fetchKeys);
   if (!email) return notFound();
 
-  if (url.pathname === '/admin' || url.pathname === '/admin/') return new Response(PAGE, { headers: PAGE_HEADERS });
-  if (url.pathname === '/admin/api/summary') {
+  if (url.pathname === '/') return new Response(PAGE, { headers: PAGE_HEADERS });
+  if (url.pathname === '/api/summary') {
     const span = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
     const today = now.toISOString().slice(0, 10);
     const since = new Date(now.getTime() - (span - 1) * 86_400_000).toISOString().slice(0, 10);
@@ -219,7 +219,7 @@ export async function handleAdmin(
   return notFound();
 }
 
-/** The dashboard: one page that reads `/admin/api/summary` and draws it, light or dark like the system. */
+/** The dashboard: one page that reads `/api/summary` and draws it, light or dark like the system. */
 const PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -331,7 +331,7 @@ const PAGE = `<!doctype html>
     const days = $('days').value;
     let data;
     try {
-      const response = await fetch('/admin/api/summary?days=' + days, { credentials: 'same-origin' });
+      const response = await fetch('/api/summary?days=' + days, { credentials: 'same-origin' });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       data = await response.json();
     } catch (error) {

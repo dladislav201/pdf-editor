@@ -1,0 +1,21 @@
+# The site's private dashboard, a Worker of its own on admin.lovelydoc.com,
+# behind Cloudflare Access (Zero Trust > Access > Applications, the whole
+# host). It reads the site's database. Deployed with the site
+# (`npm run deploy:demo`).
+name = "lovelydoc-admin"
+compatibility_date = "2026-10-01"
+main = "worker/admin-main.ts"
+routes = [{ pattern = "admin.lovelydoc.com", custom_domain = true }]
+workers_dev = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pdf-sdk-site"
+database_id = "aaa330ba-8c43-4a98-a903-82f5d5e3309e"
+migrations_dir = "migrations"
+
+# The Access team (<team>.cloudflareaccess.com) and the application's
+# Audience (AUD) tag. Left empty, every request answers 404.
+[vars]
+ACCESS_TEAM = "damp-base-9244"
+ACCESS_AUD = ""

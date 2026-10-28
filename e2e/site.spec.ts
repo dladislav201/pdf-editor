@@ -806,7 +806,6 @@ test('the SDK page is plain HTML for search, and its form asks for a trial key',
     const html = await (await request.get('/sdk')).text();
     expect(html).toContain('<h1>A PDF editor for your web app.</h1>');
     expect(html).toContain('"@type":"SoftwareApplication"');
-    expect(await (await request.get('/robots.txt')).text()).toContain('Disallow: /admin');
   }
   // The Worker isn't in the preview: answer for it, and see what the form sends.
   const sent: unknown[] = [];

@@ -10,7 +10,7 @@
     "build": "vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
-    "deploy": "npm run build && wrangler d1 migrations apply pdf-sdk-site --remote && wrangler deploy",
+    "deploy": "npm run build && wrangler d1 migrations apply pdf-sdk-site --remote && wrangler deploy && wrangler deploy -c wrangler.admin.toml",
     "test": "vitest run worker",
     "stats": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT name, SUM(count) AS uses FROM counts WHERE day >= date('now', '-30 day') GROUP BY name ORDER BY uses DESC\"",
     "errors": "wrangler d1 execute pdf-sdk-site --remote --command \"SELECT message, SUM(count) AS times, MAX(day) AS last FROM errors WHERE day >= date('now', '-30 day') GROUP BY message ORDER BY times DESC LIMIT 50\"",

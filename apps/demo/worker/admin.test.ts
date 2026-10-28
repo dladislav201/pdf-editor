@@ -67,11 +67,11 @@ const store: AdminStore = {
 
 describe('Cloudflare Access token', () => {
   it('lets in a token Access signed for this application', async () => {
-    expect(await accessEmail(request('/admin', await token()), CONFIG, NOW.getTime(), fetchKeys)).toBe('owner@example.com');
+    expect(await accessEmail(request('/', await token()), CONFIG, NOW.getTime(), fetchKeys)).toBe('owner@example.com');
   });
 
   it('turns away no token, another key, another audience or issuer, and an expired token', async () => {
-    const check = async (jwt?: string) => accessEmail(request('/admin', jwt), CONFIG, NOW.getTime(), fetchKeys);
+    const check = async (jwt?: string) => accessEmail(request('/', jwt), CONFIG, NOW.getTime(), fetchKeys);
     expect(await check()).toBeNull();
     expect(await check('not.a.token')).toBeNull();
     expect(await check(await token({}, other.privateKey))).toBeNull();
@@ -83,24 +83,24 @@ describe('Cloudflare Access token', () => {
 
 describe('the dashboard', () => {
   it('is not there without Access set up, or without a valid token', async () => {
-    expect((await handleAdmin(request('/admin', await token()), store, {}, NOW, fetchKeys))!.status).toBe(404);
-    expect((await handleAdmin(request('/admin'), store, CONFIG, NOW, fetchKeys))!.status).toBe(404);
-    expect((await handleAdmin(request('/admin/api/summary', await token({}, other.privateKey)), store, CONFIG, NOW, fetchKeys))!.status).toBe(404);
-    expect(await handleAdmin(request('/'), store, CONFIG, NOW, fetchKeys)).toBeNull();
+    expect((await handleAdmin(request('/', await token()), store, {}, NOW, fetchKeys)).status).toBe(404);
+    expect((await handleAdmin(request('/'), store, CONFIG, NOW, fetchKeys)).status).toBe(404);
+    expect((await handleAdmin(request('/api/summary', await token({}, other.privateKey)), store, CONFIG, NOW, fetchKeys)).status).toBe(404);
+    expect((await handleAdmin(request('/anything-else', await token()), store, CONFIG, NOW, fetchKeys)).status).toBe(404);
   });
 
   it('serves the page, which can run only its own script and shows feedback as text', async () => {
-    const response = (await handleAdmin(request('/admin', await token()), store, CONFIG, NOW, fetchKeys))!;
+    const response = (await handleAdmin(request('/', await token()), store, CONFIG, NOW, fetchKeys));
     expect(response.status).toBe(200);
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
     expect(response.headers.get('x-robots-tag')).toBe('noindex');
     const html = await response.text();
-    expect(html).toContain('/admin/api/summary');
+    expect(html).toContain('/api/summary');
     expect(html).not.toContain('innerHTML');
   });
 
   it('sums the period: per day, per language and page, tools, opening and saving, errors and feedback', async () => {
-    const response = (await handleAdmin(request('/admin/api/summary?days=2', await token()), store, CONFIG, NOW, fetchKeys))!;
+    const response = (await handleAdmin(request('/api/summary?days=2', await token()), store, CONFIG, NOW, fetchKeys));
     const data = (await response.json()) as Record<string, unknown>;
     expect(data.viewer).toBe('owner@example.com');
     expect(data.days).toEqual(['2026-10-27', '2026-10-28']);

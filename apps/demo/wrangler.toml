@@ -20,15 +20,8 @@ directory = "./dist"
 binding = "ASSETS"
 # Every page is a prerendered file; anything else is a real 404.
 not_found_handling = "404-page"
-# Only the API and the dashboard run the Worker; every other request is a static file.
-run_worker_first = ["/api/*", "/admin", "/admin/*"]
-
-# The dashboard at /admin is behind Cloudflare Access (Zero Trust > Access >
-# Applications): its team name (<team>.cloudflareaccess.com) and the
-# application's Audience (AUD) tag. Left empty, /admin answers 404.
-[vars]
-ACCESS_TEAM = ""
-ACCESS_AUD = ""
+# Only the API runs the Worker; every other request is a static file.
+run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"

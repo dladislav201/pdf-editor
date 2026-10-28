@@ -196,7 +196,7 @@ writeFileSync(
     '',
   ].join('\n'),
 );
-writeFileSync('dist/robots.txt', `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\n\nSitemap: ${url('/sitemap.xml')}\n`);
+writeFileSync('dist/robots.txt', `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${url('/sitemap.xml')}\n`);
 
 rmSync('dist-ssr', { recursive: true, force: true });
 console.log(`prerendered ${ALL_PAGES.length} pages in ${LOCALES.length} languages, ${posts.length} guides, 404, sitemap.xml and robots.txt`);

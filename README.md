@@ -211,23 +211,28 @@ sent by hand: `node scripts/license.mjs issue --customer "…" --domains "…"
 --plan trial --expires <30 days on>`. The page is prerendered for search
 (`SoftwareApplication` and `FAQPage` data) and linked from every footer.
 
-**Dashboard** at `/admin` (`apps/demo/worker/admin.ts`): page views, files
-opened and downloads per day, tools used, pages people land on, languages,
-how files are opened and saved, feedback and errors, for 7, 30, 90 or 365
-days. It is behind Cloudflare Access: the Worker checks the token Access
-signs for each request (RS256 by the team's keys, issuer, the application's
-audience, expiry) and answers 404 otherwise, or while `ACCESS_TEAM` and
-`ACCESS_AUD` in `wrangler.toml` are empty. The page shows feedback as text
-only and its content security policy runs nothing but its own script. To
-switch it on:
+**Dashboard** on `admin.lovelydoc.com`, a Worker of its own
+(`apps/demo/worker/admin-main.ts`, `wrangler.admin.toml`; the public site's
+Worker has no dashboard code): page views, files opened and downloads per
+day, tools used, pages people land on, languages, how files are opened and
+saved, trial requests, feedback and errors, for 7, 30, 90 or 365 days. It
+is behind Cloudflare Access: the Worker checks the token Access signs for
+each request (RS256 by the team's keys, issuer, the application's audience,
+expiry) and answers 404 otherwise, or while `ACCESS_AUD` in
+`wrangler.admin.toml` is empty. The page shows feedback as text only and
+its content security policy runs nothing but its own script. To switch it
+on:
 
-1. Cloudflare dashboard › Zero Trust (the free plan): pick a team name; it
-   is the `<team>` of `<team>.cloudflareaccess.com`.
-2. Access › Applications › Add an application › Self-hosted: domain
-   `lovelydoc.com`, path `admin`; a policy that allows only your email
-   (sign-in with a one-time code by email is on by default).
-3. Copy the application's Audience (AUD) tag; put it and the team name in
-   `[vars]` in `apps/demo/wrangler.toml`, and deploy.
+1. Cloudflare dashboard › Zero Trust (the free plan): the team name is the
+   `<team>` of `<team>.cloudflareaccess.com` (`damp-base-9244`, already in
+   `wrangler.admin.toml`).
+2. Access › Applications › Add an application › Self-hosted and private ›
+   Public DNS: subdomain `admin`, domain `lovelydoc.com`, no path; a policy
+   that allows only your email (sign-in with a one-time code by email is on
+   by default).
+3. Copy the application's Audience (AUD) tag into `ACCESS_AUD` in
+   `wrangler.admin.toml`, and deploy (`npm run deploy:demo` deploys both
+   Workers; the Worker's custom domain creates the DNS record).
 
 `npm run deploy:demo` applies new migrations before deploying. Locally,
 `npx wrangler dev --local` in `apps/demo` (after a build and
