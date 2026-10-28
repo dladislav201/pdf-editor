@@ -136,9 +136,15 @@ The site is built for search as well as for use (`apps/demo`):
   scan, a dialog). Going back to the start page removes it; a tab marks its
   copy alive every 5 minutes, and any page of the site clears copies nobody
   marked for half an hour (closed tabs'). A restored tab moves its copy to a
-  new id, so a duplicated tab gets its own. Edits aren't kept: with changes
-  not downloaded (undoable ones, form entries, rearranged pages) the browser
-  asks before the page reloads or closes.
+  new id, so a duplicated tab gets its own. Changes are kept too: a second
+  after each (annotations and signatures, form entries, a finished
+  paragraph, rearranged pages, recognized text) the document is exported
+  (`exportPdf`) and kept in place of the copy, waiting while a paragraph or
+  a note is open (`editor.isEditing()`, as the export would close it); the
+  undo history isn't kept. Leaving while something isn't kept yet (a
+  paragraph still open, the last second's change) makes the browser ask. A
+  file opened with its password isn't kept with changes, as that copy would
+  be decrypted; leaving it after changes asks.
 - **Brand**: LovelyDoc, a page with a heart. The name (`SITE.name`) is in
   titles, the top bar and the footer; the mark is `src/Logo.tsx` and
   `public/favicon.svg`. PNG icons and `public/og.png` (1200×630) are drawn

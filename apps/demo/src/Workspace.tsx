@@ -10,6 +10,7 @@ import { CompressDialog, ImagesDialog, ProtectDialog } from './ExportDialogs';
 import { FeedbackDialog } from './FeedbackDialog';
 import { PasswordDialog } from './PasswordDialog';
 import { useI18n, type Locale } from './i18n';
+import { keepOpen } from './session';
 
 const TOOLS: { tool: 'select' | 'editText' | 'highlight' | 'ink' | 'rectangle' | 'text'; icon: IconName; key: string }[] = [
   { tool: 'select', icon: 'cursor', key: 'V' },
@@ -141,8 +142,6 @@ export function Workspace({
   }, [tool]);
   const [color, setColor] = useState<string | null>(null);
   const [history, setHistory] = useState({ canUndo: false, canRedo: false });
-  // Changes outside the undo history: form entries, rearranged pages.
-  const [untracked, setUntracked] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [page, setPage] = useState({ index: 0, count: 0 });
@@ -211,7 +210,11 @@ export function Workspace({
       editor.on('selectionChange', ({ id }) => setSelected(id)),
       editor.on('zoomChange', ({ zoom }) => setZoom(zoom)),
       editor.on('pageChange', ({ pageIndex }) => setPage((p) => ({ ...p, index: pageIndex }))),
-      editor.on('textEditsChange', ({ edits }) => setEdits(edits.length)),
+      editor.on('textEditsChange', ({ edits }) => {
+        setEdits(edits.length);
+        keepSoon();
+      }),
+      editor.on('annotationsChange', keepSoon),
       editor.on('textEditing', ({ paragraph }) => setTyping(!!paragraph)),
       editor.on('textStyleChange', ({ style }) => {
         setTextStyle(style);
@@ -220,6 +223,7 @@ export function Workspace({
       editor.on('documentUnlocked', ({ password }) => {
         track(password ? 'open.unlocked.password' : 'open.unlocked.owner');
         if (password) setMessage(w.unlocked);
+        if (password) keepingOff.current = true;
       }),
       editor.on('ocrProgress', ({ pageIndex, done, total }) => {
         if (pageIndex >= 0) setScan({ kind: 'reading', done, total });
@@ -228,13 +232,19 @@ export function Workspace({
       editor.on('textRecognized', ({ pages }) => {
         track('ocr.done');
         setScan({ kind: 'done', words: pages.reduce((n, p) => n + p.words.length, 0) });
+        keepSoon();
       }),
       editor.on('error', ({ error }) => {
+        // A save in the background that failed isn't the person's business: the next change tries again.
+        if (keeping.current) return;
         if ((error as Error)?.name !== 'AbortError') setMessage(error instanceof Error ? error.message : String(error));
       }),
       editor.on('documentLoaded', async ({ pageCount }) => {
         setPage({ index: 0, count: pageCount });
         setLoaded(true);
+        // The events a load sends right after this one aren't changes: count from the next task on.
+        ready.current = false;
+        queueMicrotask(() => (ready.current = true));
         // A form: fields take typing with the Select tool, so start there.
         const formFields = editor.getFormFields().length;
         setFields(formFields);
@@ -325,17 +335,53 @@ export function Workspace({
     return () => removeEventListener('keydown', key);
   }, [mode, openSearch]);
 
-  // Changes not downloaded yet go with a reload or a closed tab: the browser asks first. Form entries
-  // and rearranged pages aren't in the undo history, so they count on their own.
+  // The document as it is now is kept in this browser a moment after each change (session.ts), so a
+  // reload opens it with the changes. Not a file opened with its password: it would be kept decrypted.
+  const keepTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const keepVersion = useRef(0);
+  const unkept = useRef(false);
+  const changed = useRef(false);
+  const keepingOff = useRef(false);
+  const keeping = useRef(false);
+  const ready = useRef(false);
+  const keepSoon = useCallback(() => {
+    if (!editor || !ready.current) return;
+    changed.current = true;
+    if (keepingOff.current) return;
+    unkept.current = true;
+    const version = ++keepVersion.current;
+    clearTimeout(keepTimer.current);
+    const keep = async () => {
+      // A paragraph or a note being typed would be closed by the export: wait for it.
+      if (editor.isEditing()) {
+        keepTimer.current = setTimeout(keep, 1000);
+        return;
+      }
+      keeping.current = true;
+      try {
+        const bytes = await editor.exportPdf();
+        await keepOpen({ file: new File([bytes as BlobPart], file.name, { type: 'application/pdf', lastModified: file.lastModified }), tool: initialTool });
+        if (version === keepVersion.current) unkept.current = false;
+      } catch {
+        // Not kept this time; the next change tries again, and leaving still asks.
+      } finally {
+        keeping.current = false;
+      }
+    };
+    keepTimer.current = setTimeout(keep, 1000);
+  }, [editor, file, initialTool]);
+  useEffect(() => () => clearTimeout(keepTimer.current), []);
+  // Leaving with something not kept yet (a paragraph still open, a change of the last second) asks first.
   useEffect(() => {
-    if (!history.canUndo && !untracked) return;
     const warn = (event: BeforeUnloadEvent) => {
+      const open = editor?.isEditing() ?? false;
+      if (!(keepingOff.current ? changed.current || open : unkept.current || open)) return;
       event.preventDefault();
       event.returnValue = '';
     };
     addEventListener('beforeunload', warn);
     return () => removeEventListener('beforeunload', warn);
-  }, [history.canUndo, untracked]);
+  }, [editor]);
 
   const drawing = isMarkup(tool) || tool === 'ink' || tool === 'rectangle' || tool === 'text';
   // Highlight, underline or strike out: with the colors on wide screens, in place of the hint on phones.
@@ -375,7 +421,7 @@ export function Workspace({
           onFormChange={() => {
             if (!formTracked.current) track('form.fill');
             formTracked.current = true;
-            setUntracked(true);
+            keepSoon();
           }}
         />
       </div>
@@ -462,7 +508,7 @@ export function Workspace({
       </div>
 
       {mode === 'pages' && editor && (
-        <Pages editor={editor} fileName={file.name} onApplied={() => setUntracked(true)} onClose={() => setMode('edit')} onMessage={setMessage} />
+        <Pages editor={editor} fileName={file.name} onApplied={keepSoon} onClose={() => setMode('edit')} onMessage={setMessage} />
       )}
 
       <div className="status" aria-live="polite">

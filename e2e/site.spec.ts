@@ -49,7 +49,7 @@ test('opens a PDF and keeps the bars on screen', async ({ page }) => {
   }
 });
 
-test('a reload opens the same file again, and asks first when there are changes', async ({ page }) => {
+test('a reload opens the same file again, with its changes kept a moment after each', async ({ page }) => {
   await openSample(page, 'A contract');
   const leaving = () =>
     page.evaluate(() => {
@@ -94,7 +94,13 @@ test('a reload opens the same file again, and asks first when there are changes'
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.55, { steps: 4 });
   await page.mouse.up();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  // Just changed: not kept yet, so leaving asks; a moment later it's kept and leaving needn't.
   expect(await leaving()).toBe(true);
+  await expect.poll(leaving, { timeout: 10_000 }).toBe(false);
+  await page.reload();
+  await waitForApp(page);
+  await expectPainted(page);
+  await expect(page.locator('.pdfsdk-highlight')).toHaveCount(1);
 
   // Back on the start page, the file is let go: a reload stays there.
   await page.getByRole('button', { name: 'Back to start' }).click();
@@ -166,6 +172,31 @@ test('edits a paragraph and saves it into the PDF', async ({ page }) => {
   const [first] = await pdfText(await download(page));
   expect(squash(first!)).toContain('Replacedopeningparagraph.');
   expect(squash(first!)).not.toContain('isenteredintoby');
+});
+
+test('keeps an edited paragraph across a reload', async ({ page }) => {
+  await openSample(page, 'A contract');
+  await page.getByRole('button', { name: 'Edit text' }).click();
+  await clickPage(page, 0.3, 0.215);
+  await expect(page.locator('.pdfsdk-caret')).toHaveCount(1);
+  await page.keyboard.press('ControlOrMeta+ArrowDown');
+  await page.keyboard.type(' Kept across a reload.');
+  const leaving = () =>
+    page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  // A paragraph still open isn't kept: leaving asks.
+  await page.waitForTimeout(1500);
+  expect(await leaving()).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect.poll(leaving, { timeout: 10_000 }).toBe(false);
+  await page.reload();
+  await waitForApp(page);
+  await expectPainted(page);
+  const [first] = await pdfText(await download(page));
+  expect(squash(first!)).toContain('Keptacrossareload.');
 });
 
 test('the Edit text hint mentions Esc only while a paragraph is open', async ({ page }) => {
@@ -535,7 +566,7 @@ test('finds text on every page', async ({ page }) => {
   await expect(page.getByText(/^2 of \d+$/)).toBeVisible();
 });
 
-test('asks before a reload drops form entries, which undo doesn\'t hold', async ({ page }) => {
+test('keeps form entries across a reload', async ({ page }) => {
   await openSample(page, 'A form');
   const leaving = () =>
     page.evaluate(() => {
@@ -546,6 +577,10 @@ test('asks before a reload drops form entries, which undo doesn\'t hold', async 
   expect(await leaving()).toBe(false);
   await page.locator('input.pdfsdk-field').first().fill('Olena');
   await expect.poll(leaving).toBe(true);
+  await expect.poll(leaving, { timeout: 10_000 }).toBe(false);
+  await page.reload();
+  await waitForApp(page);
+  await expect(page.locator('input.pdfsdk-field').first()).toHaveValue('Olena');
 });
 
 test('fills a form and saves the values', async ({ page }) => {
@@ -572,6 +607,20 @@ test('types a signature and places it', async ({ page }) => {
   await dialog.getByRole('textbox', { name: 'Your name' }).fill('Jane Doe');
   await dialog.getByRole('button', { name: 'Place signature' }).click();
   await clickPage(page, 0.5, 0.5);
+  // A reload a moment later keeps it.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true });
+        dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+    )
+    .toBe(false);
+  await page.reload();
+  await waitForApp(page);
+  await expectPainted(page);
+  await expect(page.locator('.pdfsdk-page image')).toHaveCount(1);
   const doc = await PDFDocument.load(await download(page));
   const stamps = doc
     .getPage(0)

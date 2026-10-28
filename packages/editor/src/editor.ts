@@ -624,6 +624,14 @@ export class PdfEditor {
     }
   }
 
+  /**
+   * Whether a paragraph or a note is open for typing. `exportPdf` closes it
+   * first, so an app saving in the background waits until this is false.
+   */
+  isEditing(): boolean {
+    return this.textSession !== null || this.textEditor !== null;
+  }
+
   /** Exports and saves the PDF through the browser's download flow. */
   async download(fileName = this.fileName, options: Pick<ExportOptions, 'flatten' | 'password'> = {}): Promise<void> {
     const bytes = await this.exportPdf(options);
