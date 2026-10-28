@@ -170,17 +170,26 @@ the other languages (and `x-default` to English), and the sitemap lists
 the alternates. A language menu on the start page goes to the same page in
 another language; an English page offers the visitor's browser language
 once. The page's dictionary alone is downloaded. The editor takes its
-words through the new `messages` option (`EditorMessages`). Guides and scan
-recognition stay English (and Ukrainian, for OCR).
+words through the new `messages` option (`EditorMessages`). Each language's
+pages read scans in that language and English (English pages: Ukrainian and
+English).
 
-**Guides** (`/blog`): step-by-step articles for the longer searches people
-make ("how to edit a scanned PDF", "compress a PDF for email"…), each
-leading to its tool page. A guide is a Markdown file in
-`apps/demo/content/blog/` with a front matter block (`title`, `description`,
-`date`, `tool`, `toolName`, optional `draft: true`); the build turns it into
-a static page with `Article` structured data and adds it to the sitemap.
-Drafts show with `npm run dev` (at `/blog`) and in `DRAFTS=1` builds, not on
-the live site; the footer links to the guides only once one is published.
+**Guides** (`/blog`, `/de/blog`, …): step-by-step articles for the longer
+searches people make ("how to edit a scanned PDF", "password protect a
+PDF"…), each leading to its tool page. A guide is a Markdown file in
+`apps/demo/content/blog/` (English) or `apps/demo/content/blog/<locale>/`
+with a front matter block (`title`, `description`, `date`, `tool`,
+`toolName`, optional `draft: true`; a guide in another language also has
+`translates: <English slug>`, and its `tool` is the tool page in its
+language). The build turns each into a static page in its language with
+`Article` structured data, links a guide and its translations to each other
+(hreflang, English as x-default), makes a list of guides per language and
+adds them all to the sitemap. Drafts show with `npm run dev` and in
+`DRAFTS=1` builds, not on the live site; the footer links to the guides in
+the page's language once one is published there, else to the English ones.
+13 guides are in English; the three on editing text, editing scans and
+signing without uploading are also in German, Norwegian, Swedish and
+Ukrainian (worth a native speaker's read).
 To publish, remove the draft line and push.
 
 The name and address are placeholders in `src/site.ts` (`SITE`): a custom

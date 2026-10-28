@@ -33,9 +33,18 @@ export const sv: Messages = {
     compress: { title: 'Komprimera', text: 'Gör en PDF mindre för e-post: skanningar och foton krymper, texten förblir skarp.' },
     convert: { title: 'Konvertera', text: 'Gör foton till en PDF, eller spara varje sida som en bild.' },
   },
+  blog: {
+    guides: 'Guider',
+    title: 'PDF-guider: redigera, signera och fyll i PDF-filer',
+    description: 'Steg-för-steg-guider för vanliga PDF-uppgifter i webbläsaren: redigera text och skannade PDF-filer, signera.',
+    lead: 'Så gör du vanliga PDF-uppgifter i webbläsaren, steg för steg.',
+    cta: 'Gratis, i webbläsaren. Din fil lämnar aldrig din enhet.',
+    open: 'Öppna',
+    draft: 'Utkast',
+  },
   footer: {
     allTools: 'Alla verktyg',
-    guides: 'Guider (engelska)',
+    guides: 'Guider',
     sdk: 'PDF-SDK för utvecklare',
     privacy:
       'Ingen registrering, ingen uppladdning: filerna öppnas och sparas på din enhet. Vi räknar bara vilka verktyg som används, utan cookies.',

@@ -6,19 +6,22 @@ import { pdfiumViteConfig } from '../../packages/editor/vite-pdfium.ts';
 
 const fromRoot = (path: string) => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
-/** Whether any guide in content/blog is published (not a draft); until then the site doesn't link to them. */
-function hasGuides(): boolean {
+/** The languages with a published guide (not a draft) in content/blog (English) or content/blog/<locale>; the site links only to those. */
+function guideLocales(drafts: boolean): string[] {
   const folder = fileURLToPath(new URL('content/blog/', import.meta.url));
-  return readdirSync(folder)
-    .filter((file) => file.endsWith('.md'))
-    .some((file) => !/^draft:\s*true\s*$/m.test(readFileSync(folder + file, 'utf8')));
+  const published = (dir: string) =>
+    readdirSync(folder + dir)
+      .filter((file) => file.endsWith('.md'))
+      .some((file) => drafts || !/^draft:\s*true\s*$/m.test(readFileSync(`${folder}${dir}${file}`, 'utf8')));
+  const others = readdirSync(folder, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  return ['', ...others.map((name) => `${name}/`)].filter(published).map((dir) => dir.replace('/', '') || 'en');
 }
 
 export default defineConfig(({ command }) => ({
   ...pdfiumViteConfig,
   define: {
     // While developing the drafts show too.
-    __GUIDES__: JSON.stringify(command === 'serve' || process.env.DRAFTS === '1' || hasGuides()),
+    __GUIDES__: JSON.stringify(guideLocales(command === 'serve' || process.env.DRAFTS === '1')),
   },
   plugins: [react(), ...pdfiumViteConfig.plugins!],
   resolve: {

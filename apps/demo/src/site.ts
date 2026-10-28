@@ -92,3 +92,15 @@ export function routeOf(path: string): { id: LandingId; locale: Locale } | undef
 
 /** Every page in every language, for the build. */
 export const ALL_PAGES = LOCALES.flatMap((locale) => LANDING_IDS.map((id) => ({ id, locale, path: landingPath(id, locale) })));
+
+/** The guides' list in a language, e.g. "/blog" or "/de/blog". */
+export const blogPath = (locale: Locale) => `${localePrefix(locale)}/blog`;
+
+/** Which guide list or guide an address is, for addresses under /blog or /<locale>/blog. */
+export function blogRouteOf(path: string): { locale: Locale; slug: string } | undefined {
+  const match = /^(?:\/([a-z]{2}))?\/blog(?:\/([^/]*))?\/?$/.exec(path);
+  if (!match) return undefined;
+  const locale = (match[1] ?? 'en') as Locale;
+  if (!(LOCALES as readonly string[]).includes(locale) || match[1] === 'en') return undefined;
+  return { locale, slug: match[2] ?? '' };
+}

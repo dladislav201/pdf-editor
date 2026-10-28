@@ -1,10 +1,12 @@
 import { useI18n } from './i18n';
 import { Logo } from './Logo';
-import { LANDING_IDS, landingPath, SITE, type LandingId } from './site';
+import { blogPath, LANDING_IDS, landingPath, SITE, type LandingId } from './site';
 
 /** Links to every tool page (in the page's language) and the guides: how people and search engines find the rest. */
 export function Footer({ current }: { current?: LandingId | 'blog' | 'sdk' }) {
   const { locale, t } = useI18n();
+  // The guides in this language, or else the English ones.
+  const guides = __GUIDES__.includes(locale) ? locale : __GUIDES__.includes('en') ? 'en' : null;
   return (
     <footer className="footer">
       <nav aria-label={t.footer.allTools}>
@@ -16,8 +18,8 @@ export function Footer({ current }: { current?: LandingId | 'blog' | 'sdk' }) {
         <a href="/sdk" hrefLang="en" aria-current={current === 'sdk' ? 'page' : undefined}>
           {t.footer.sdk}
         </a>
-        {__GUIDES__ && (
-          <a href="/blog" hrefLang="en" aria-current={current === 'blog' ? 'page' : undefined}>
+        {guides && (
+          <a href={blogPath(guides)} hrefLang={guides} aria-current={current === 'blog' ? 'page' : undefined}>
             {t.footer.guides}
           </a>
         )}

@@ -33,9 +33,18 @@ export const de: Messages = {
     compress: { title: 'Komprimieren', text: 'PDF für E-Mails verkleinern: Scans und Fotos schrumpfen, Text bleibt scharf.' },
     convert: { title: 'Umwandeln', text: 'Fotos in ein PDF verwandeln oder jede Seite als Bild speichern.' },
   },
+  blog: {
+    guides: 'Anleitungen',
+    title: 'PDF-Anleitungen: PDFs bearbeiten, unterschreiben, schützen',
+    description: 'Schritt-für-Schritt-Anleitungen für alltägliche PDF-Aufgaben im Browser: Text und Scans bearbeiten, PDFs unterschreiben.',
+    lead: 'So erledigen Sie alltägliche PDF-Aufgaben im Browser, Schritt für Schritt.',
+    cta: 'Kostenlos, im Browser. Ihre Datei verlässt nie Ihr Gerät.',
+    open: 'Öffnen',
+    draft: 'Entwurf',
+  },
   footer: {
     allTools: 'Alle Werkzeuge',
-    guides: 'Anleitungen (Englisch)',
+    guides: 'Anleitungen',
     sdk: 'PDF-SDK für Entwickler',
     privacy:
       'Ohne Anmeldung, ohne Upload: Dateien werden auf Ihrem Gerät geöffnet und gespeichert. Wir zählen nur, welche Werkzeuge genutzt werden – ohne Cookies.',

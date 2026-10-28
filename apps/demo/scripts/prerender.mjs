@@ -1,6 +1,6 @@
 // After `vite build` and the server build of src/entry-server.tsx: writes a
 // static HTML file per page — the start page and every tool page in every
-// language, the guides (English), 404 — with its own language, title,
+// language, the guides (in English, some also in other languages), 404 — with its own language, title,
 // description, canonical link, alternates in the other languages, social
 // preview tags and structured data, plus sitemap.xml and robots.txt. Guides
 // marked as drafts are left out unless DRAFTS=1. Run from apps/demo.
@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const { ALL_PAGES, LANDING_IDS, LOCALES, MESSAGES, POSTS, REGIONS, SDK_FAQ, SITE, landingPath, renderPage, renderBlogIndex, renderPost, renderSdk } =
+const { ALL_PAGES, LANDING_IDS, LOCALES, MESSAGES, POSTS, REGIONS, SDK_FAQ, SITE, blogPath, landingPath, renderPage, renderBlogIndex, renderPost, renderSdk } =
   await import(pathToFileURL('dist-ssr/entry-server.js').href);
 const template = readFileSync('dist/index.html', 'utf8');
 const escape = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -93,51 +93,59 @@ writeFileSync(
   html(renderPage('home', 'en'), head({ path: '/', title: notFound.title, description: MESSAGES.en.landings.home.description }, { noindex: true })),
 );
 
-// Guides (English): static pages that don't start the app. None published yet: no guide pages at all.
+// Guides: static pages that don't start the app, in English and some also in
+// other languages. A language without published guides has no guide pages.
 const posts = POSTS.filter((post) => !post.draft || process.env.DRAFTS === '1');
-const toolPaths = LANDING_IDS.map((id) => landingPath(id, 'en'));
 for (const post of POSTS) {
-  if (!toolPaths.includes(post.tool)) throw new Error(`Guide ${post.slug} leads to ${post.tool}, which isn't a tool page.`);
+  const tools = LANDING_IDS.map((id) => landingPath(id, post.locale));
+  if (!tools.includes(post.tool)) throw new Error(`Guide ${post.path} leads to ${post.tool}, which isn't a tool page in its language.`);
+  if (post.locale !== 'en' && !POSTS.some((p) => p.locale === 'en' && p.slug === post.original)) {
+    throw new Error(`Guide ${post.path} translates ${post.original}, which isn't an English guide.`);
+  }
 }
 const publisher = { '@type': 'Organization', name: SITE.name, url: SITE.url };
-if (posts.length) {
-  const page = {
-    path: '/blog',
-    title: 'PDF guides: how to edit, sign, compress and fill PDFs',
-    description: 'Step-by-step guides to everyday PDF jobs in your browser: editing scans, compressing, signing, filling forms.',
-  };
+const guideLocales = LOCALES.filter((locale) => posts.some((post) => post.locale === locale));
+/** Pages in other languages, by language; none unless English is one of them (it's the x-default). */
+const alternatesBy = (entries) => (entries.length > 1 && entries.some(([l]) => l === 'en') ? Object.fromEntries(entries) : undefined);
+const blogAlternates = alternatesBy(guideLocales.map((l) => [l, blogPath(l)]));
+const translations = (post) => alternatesBy(posts.filter((p) => p.original === post.original).map((p) => [p.locale, p.path]));
+for (const locale of guideLocales) {
+  const list = posts.filter((post) => post.locale === locale);
+  const words = MESSAGES[locale].blog;
+  const page = { path: blogPath(locale), title: words.title, description: words.description };
   const data = [
     {
       '@context': 'https://schema.org',
       '@type': 'Blog',
-      name: `${SITE.name} guides`,
-      url: url('/blog'),
-      inLanguage: 'en',
+      name: `${SITE.name}: ${words.guides}`,
+      url: url(page.path),
+      inLanguage: locale,
       publisher,
-      blogPost: posts.map((post) => ({ '@type': 'BlogPosting', headline: post.title, url: url(`/blog/${post.slug}`) })),
+      blogPost: list.map((post) => ({ '@type': 'BlogPosting', headline: post.title, url: url(post.path) })),
     },
   ];
-  write('/blog', html(renderBlogIndex(posts), head(page, { data }), { isStatic: true }));
+  write(page.path, html(renderBlogIndex(list, locale), head(page, { locale, alternates: blogAlternates, data }), { locale, isStatic: true }));
 }
 for (const post of posts) {
-  const path = `/blog/${post.slug}`;
   const data = [
     {
       '@context': 'https://schema.org',
       '@type': 'Article',
       headline: post.title,
       description: post.description,
-      inLanguage: 'en',
+      inLanguage: post.locale,
       datePublished: post.date,
       dateModified: post.date,
-      url: url(path),
-      mainEntityOfPage: url(path),
+      url: url(post.path),
+      mainEntityOfPage: url(post.path),
       image: url('/og.png'),
       author: publisher,
       publisher,
     },
   ];
-  write(path, html(renderPost(post), head({ path, title: post.title, description: post.description }, { article: true, data }), { isStatic: true }));
+  const page = { path: post.path, title: post.title, description: post.description };
+  const options = { locale: post.locale, alternates: translations(post), article: true, data };
+  write(post.path, html(renderPost(post), head(page, options), { locale: post.locale, isStatic: true }));
 }
 
 // The SDK's page for developers (English; its trial form runs, so it isn't a static page).
@@ -190,8 +198,8 @@ writeFileSync(
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',
     ...ALL_PAGES.map(({ id, path }) => entry(path, undefined, alternatesOf(id))),
     entry('/sdk'),
-    ...(posts.length ? [entry('/blog', posts[0].date)] : []),
-    ...posts.map((post) => entry(`/blog/${post.slug}`, post.date)),
+    ...guideLocales.map((l) => entry(blogPath(l), posts.find((post) => post.locale === l).date, blogAlternates)),
+    ...posts.map((post) => entry(post.path, post.date, translations(post))),
     '</urlset>',
     '',
   ].join('\n'),
@@ -199,4 +207,4 @@ writeFileSync(
 writeFileSync('dist/robots.txt', `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${url('/sitemap.xml')}\n`);
 
 rmSync('dist-ssr', { recursive: true, force: true });
-console.log(`prerendered ${ALL_PAGES.length} pages in ${LOCALES.length} languages, ${posts.length} guides, 404, sitemap.xml and robots.txt`);
+console.log(`prerendered ${ALL_PAGES.length} pages in ${LOCALES.length} languages, ${posts.length} guides in ${guideLocales.join(', ')}, 404, sitemap.xml and robots.txt`);

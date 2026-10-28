@@ -49,6 +49,16 @@ export const en = {
     compress: { title: 'Compress', text: 'Make a PDF smaller for email: scans and photos shrink, text stays sharp.' },
     convert: { title: 'Convert', text: 'Turn photos into a PDF, or save every page as a picture.' },
   },
+  /** The guides: their list's title and description (for search), its lead, and each guide's link to its tool. */
+  blog: {
+    guides: 'Guides',
+    title: 'PDF guides: how to edit, sign, compress and fill PDFs',
+    description: 'Step-by-step guides to everyday PDF jobs in your browser: editing scans, compressing, signing, filling forms.',
+    lead: 'How to get everyday PDF jobs done in your browser, step by step.',
+    cta: 'Free, in your browser. Your file never leaves your device.',
+    open: 'Open',
+    draft: 'Draft',
+  },
   footer: {
     allTools: 'All tools',
     guides: 'Guides',

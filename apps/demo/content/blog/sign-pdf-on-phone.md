@@ -15,7 +15,7 @@ Someone sends you a PDF to sign and you’re away from your computer. You don’
 3. The signature window opens. Choose how to sign:
    - **Draw**: sign with your finger in the box.
    - **Type**: type your name and pick a handwriting style.
-   - **Upload**: use a photo of your signature on white paper.
+   - **Photo**: use a photo of your signature on white paper.
 4. Tap **Place signature**, then tap where it goes. Drag it into position and pull the corner to resize it.
 5. Tap **Download**. Safari saves the signed PDF to **Files › Downloads**, ready to attach to a reply.
 

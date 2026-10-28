@@ -1,5 +1,5 @@
 // Build-time rendering of the start page and every tool page in every
-// language, and the guides, to static HTML (see scripts/prerender.mjs), so
+// language, and the guides in theirs, to static HTML (see scripts/prerender.mjs), so
 // search engines and link previews see the words without running the app.
 import { renderToString } from 'react-dom/server';
 import { BlogIndex, BlogPost } from './Blog';
@@ -17,7 +17,7 @@ import type { LandingId } from './site';
 
 export { LOCALES, REGIONS } from './i18n';
 export { POSTS } from './posts';
-export { ALL_PAGES, LANDING_IDS, landingPath, SITE } from './site';
+export { ALL_PAGES, blogPath, LANDING_IDS, landingPath, SITE } from './site';
 
 export const MESSAGES: Record<Locale, Messages> = { en, de, nb, sv, uk };
 
@@ -31,12 +31,12 @@ export function renderPage(id: LandingId, locale: Locale): string {
   );
 }
 
-const english = (node: React.ReactNode) =>
+const inLocale = (locale: Locale, node: React.ReactNode) =>
   renderToString(
-    <I18nProvider locale="en" messages={en}>
+    <I18nProvider locale={locale} messages={MESSAGES[locale]}>
       {node}
     </I18nProvider>,
   );
-export const renderBlogIndex = (posts: Post[]) => english(<BlogIndex posts={posts} />);
-export const renderPost = (post: Post) => english(<BlogPost post={post} />);
-export const renderSdk = () => english(<SdkPage />);
+export const renderBlogIndex = (posts: Post[], locale: Locale) => inLocale(locale, <BlogIndex posts={posts} />);
+export const renderPost = (post: Post) => inLocale(post.locale, <BlogPost post={post} />);
+export const renderSdk = () => inLocale('en', <SdkPage />);

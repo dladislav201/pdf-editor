@@ -826,11 +826,35 @@ test('every page in the sitemap is plain HTML with its own title, heading and st
     titles.add(/<title>([^<]+)<\/title>/.exec(html)?.[1] ?? '');
     expect(html, path).toMatch(/<h1>[^<]+<\/h1>/);
     expect(html, path).toContain(`<link rel="canonical" href="`);
-    // Tool pages answer questions; guides are articles.
-    expect(html, path).toContain(path.startsWith('/blog') ? (path === '/blog' ? '"@type":"Blog"' : '"@type":"Article"') : '"@type":"FAQPage"');
+    // Tool pages answer questions; guides are articles, in each language.
+    const guide = /^(?:\/[a-z]{2})?\/blog(\/.*)?$/.exec(path);
+    expect(html, path).toContain(guide ? (guide[1] ? '"@type":"Article"' : '"@type":"Blog"') : '"@type":"FAQPage"');
   }
   expect(titles.size).toBe(paths.length);
   expect(await (await request.get('/robots.txt')).text()).toContain('Sitemap:');
+});
+
+test('guides in other languages are in that language and link to each other', async ({ page, request }, info) => {
+  test.skip(info.project.name !== 'chromium', 'Server output: one browser is enough.');
+  const html = await (await request.get('/de/blog/text-in-pdf-bearbeiten')).text();
+  expect(html).toContain('<html lang="de"');
+  expect(html).toContain('"inLanguage":"de"');
+  // Its versions in the other languages, English as the default.
+  expect(html).toContain('<link rel="alternate" hreflang="en" href="https://lovelydoc.com/blog/edit-text-in-pdf" />');
+  expect(html).toContain('<link rel="alternate" hreflang="uk" href="https://lovelydoc.com/uk/blog/yak-redaguvaty-tekst-u-pdf" />');
+  expect(html).toContain('<link rel="alternate" hreflang="x-default" href="https://lovelydoc.com/blog/edit-text-in-pdf" />');
+
+  await page.goto('/de/blog/text-in-pdf-bearbeiten');
+  // Its words, its tool page, and the guides in German from the footer.
+  await expect(page.getByRole('link', { name: 'Anleitungen' }).first()).toHaveAttribute('href', '/de/blog');
+  await expect(page.getByRole('link', { name: /PDF-Text bearbeiten.*Öffnen/ })).toHaveAttribute('href', '/de/pdf-text-bearbeiten');
+  await expect(page.locator('footer').getByRole('link', { name: 'Anleitungen' })).toHaveAttribute('href', '/de/blog');
+  await page.goto('/de/blog');
+  await expect(page.getByRole('heading', { level: 1, name: 'Anleitungen' })).toBeVisible();
+  await expect(page.locator('.posts li')).toHaveCount(3);
+  // A tool page in German leads to the German guides.
+  await page.goto('/de/pdf-komprimieren');
+  await expect(page.locator('footer').getByRole('link', { name: 'Anleitungen' })).toHaveAttribute('href', '/de/blog');
 });
 
 test('the SDK page is plain HTML for search, and its form asks for a trial key', async ({ page, request }, info) => {
