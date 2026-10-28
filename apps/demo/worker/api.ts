@@ -1,6 +1,7 @@
 /**
- * The site's small API: anonymous usage counts, error reports and feedback.
- * Nothing here can identify a person or a file: counts are per day and
+ * The site's small API: anonymous usage counts, error reports and feedback,
+ * and requests for a trial key of the SDK. Nothing but a trial request can
+ * identify a person, and it is given to be answered: counts are per day and
  * name, errors per day and message, and the browser is kept only as a
  * family ("Safari on iOS").
  */
@@ -10,6 +11,31 @@ export interface Store {
   count(day: string, names: Map<string, number>): Promise<void>;
   error(day: string, message: string): Promise<void>;
   feedback(entry: { at: string; message: string; email: string | null; browser: string }): Promise<void>;
+  trial(entry: TrialRequest): Promise<void>;
+}
+
+/** Someone asking for a trial key of the SDK, to be sent one by hand. */
+export interface TrialRequest {
+  at: string;
+  name: string;
+  email: string;
+  company: string;
+  /** Host names the key should cover, comma-separated (e.g. "app.acme.com, *.acme.dev"). */
+  domains: string;
+  message: string | null;
+}
+
+/** A host name a key can cover: letters, digits and hyphens between dots, optionally starting with "*.". */
+const HOST = /^(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+/** The host names in what someone typed, lower case, without schemes, paths or ports; null if one isn't a host name. */
+export function parseDomains(text: string): string[] | null {
+  const hosts = text
+    .split(/[\s,;]+/)
+    .map((h) => h.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/:].*$/, ''))
+    .filter(Boolean);
+  if (!hosts.length || hosts.length > 10 || hosts.some((h) => !HOST.test(h))) return null;
+  return [...new Set(hosts)];
 }
 
 /** Event names: up to four words joined by dots, starting lower case, e.g. "tool.editText", "download.pdf". */
@@ -111,6 +137,19 @@ export async function handle(request: Request, store: Store, now = new Date()): 
         email: email || null,
         browser: browserFamily(request.headers.get('user-agent') ?? ''),
       });
+      return empty();
+    }
+    case '/api/trial': {
+      if (body.website) return empty();
+      const field = (key: string, max: number) => (typeof body[key] === 'string' ? (body[key] as string).trim() : '').slice(0, max + 1);
+      const name = field('name', 100);
+      const email = field('email', 200);
+      const company = field('company', 200);
+      const message = field('message', 2000);
+      const domains = parseDomains(field('domains', 600));
+      if (!name || name.length > 100 || !company || company.length > 200 || message.length > 2000) return empty(400);
+      if (!EMAIL.test(email) || email.length > 200 || !domains) return empty(400);
+      await store.trial({ at: now.toISOString(), name, email, company, domains: domains.join(', '), message: message || null });
       return empty();
     }
     default:

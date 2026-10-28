@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { browserFamily, cleanError, handle, type Store } from './api';
+import { browserFamily, cleanError, handle, parseDomains, type Store, type TrialRequest } from './api';
 
 const SITE = 'https://pdf.example';
 const NOW = new Date('2026-10-25T12:00:00Z');
@@ -8,6 +8,7 @@ function memory() {
   const counts = new Map<string, number>();
   const errors: string[] = [];
   const feedback: Parameters<Store['feedback']>[0][] = [];
+  const trials: TrialRequest[] = [];
   const store: Store = {
     async count(day, names) {
       for (const [name, n] of names) counts.set(`${day} ${name}`, (counts.get(`${day} ${name}`) ?? 0) + n);
@@ -18,8 +19,11 @@ function memory() {
     async feedback(entry) {
       feedback.push(entry);
     },
+    async trial(entry) {
+      trials.push(entry);
+    },
   };
-  return { store, counts, errors, feedback };
+  return { store, counts, errors, feedback, trials };
 }
 
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -88,5 +92,33 @@ describe('site API', () => {
     expect(browserFamily('Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36')).toBe(
       'Chrome on Android',
     );
+  });
+
+  it('takes a trial key request with the host names it should cover', async () => {
+    const { store, trials } = memory();
+    const request = { name: ' Jane Doe ', email: 'jane@acme.com', company: 'Acme', domains: 'https://App.Acme.com/editor, *.acme.dev; app.acme.com', message: 'Contracts in our CRM' };
+    expect((await handle(post('/api/trial', request), store, NOW))!.status).toBe(204);
+    expect(trials).toEqual([
+      { at: NOW.toISOString(), name: 'Jane Doe', email: 'jane@acme.com', company: 'Acme', domains: 'app.acme.com, *.acme.dev', message: 'Contracts in our CRM' },
+    ]);
+  });
+
+  it('turns away a trial request without its fields, with something that is not a host name, or from a bot', async () => {
+    const { store, trials } = memory();
+    const ok = { name: 'Jane', email: 'jane@acme.com', company: 'Acme', domains: 'app.acme.com' };
+    expect((await handle(post('/api/trial', { ...ok, email: 'jane' }), store, NOW))!.status).toBe(400);
+    expect((await handle(post('/api/trial', { ...ok, company: ' ' }), store, NOW))!.status).toBe(400);
+    expect((await handle(post('/api/trial', { ...ok, domains: 'app.acme.com"; rm -rf ~' }), store, NOW))!.status).toBe(400);
+    expect((await handle(post('/api/trial', { ...ok, domains: '' }), store, NOW))!.status).toBe(400);
+    expect((await handle(post('/api/trial', { ...ok, name: 'x'.repeat(101) }), store, NOW))!.status).toBe(400);
+    expect((await handle(post('/api/trial', { ...ok, website: 'spam.example' }), store, NOW))!.status).toBe(204);
+    expect((await handle(post('/api/trial', ok, { origin: 'https://evil.example' }), store, NOW))!.status).toBe(403);
+    expect(trials).toEqual([]);
+  });
+
+  it('reads host names as a key covers them', () => {
+    expect(parseDomains('localhost')).toBeNull();
+    expect(parseDomains('acme.com:8080/x  *.acme.com')).toEqual(['acme.com', '*.acme.com']);
+    expect(parseDomains('a..com')).toBeNull();
   });
 });
