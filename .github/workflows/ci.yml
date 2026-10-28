@@ -30,12 +30,26 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # The two engines most people use, Chromium and an iPhone's WebKit, on every push.
-  # Firefox and desktop Safari run nightly (nightly.yml) so they don't hold up deploys.
+  # The two engines most people use on every push, side by side: every test in Chromium (in two
+  # halves), and on an iPhone's WebKit those tagged @phone (layout, fingers, keyboards, dialogs).
+  # Every test in Firefox, desktop Safari and the iPhone runs nightly (nightly.yml).
   e2e:
-    name: Site in Chromium and iPhone
+    name: Site in ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Chromium 1/2
+            key: chromium-1
+            args: --project=chromium --shard=1/2
+          - name: Chromium 2/2
+            key: chromium-2
+            args: --project=chromium --shard=2/2
+          - name: iPhone
+            key: iphone
+            args: --project=iphone --grep @phone
     # Browsers and their system libraries come preinstalled (same version as @playwright/test).
     container: mcr.microsoft.com/playwright:v1.57.0-noble
     steps:
@@ -45,11 +59,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run e2e -- --project=chromium --project=iphone
+      - run: npm run e2e -- ${{ matrix.args }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: e2e-results
+          name: e2e-results-${{ matrix.key }}
           path: test-results
           retention-days: 7
 

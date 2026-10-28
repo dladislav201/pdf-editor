@@ -20,6 +20,8 @@ async function download(page: Page): Promise<Uint8Array> {
 
 const squash = (text: string) => text.replace(/\s+/g, '');
 
+// Tests tagged @phone run on an iPhone on every push (layout, fingers, on-screen keyboards, dialogs);
+// the rest run there nightly, with every browser.
 test('the site key covers the site\'s own domains, so it never runs as a trial there', async () => {
   for (const host of [new URL(SITE.url).hostname, `www.${new URL(SITE.url).hostname}`, 'pdf-sdk-demo.peer-mcp.workers.dev']) {
     const license = await checkLicense(DEMO_LICENSE_KEY, host);
@@ -27,7 +29,7 @@ test('the site key covers the site\'s own domains, so it never runs as a trial t
   }
 });
 
-test('start page fits the screen, in every language', async ({ page }) => {
+test('start page fits the screen, in every language', { tag: '@phone' }, async ({ page }) => {
   await gotoApp(page, '/');
   await expect(page.getByRole('button', { name: 'A contract', exact: true })).toBeVisible();
   // German words are the longest: the samples wrap on a phone rather than push the page sideways.
@@ -38,7 +40,7 @@ test('start page fits the screen, in every language', async ({ page }) => {
   }
 });
 
-test('opens a PDF and keeps the bars on screen', async ({ page }) => {
+test('opens a PDF and keeps the bars on screen', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   await expect(page.getByText('1 / 3').filter({ visible: true })).toBeVisible();
   const width = page.viewportSize()!.width;
@@ -49,7 +51,7 @@ test('opens a PDF and keeps the bars on screen', async ({ page }) => {
   }
 });
 
-test('a reload opens the same file again, with its changes kept a moment after each', async ({ page }) => {
+test('a reload opens the same file again, with its changes kept a moment after each', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   const leaving = () =>
     page.evaluate(() => {
@@ -144,7 +146,7 @@ test('clears copies kept for tabs that were closed, and gives a reloaded tab its
   expect(after).toContain(tab);
 });
 
-test('lets a finger scroll the pages, except while drawing', async ({ page }) => {
+test('lets a finger scroll the pages, except while drawing', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   const overlay = page.locator('.pdfsdk-page__overlay').first();
   const touchAction = () => overlay.evaluate((el) => getComputedStyle(el).touchAction);
@@ -154,7 +156,7 @@ test('lets a finger scroll the pages, except while drawing', async ({ page }) =>
   expect(await touchAction()).toBe('none');
 });
 
-test('edits a paragraph and saves it into the PDF', async ({ page }) => {
+test('edits a paragraph and saves it into the PDF', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Edit text' }).click();
   // The opening paragraph, under the title.
@@ -240,7 +242,7 @@ test('undoes and redoes a paragraph edit after leaving it', async ({ page }) => 
   expect(squash(first!)).toContain('Replacedopeningparagraph.');
 });
 
-test('takes edits from on-screen keyboards that change the input themselves, as Android ones do', async ({ page }, info) => {
+test('takes edits from on-screen keyboards that change the input themselves, as Android ones do', { tag: '@phone' }, async ({ page }, info) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Edit text' }).click();
   await clickPage(page, 0.3, 0.215);
@@ -370,7 +372,7 @@ test('pulls what is below up when a paragraph gets shorter, and puts it back on 
   expect(undone.find((p) => p.text === '1. Scope of Services')!.baseline).toBeCloseTo(heading.baseline, 1);
 });
 
-test('sets a word in another size and font', async ({ page }) => {
+test('sets a word in another size and font', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Edit text' }).click();
   await clickPage(page, 0.3, 0.215);
@@ -408,7 +410,7 @@ async function marks(bytes: Uint8Array): Promise<{ subtype: string; quads: [numb
   });
 }
 
-test('highlights, underlines and strikes out text by dragging across it', async ({ page, isMobile }) => {
+test('highlights, underlines and strikes out text by dragging across it', { tag: '@phone' }, async ({ page, isMobile }) => {
   await openSample(page, 'A contract');
   const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
   /** Drags between two points of the first page given as fractions of its width and height. */
@@ -449,7 +451,7 @@ test('highlights, underlines and strikes out text by dragging across it', async 
   expect(marked[2]!.lines[0]!.right - marked[2]!.lines[0]!.left).toBeLessThan(200);
 });
 
-test('marks a whole word with a double click, and text that runs up the page along it', async ({ page }) => {
+test('marks a whole word with a double click, and text that runs up the page along it', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'Highlight' }).click();
   const box = (await page.locator('.pdfsdk-page[data-page-index="0"]').boundingBox())!;
@@ -505,7 +507,7 @@ test('opens a password-protected PDF after asking for its password', async ({ pa
   expect(squash((await pdfText(saved))[0]!)).toContain('SoftwareServicesAgreement');
 });
 
-test('saves a PDF with a password that opens it, here and in other viewers', async ({ page }) => {
+test('saves a PDF with a password that opens it, here and in other viewers', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'More ways to save' }).click();
   await page.getByRole('menuitem', { name: /With a password/ }).click();
@@ -577,7 +579,7 @@ test('keeps form entries across a reload', async ({ page }) => {
   await expect(page.locator('input.pdfsdk-field').first()).toHaveValue('Olena');
 });
 
-test('fills a form and saves the values', async ({ page }) => {
+test('fills a form and saves the values', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A form');
   await expect(page.getByText('7 fields to fill.')).toBeVisible();
   await page.locator('input.pdfsdk-field').first().fill('Olena Koval');
@@ -593,7 +595,7 @@ test('fills a form and saves the values', async ({ page }) => {
   });
 });
 
-test('types a signature and places it', async ({ page }) => {
+test('types a signature and places it', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Sign' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add your signature' });
@@ -629,7 +631,7 @@ test('types a signature and places it', async ({ page }) => {
   expect(stamps?.length).toBe(1);
 });
 
-test('lifts a signature and a stamp off a photo of paper in shadow, and places them', async ({ page, isMobile }) => {
+test('lifts a signature and a stamp off a photo of paper in shadow, and places them', { tag: '@phone' }, async ({ page, isMobile }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Sign' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add your signature' });
@@ -709,7 +711,7 @@ test('lifts a signature and a stamp off a photo of paper in shadow, and places t
   expect(kinds).toEqual(['Stamp']);
 });
 
-test('shows page thumbnails', async ({ page }) => {
+test('shows page thumbnails', { tag: '@phone' }, async ({ page }) => {
   await openSample(page, 'A contract');
   await page.getByRole('button', { name: 'Pages', exact: true }).click();
   await expect(page.locator('.thumb')).toHaveCount(3);
