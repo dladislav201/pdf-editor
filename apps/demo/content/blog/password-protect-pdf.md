@@ -11,7 +11,7 @@ You’re about to email a payslip, a tax return or a scan of your passport. A pa
 ## How to add a password
 
 1. Open the editor and choose your PDF.
-2. Next to **Download**, open **More ways to save** and pick **With a password**.
+2. Click the arrow next to **Download** and pick **With a password**.
 3. Type the password, then type it again in **Repeat the password**.
 4. Click **Download**. The protected copy is saved under the same name.
 

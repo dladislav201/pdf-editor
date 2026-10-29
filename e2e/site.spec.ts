@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, StandardFonts, degrees } from 'pdf-lib';
 import { DEMO_LICENSE_KEY } from '../apps/demo/src/license';
@@ -897,7 +897,9 @@ test('guides in other languages are in that language and link to each other', as
   await expect(page.locator('footer').getByRole('link', { name: 'Anleitungen' })).toHaveAttribute('href', '/de/blog');
   await page.goto('/de/blog');
   await expect(page.getByRole('heading', { level: 1, name: 'Anleitungen' })).toBeVisible();
-  await expect(page.locator('.posts li')).toHaveCount(3);
+  // Every German guide, and only those.
+  const german = readdirSync('apps/demo/content/blog/de').filter((name) => name.endsWith('.md'));
+  await expect(page.locator('.posts li')).toHaveCount(german.length);
   // A tool page in German leads to the German guides.
   await page.goto('/de/pdf-komprimieren');
   await expect(page.locator('footer').getByRole('link', { name: 'Anleitungen' })).toHaveAttribute('href', '/de/blog');

@@ -31,4 +31,4 @@ Here the PDF is opened and saved in your browser, and the password is used only 
 
 ## Keep sensitive files protected
 
-An unlocked copy of a bank statement is easier to leak. Keep it somewhere private, and if you need to send it on, add a new password of your own: open it, choose **More ways to save**, then **With a password**.
+An unlocked copy of a bank statement is easier to leak. Keep it somewhere private, and if you need to send it on, add a new password of your own: open it, click the arrow next to **Download**, then **With a password**.

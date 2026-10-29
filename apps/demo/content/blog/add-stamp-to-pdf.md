@@ -24,7 +24,7 @@ A shadow across the paper is fine. It’s removed with the paper.
 2. Choose **Photo**, then **Choose a photo**, and pick the picture.
 3. The paper turns transparent, and so do its shadows and the grey of a phone photo. What’s left is the ink.
 4. If specks of paper remain, move **Clean up the background** further. If thin lines of the stamp start to fade, move it back.
-5. Leave the ink colour on **As in the photo** so a blue or violet stamp stays blue or violet. Black and Blue recolour it, which suits a signature better than a stamp.
+5. Leave the ink on the first, multicoloured swatch, which keeps the photo’s colours, so a blue or violet stamp stays blue or violet. The black and blue swatches recolour it, which suits a signature better than a stamp.
 
 ## 3. Place it
 
