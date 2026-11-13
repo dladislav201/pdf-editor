@@ -796,6 +796,24 @@ test('shows page thumbnails', { tag: '@phone' }, async ({ page }) => {
   await expect.poll(() => page.locator('.thumb canvas, .thumb img').count()).toBeGreaterThanOrEqual(3);
 });
 
+test('PDFs chosen together open side by side, to merge into one', async ({ page }) => {
+  const pdf = async (name: string, pages: number) => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (let i = 1; i <= pages; i++) doc.addPage([400, 500]).drawText(`${name} ${i}`, { x: 40, y: 400, size: 20, font });
+    return { name: `${name}.pdf`, mimeType: 'application/pdf', buffer: Buffer.from(await doc.save()) };
+  };
+  await gotoApp(page, '/merge-pdf');
+  await page.locator('input[type=file]').first().setInputFiles([await pdf('Contract', 2), await pdf('Annex', 1)]);
+  const cards = page.locator('.page-card');
+  await expect(cards).toHaveCount(3);
+  await expect(cards.nth(2)).toContainText('Annex.pdf');
+  await page.getByRole('button', { name: 'Apply changes' }).click();
+  await expect(page.locator('.pdfsdk-page')).toHaveCount(3);
+  const text = await pdfText(await download(page));
+  expect(text.map((t) => t.trim())).toEqual(['Contract 1', 'Contract 2', 'Annex 1']);
+});
+
 test('compresses a scan', async ({ page }) => {
   await openSample(page, 'A scanned invoice');
   await page.getByRole('button', { name: 'More ways to save' }).click();

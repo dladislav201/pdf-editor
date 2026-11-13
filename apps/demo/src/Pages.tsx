@@ -66,12 +66,17 @@ function Thumbnail({ source, page, rotate }: { source: PageSource; page: number;
 export function Pages({
   editor,
   fileName,
+  add,
+  onAdded,
   onApplied,
   onClose,
   onMessage,
 }: {
   editor: PdfEditorInstance;
   fileName: string;
+  /** PDFs to add right away, e.g. chosen together with this one; `onAdded` once they're on their way. */
+  add?: File[];
+  onAdded?: () => void;
   /** The document was rearranged (pages moved, rotated, deleted or added). */
   onApplied: () => void;
   onClose: () => void;
@@ -140,7 +145,7 @@ export function Pages({
     });
   };
 
-  const addFiles = async (files: FileList) => {
+  const addFiles = async (files: FileList | File[]) => {
     setBusy(p.opening);
     try {
       for (const file of [...files]) {
@@ -159,6 +164,15 @@ export function Pages({
       setBusy(null);
     }
   };
+
+  // Once, also under StrictMode's second run of effects.
+  const adding = useRef(false);
+  useEffect(() => {
+    if (!add?.length || adding.current) return;
+    adding.current = true;
+    onAdded?.();
+    void addFiles(add);
+  }, []);
 
   const others = () => sources.slice(1).map((s) => s.bytes!);
   const plan = (list: Item[]): ArrangedPage[] => list.map(({ source, page, rotate }) => ({ source, page, rotate }));

@@ -116,6 +116,7 @@ export function Workspace({
   pages: startInPages,
   sign: startSigning,
   dialog: startDialog,
+  more: moreFiles,
   theme,
   onToggleTheme,
   onClose,
@@ -127,6 +128,8 @@ export function Workspace({
   sign?: boolean;
   /** A dialog to open once the file is loaded. */
   dialog?: 'compress' | 'images';
+  /** PDFs to add in the page view when it first opens, to merge. */
+  more?: File[];
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onClose: () => void;
@@ -158,6 +161,7 @@ export function Workspace({
   const [mode, setMode] = useState<'edit' | 'pages'>('edit');
   const [loaded, setLoaded] = useState(false);
   const wantPages = useRef(startInPages);
+  const [merging, setMerging] = useState(moreFiles);
   const wantSign = useRef(startSigning);
   const [signing, setSigning] = useState(false);
   const [dialog, setDialog] = useState<'compress' | 'images' | 'protect' | null>(null);
@@ -528,7 +532,15 @@ export function Workspace({
       </div>
 
       {mode === 'pages' && editor && (
-        <Pages editor={editor} fileName={file.name} onApplied={keepSoon} onClose={() => setMode('edit')} onMessage={setMessage} />
+        <Pages
+          editor={editor}
+          fileName={file.name}
+          add={merging}
+          onAdded={() => setMerging(undefined)}
+          onApplied={keepSoon}
+          onClose={() => setMode('edit')}
+          onMessage={setMessage}
+        />
       )}
 
       <div className="status" aria-live="polite">

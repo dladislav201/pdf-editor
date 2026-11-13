@@ -10,11 +10,12 @@ A contract and its annexes, a job application with a CV, a cover letter and cert
 
 ## How to merge PDFs
 
-1. Open **Merge PDF** and choose the first PDF. Its pages open side by side.
-2. Click **Add PDF** and choose the other files. You can pick several at once. Their pages are added at the end, each marked with the name of the file it came from.
-3. Drag the pages into the order you want.
-4. Click **Apply changes**. You’re back in the editor with one document.
-5. Click **Download**. The merged PDF is saved under the first file’s name.
+1. Open **Merge PDF** and choose all the PDFs at once, or drop them on the page. Their pages open side by side, file after file. Pages from the second file on are marked with the name of the file they came from.
+2. Drag the pages into the order you want.
+3. Click **Apply changes**. You’re back in the editor with one document.
+4. Click **Download**. The merged PDF is saved under the name shown at the top left.
+
+Forgot one? Click **Add PDF** and choose it: its pages are added at the end.
 
 ## Put the pages in order
 
@@ -32,7 +33,7 @@ It works the other way too. To take a few pages out of a PDF instead, select the
 
 ## What carries over
 
-Each page comes over as it was, with its text, pictures, links and annotations such as highlights and comments. The merged document keeps the title of the first file.
+Each page comes over as it was, with its text, pictures, links and annotations such as highlights and comments. The merged document keeps the title of the file whose name it has.
 
 Bookmarks, the table of contents some PDFs show in a side panel, are not carried over.
 

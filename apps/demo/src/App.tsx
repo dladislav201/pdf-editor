@@ -131,6 +131,7 @@ export function App() {
         pages={open.pages}
         sign={open.sign}
         dialog={open.dialog}
+        more={open.more}
         theme={theme}
         onToggleTheme={toggleTheme}
         onClose={() => history.back()}

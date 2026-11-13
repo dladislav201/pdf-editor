@@ -18,10 +18,18 @@ export interface OpenRequest {
   sign?: boolean;
   /** Open a save dialog right away. */
   dialog?: 'compress' | 'images';
+  /** More PDFs chosen with the first: they're added to it in the page view, to merge. */
+  more?: File[];
 }
 
 const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
 const isPicture = (f: File) => /^image\/(png|jpe?g|webp)$/.test(f.type);
+
+/** The first PDF with what to do with it; several open together in the page view, to merge. */
+function request(pdfs: File[], open: Omit<OpenRequest, 'file'>): OpenRequest {
+  const [file, ...more] = pdfs as [File, ...File[]];
+  return more.length ? { file, pages: true, more } : { file, ...open };
+}
 
 const TOOLS: { icon: IconName; card: keyof Messages['cards']; open: Omit<OpenRequest, 'file'> }[] = [
   { icon: 'editText', card: 'editText', open: { tool: 'editText' } },
@@ -127,8 +135,8 @@ export function Home({
     event.preventDefault();
     setOver(false);
     const files = [...event.dataTransfer.files];
-    const file = files.find(isPdf);
-    if (file) onOpen({ file, ...tool.open });
+    const pdfs = files.filter(isPdf);
+    if (pdfs.length) onOpen(request(pdfs, tool.open ?? {}));
     else if (files.some(isPicture)) onPictures(files.filter(isPicture));
   };
 
@@ -142,8 +150,8 @@ export function Home({
         hidden
         onChange={(event) => {
           const files = [...(event.target.files ?? [])];
-          const file = files.find(isPdf);
-          if (file) onOpen({ file, ...pending.current });
+          const pdfs = files.filter(isPdf);
+          if (pdfs.length) onOpen(request(pdfs, pending.current));
           else if (files.some(isPicture)) onPictures(files.filter(isPicture));
           event.target.value = '';
         }}
