@@ -188,6 +188,18 @@ describe('writing edited text into the PDF', () => {
     expect(inkOf(bytes, word)).toBeGreaterThan(word.text.length * 8);
   });
 
+  it('writes a letter the subset lacks as itself, not as the letter its code is in that font', async () => {
+    // Typing "D" where the font has none: its standard code 0x44 is this font's "f".
+    const { bytes, plan } = await editParagraph(fixture('ordered-subset.pdf'), 'Payment terms', (chars) =>
+      replaceText(chars, 'late fees', 'Due fees'),
+    );
+    expect(plan.fallback.map((w) => w.text)).toEqual(['Due']);
+    expect(plan.words.map((w) => w.text)).not.toContain('Due');
+    expect(paragraphTexts(bytes)[0]).toContain('2209; Due fees apply.');
+    const word = plan.fallback[0]!;
+    expect(inkOf(bytes, word)).toBeGreaterThan(word.text.length * 8);
+  });
+
   it('picks a fallback that matches the family: serif text gets Tinos, not a sans font', async () => {
     const original = fixture('chrome-contract.pdf');
     // The Times subset has no "x", so "thirty-six" needs the fallback.

@@ -836,10 +836,11 @@ export class PdfiumDocument {
 
   /** Glyphs of the font used by a text object, for the given characters. */
   glyphs(pageIndex: number, objectIndex: number, chars: string[]): FontGlyphs {
-    const object = this.lib.FPDFPage_GetObject(this.page(pageIndex), objectIndex);
+    const page = this.page(pageIndex);
+    const object = this.lib.FPDFPage_GetObject(page, objectIndex);
     const font = object ? this.lib.FPDFTextObj_GetFont(object) : 0;
     if (!font) throw new EngineError('EngineError', `Page object ${objectIndex} has no font.`);
-    return fontGlyphs(this.lib, font, chars);
+    return fontGlyphs(this.lib, this.handle, page, font, chars);
   }
 
   /** Every glyph of the page, for layout analysis. */

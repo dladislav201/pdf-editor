@@ -128,6 +128,26 @@ describe('PDFium engine', () => {
     }
   });
 
+  it('tells a character the subset lacks from the one its code stands for', () => {
+    // The font numbers its glyphs in order of use: 0x44, the code of "D" in a standard
+    // encoding, is its "f". PDFium falls back to that code for a "D" the font lacks.
+    const doc = new PdfiumDocument(lib, fixture('ordered-subset.pdf'));
+    try {
+      const glyph = analyzePage(doc.extractText(0)).paragraphs[0]!.lines[0]!.chars[0]!;
+      const before = doc.save();
+      const { glyphs } = doc.glyphs(0, glyph.object, ['D', 'f', 'P', 'Q', ' ']);
+      expect(glyphs.D).toBeNull();
+      expect(glyphs.Q).toBeNull();
+      expect(glyphs.f!.advance).toBeCloseTo(0.278, 2);
+      expect(glyphs.P!.advance).toBeCloseTo(0.667, 2);
+      expect(glyphs[' ']).toMatchObject({ path: '' });
+      // Asking leaves the page as it was.
+      expect(doc.save()).toEqual(before);
+    } finally {
+      doc.close();
+    }
+  });
+
   it('renders a page without the objects of a paragraph being edited', () => {
     const doc = new PdfiumDocument(lib, fixture('chrome-contract.pdf'));
     try {
