@@ -184,6 +184,41 @@ describe('editing a scan in its own letters', () => {
     expect(recognizedTexts(bytes).join('\n')).toContain(paragraph.text);
   });
 
+  it('draws retyped words as heavy as the scan draws them', async () => {
+    const doc = new PdfiumDocument(lib, recognized);
+    try {
+      const page = analyzePage(doc.extractText(0));
+      const store = new GlyphStore(async (src, chars) => doc.glyphs(src.page, src.object, chars), async (file) => fontFile(file));
+      for (const starts of ['Постачальник', 'Покупець', 'Договір']) {
+        const paragraph = page.paragraphs.find((p) => p.recognized && p.text.startsWith(starts))!;
+        const style = scanStyle(scanFont, paragraph, false);
+        const frame = paragraphFrame(paragraph, page.block);
+        const base = doc.scanPatch(0, growErase(scanErase(paragraph, 300 / 72), frame));
+        store.registerCustomFont(CUSTOM_FONT_BASE, scanCustomFont(scanFont, style, fallbackId('sans', 'Regular'), scanTracking(scanFont, style, paragraph)));
+        const original = scanChars(paragraph, CUSTOM_FONT_BASE);
+        // Each word the page has all the letters of, set again from samples instead of its own pixels.
+        const retyped = original.slice();
+        for (const word of original.map((c) => c.char).join('').matchAll(/\S+/g)) {
+          if (![...word[0]].every((char) => scanFont.font.glyph(char, style))) continue;
+          for (let i = word.index; i < word.index + word[0].length; i++) retyped[i] = { char: original[i]!.char, style: original[i]!.style };
+        }
+        const strokes = (chars: StyledChar[]) => {
+          const layout = layoutParagraph(chars, frame, (s, c) => store.advance(s, c));
+          const image = composeScanParagraph({ page: scanFont, style, base, paragraph, chars, layout, fallback: () => null });
+          let dark = 0;
+          for (let i = 0; i < image.rgba.length; i += 4) if (image.rgba[i]! < 128) dark++;
+          return dark;
+        };
+        expect(retyped).not.toEqual(original);
+        // As much of the patch is dark as before: the letters are no bolder (or fainter) than the page's.
+        expect(strokes(retyped) / strokes(original)).toBeGreaterThan(0.94);
+        expect(strokes(retyped) / strokes(original)).toBeLessThan(1.06);
+      }
+    } finally {
+      doc.close();
+    }
+  });
+
   it('writes a new amount in the scan\'s letters and keeps the text searchable', async () => {
     const before = render(recognized);
     const { bytes, paragraph } = await editInScanLetters('Разом без ПДВ', (chars) => replaceText(chars, '4779,50', '5120,00'));

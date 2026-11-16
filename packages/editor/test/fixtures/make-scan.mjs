@@ -2,8 +2,10 @@
 // slightly rotated, grey speckles, a blue stamp over the totals and a blue
 // signature, saved as one JPEG per page. With `en`, the same invoice in English
 // (scan-invoice-en.pdf, the site's sample); with `de`, `nb` or `sv` in German,
-// Norwegian or Swedish (OCR tests). Run from packages/editor:
-//   node test/fixtures/make-scan.mjs [en|de|nb|sv]
+// Norwegian or Swedish (OCR tests); with `serif`, the Ukrainian invoice set in
+// Tinos, as Times New Roman documents are (scan-invoice-serif.pdf). Run from
+// packages/editor:
+//   node test/fixtures/make-scan.mjs [en|de|nb|sv|serif]
 import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -14,6 +16,9 @@ const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 const arimo = dirname(require.resolve('@expo-google-fonts/arimo/package.json'));
 GlobalFonts.registerFromPath(join(arimo, '400Regular', 'Arimo_400Regular.ttf'), 'Arimo');
 GlobalFonts.registerFromPath(join(arimo, '700Bold', 'Arimo_700Bold.ttf'), 'Arimo Bold');
+const tinos = dirname(require.resolve('@expo-google-fonts/tinos/package.json'));
+GlobalFonts.registerFromPath(join(tinos, '400Regular', 'Tinos_400Regular.ttf'), 'Tinos');
+GlobalFonts.registerFromPath(join(tinos, '700Bold', 'Tinos_700Bold.ttf'), 'Tinos Bold');
 
 const LANGUAGES = {
   de: {
@@ -72,6 +77,9 @@ const LANGUAGES = {
   },
 };
 const english = process.argv[2] === 'en';
+const serif = process.argv[2] === 'serif';
+const FACE = serif ? 'Tinos' : 'Arimo';
+const face = (bold) => `"${FACE}${bold ? ' Bold' : ''}"`;
 const T = LANGUAGES[process.argv[2]] ?? (english
   ? {
       title: 'Invoice No. INV-2026-0042 dated 21 October 2026',
@@ -114,7 +122,7 @@ const T = LANGUAGES[process.argv[2]] ?? (english
         ['ПРИКЛАД ПОСТАЧ', 132],
         ['ЄДРПОУ 00000000', 131],
       ],
-      file: './scan-invoice.pdf',
+      file: serif ? './scan-invoice-serif.pdf' : './scan-invoice.pdf',
     });
 
 const DPI = 200;
@@ -130,7 +138,7 @@ ctx.fillStyle = '#1d1d1d';
 ctx.strokeStyle = '#1d1d1d';
 
 const text = (s, x, y, size = 10, bold = false) => {
-  ctx.font = `${pt(size)}px "${bold ? 'Arimo Bold' : 'Arimo'}"`;
+  ctx.font = `${pt(size)}px ${face(bold)}`;
   ctx.fillText(s, pt(x), pt(y));
 };
 
@@ -158,7 +166,7 @@ for (const x of cols) {
 T.cells.forEach((row, r) =>
   row.forEach((cell, c) => {
     const numeric = c >= 3 || c === 0;
-    ctx.font = `${pt(9)}px "${r === 0 ? 'Arimo Bold' : 'Arimo'}"`;
+    ctx.font = `${pt(9)}px ${face(r === 0)}`;
     const width = ctx.measureText(cell).width;
     const x = numeric && r > 0 ? pt(cols[c + 1]) - pt(4) - width : pt(cols[c]) + pt(4);
     ctx.fillText(cell, x, pt(rows[r] + 14));
@@ -180,7 +188,7 @@ ctx.stroke();
 ctx.beginPath();
 ctx.arc(pt(170), pt(370), pt(36), 0, Math.PI * 2);
 ctx.stroke();
-ctx.font = `${pt(8)}px "Arimo Bold"`;
+ctx.font = `${pt(8)}px ${face(true)}`;
 // Stamp lines without a set place are centred in it.
 const stampLine = ([line, x], y) => ctx.fillText(line, x === undefined ? pt(170) - ctx.measureText(line).width / 2 : pt(x), pt(y));
 stampLine(T.stamp[0], 366);

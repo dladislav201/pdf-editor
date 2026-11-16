@@ -2,7 +2,7 @@ import { isColoredInk } from '../ocr/ink';
 import type { ScanPatch } from '../engine/pdfium-core';
 import type { PageGeometry } from '../engine/page-geometry';
 import type { InvisibleWord } from '../ocr/place';
-import type { ScanFont, ScanGlyph, ScanStyle } from '../ocr/scan-font';
+import type { PlacedScanGlyph, ScanFont, ScanGlyph, ScanStyle } from '../ocr/scan-font';
 import type { PixelBox, Raster } from '../ocr/types';
 import type { Point, Rect } from '../types';
 import type { CustomFont, Glyph } from './glyph-store';
@@ -101,9 +101,16 @@ export function scanTracking(page: PageScanFont, style: ScanStyle, paragraph: Te
 /**
  * The scan's letters as a font for layout: advances (with the space each
  * letter keeps around it, plus the paragraph's `tracking`, in pixels) in ems.
- * Letters the page lacks go to `fallback`.
+ * Letters the page lacks come from `missing` (the fallback as it is drawn
+ * there, at its own size), else go to `fallback`.
  */
-export function scanCustomFont(page: PageScanFont, style: ScanStyle, fallback: number, tracking = 0): CustomFont {
+export function scanCustomFont(
+  page: PageScanFont,
+  style: ScanStyle,
+  fallback: number,
+  tracking = 0,
+  missing?: (char: string) => Glyph | null,
+): CustomFont {
   const cache = new Map<string, Glyph | null>();
   return {
     ascent: 0.9,
@@ -116,7 +123,7 @@ export function scanCustomFont(page: PageScanFont, style: ScanStyle, fallback: n
         } else {
           const placed = page.font.place(char, style);
           const advance = placed && placed.left + placed.glyph.width + placed.right + (/^\d$/.test(char) ? 0 : tracking);
-          cache.set(char, placed && { advance: advance! / style.size, path: '', unitsPerEm: 1 });
+          cache.set(char, placed ? { advance: advance! / style.size, path: '', unitsPerEm: 1 } : (missing?.(char) ?? null));
         }
       }
       return cache.get(char)!;
@@ -169,9 +176,6 @@ function slopeOf(line: TextParagraph['lines'][number]): number {
   return sxx > 0 ? sxy / sxx : 0;
 }
 
-/** Above 1, the pale edge of a letter is pulled in: thinner, crisper strokes. */
-const EDGE_GAMMA = 1.35;
-
 /** Bilinear sample of a glyph's grey at a fractional pixel (paper outside it). */
 function sample(glyph: ScanGlyph, x: number, y: number): number {
   if (x < -0.5 || y < -0.5 || x > glyph.width - 0.5 || y > glyph.height - 0.5) return 255;
@@ -193,8 +197,8 @@ export interface ComposeInput {
   paragraph: TextParagraph;
   chars: StyledChar[];
   layout: ParagraphLayout;
-  /** A glyph (OCR pixels, at `style.size`) for a letter the page lacks. */
-  fallback: (char: string) => ScanGlyph | null;
+  /** A glyph (OCR pixels) for a letter the page lacks, and where its ink starts after the pen. */
+  fallback: (char: string) => PlacedScanGlyph | null;
 }
 
 /**
@@ -219,8 +223,8 @@ export function composeScanParagraph(input: ComposeInput): Raster {
   const factor = patchPerPoint / page.geometry.scale;
 
   // Letters cut from the OCR raster went through one more resampling than the page's own
-  // text, which leaves them a little soft and pale: match their darkest ink to the
-  // paragraph's and tighten the soft edge.
+  // text, which leaves them a little pale: match their darkest ink to the paragraph's.
+  // Their grey is kept as it is otherwise: darkening it more (a gamma) set them bolder.
   const inkOf = (pixels: ArrayLike<number>, step: number) => {
     const values: number[] = [];
     for (let i = 0; i < pixels.length; i += step) if (pixels[i]! < 200) values.push(pixels[i]!);
@@ -228,11 +232,9 @@ export function composeScanParagraph(input: ComposeInput): Raster {
     return values.length ? values[Math.floor(values.length * 0.05)]! : 0;
   };
   let targetInk = 0;
-  // Only letters scaled down to a coarser scan come out soft and need their edge pulled in.
-  const gamma = factor < 0.9 ? EDGE_GAMMA : 1;
   const tone = (v: number, darkest: number) => {
     const t = Math.max(0, Math.min(1, (v - darkest) / Math.max(1, 255 - darkest)));
-    return 255 - (255 - targetInk) * (1 - t ** gamma);
+    return 255 - (255 - targetInk) * (1 - t);
   };
 
   const darken = (x: number, y: number, v: number) => {
@@ -328,11 +330,11 @@ export function composeScanParagraph(input: ComposeInput): Raster {
       for (const placed of word) {
         const occurrence = seen.get(placed.char) ?? 0;
         seen.set(placed.char, occurrence + 1);
-        const set = page.font.place(placed.char, style, occurrence);
-        const glyph = set?.glyph ?? input.fallback(placed.char);
-        if (!glyph) continue;
+        const set = page.font.place(placed.char, style, occurrence) ?? input.fallback(placed.char);
+        if (!set) continue;
+        const { glyph } = set;
         const darkest = inkOf(glyph.pixels, 1);
-        const left = (set?.left ?? 0) / page.geometry.scale;
+        const left = set.left / page.geometry.scale;
         const x = placed.x + left;
         const [px, py] = toPatch([x, yAt(x)]);
         // Glyph pixels are OCR pixels; draw them at the patch's resolution.

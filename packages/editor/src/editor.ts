@@ -8,7 +8,7 @@ import { shortcutKey } from './keys';
 import type { ScanInfo, ScanPatch } from './engine/pdfium-core';
 import { placeWords, type InvisibleWord } from './ocr/place';
 import { recognizeRaster } from './ocr/recognize';
-import { ScanFont, type ScanGlyph, type ScanStyle } from './ocr/scan-font';
+import { ScanFont, type PlacedScanGlyph, type ScanGlyph, type ScanStyle } from './ocr/scan-font';
 import { TesseractEngine } from './ocr/tesseract';
 import type { OcrPage, Raster } from './ocr/types';
 import { checkLicense, type LicenseInfo } from './license';
@@ -19,7 +19,16 @@ import { PageView } from './page-view';
 import { TEXT_FONT_FAMILY, annotationElement, renderPageAnnotations, resizeHandle } from './render-annotations';
 import { injectStyles } from './styles';
 import { TextEditSession, paragraphChars, paragraphFrame, type TextEditCallbacks, type TextStyle, type TextStyleKind } from './text/edit-session';
-import { CUSTOM_FONT_BASE, FALLBACK_FONT, GlyphStore, fallbackFile, fallbackId, type FontFamily, type FontSource } from './text/glyph-store';
+import {
+  CUSTOM_FONT_BASE,
+  FALLBACK_FONT,
+  GlyphStore,
+  fallbackFile,
+  fallbackId,
+  type FallbackFamily,
+  type FontFamily,
+  type FontSource,
+} from './text/glyph-store';
 import type { ParagraphLayout } from './text/layout';
 import {
   composeScanParagraph,
@@ -207,6 +216,10 @@ const COMPRESS_LEVELS: Record<CompressLevel, { dpi: number; quality: number }> =
 /** Tesseract reads best at about 300 dpi; much larger pages only cost memory. */
 const OCR_DPI = 300;
 const OCR_MAX_PIXELS = 40_000_000;
+/** Size (pixels) the standard typefaces' letters are drawn at, to compare with a scan's. */
+const TYPEFACE_SAMPLE_SIZE = 64;
+/** How much closer than the sans fallback another typeface must look to be used instead. */
+const TYPEFACE_MARGIN = 0.01;
 
 /** A raster as Tesseract.js takes it in the browser: a canvas it encodes to PNG itself. */
 function rasterCanvas({ width, height, rgba }: Raster): OffscreenCanvas {
@@ -224,13 +237,14 @@ interface ScanEdit {
   page: PageScanFont;
   style: ScanStyle;
   bold: boolean;
-  /** Custom font id of the scan's letters for this paragraph; `fallback` draws what they lack. */
+  /** Custom font id of the scan's letters for this paragraph; `fallback` draws what they lack, `scale` times larger. */
   font: number;
   fallback: number;
+  scale: number;
   base: ScanPatch;
   href: string | null;
   painted: ParagraphLayout | null;
-  outlines: Map<string, ScanGlyph | null>;
+  outlines: Map<string, PlacedScanGlyph | null>;
 }
 
 /** Edited paragraphs as the undo history keeps them: the text of each (by paragraph id). */
@@ -285,6 +299,8 @@ export class PdfEditor {
   private scanInfos = new Map<number, Promise<ScanInfo>>();
   /** Letters of each scanned page, cut from the scan when it is read, for editing its text in them. */
   private scanFonts = new Map<number, Promise<PageScanFont | null>>();
+  /** The standard typeface each page's letters look most like, and how much larger to set it to match them. */
+  private scanTypefaces = new WeakMap<PageScanFont, Promise<{ family: FallbackFamily; scale: number }>>();
   private scanEdits = new Map<string, ScanEdit>();
   private nextScanFont = CUSTOM_FONT_BASE;
   /** Cleaned scan under each recognized paragraph opened for editing, as an object URL. */
@@ -1819,14 +1835,20 @@ export class PdfEditor {
     const chars = paragraph.lines.flatMap((l) => l.chars);
     const bold = chars.filter((c) => (fonts[c.font]?.weight ?? 400) >= 600).length > chars.length / 2;
     const style = scanStyle(letters, paragraph, bold);
-    const fallback = fallbackId('sans', bold ? 'Bold' : 'Regular');
+    // Letters the page lacks: from the standard typeface most like it, as tall as its letters.
+    const { family, scale } = await this.scanTypeface(letters);
+    const fallback = fallbackId(family, bold ? 'Bold' : 'Regular');
     await this.glyphs.fallbackBytes(fallback);
+    const missing = (char: string) => {
+      const { glyph } = this.glyphs.resolve(fallback, char);
+      return glyph && { ...glyph, advance: glyph.advance * scale };
+    };
     const font = this.nextScanFont--;
-    this.glyphs.registerCustomFont(font, scanCustomFont(letters, style, fallback, scanTracking(letters, style, paragraph)));
+    this.glyphs.registerCustomFont(font, scanCustomFont(letters, style, fallback, scanTracking(letters, style, paragraph), missing));
     // Room for the text to grow: the column and two lines below.
     const erase = growErase(await this.scanEraseFor(paragraph), paragraphFrame(paragraph, block));
     const base = await this.engine.scanPatch(docId, paragraph.pageIndex, erase);
-    const edit: ScanEdit = { page: letters, style, bold, font, fallback, base, href: null, painted: null, outlines: new Map() };
+    const edit: ScanEdit = { page: letters, style, bold, font, fallback, scale, base, href: null, painted: null, outlines: new Map() };
     this.scanEdits.set(paragraph.id, edit);
     return edit;
   }
@@ -1871,51 +1893,80 @@ export class PdfEditor {
   }
 
   /**
-   * A letter the scan lacks, drawn from the fallback font's outline at the
-   * scan's size, as a grey image like the scan's own letters.
+   * The standard typeface (sans, serif or mono) a scan's letters look most
+   * like, and how much larger to set it for its letters to stand as tall as
+   * the page's. Sans, at its size, unless another is clearly closer.
    */
-  private outlineGlyph(edit: ScanEdit, char: string): ScanGlyph | null {
-    if (edit.outlines.has(char)) return edit.outlines.get(char)!;
-    const { glyph } = this.glyphs.resolve(edit.fallback, char);
-    let result: ScanGlyph | null = null;
-    if (glyph?.path) {
-      const size = edit.style.size;
-      const scale = size / glyph.unitsPerEm;
-      const width = Math.ceil(glyph.advance * size) + 6;
-      const height = Math.ceil(size * 1.6);
-      const baseline = Math.round(size * 1.2);
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext('2d')!;
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, width, height);
-      ctx.setTransform(scale, 0, 0, -scale, 3, baseline);
-      ctx.fillStyle = '#000';
-      ctx.fill(new Path2D(glyph.path));
-      const data = ctx.getImageData(0, 0, width, height).data;
-      let x0 = width;
-      let y0 = height;
-      let x1 = -1;
-      let y1 = -1;
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          if (data[(y * width + x) * 4]! >= 250) continue;
-          x0 = Math.min(x0, x);
-          y0 = Math.min(y0, y);
-          x1 = Math.max(x1, x);
-          y1 = Math.max(y1, y);
-        }
-      }
-      if (x1 >= 0) {
-        const w = x1 - x0 + 1;
-        const h = y1 - y0 + 1;
-        const pixels = new Uint8ClampedArray(w * h);
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) pixels[y * w + x] = data[((y0 + y) * width + x0 + x) * 4]!;
-        const box = { x0: 0, y0: 0, x1: 0, y1: 0 };
-        result = { char, width: w, height: h, pixels, top: y0 - baseline, size, bold: edit.bold, confidence: 0, ink: 0, line: -1, at: box };
+  private scanTypeface(letters: PageScanFont): Promise<{ family: FallbackFamily; scale: number }> {
+    let typeface = this.scanTypefaces.get(letters);
+    if (!typeface) {
+      typeface = (async () => {
+        const families: FallbackFamily[] = ['sans', 'serif', 'mono'];
+        const fonts = families.map((family) => fallbackId(family, 'Regular'));
+        await Promise.all(fonts.map((font) => this.glyphs.fallbackBytes(font)));
+        let best: { family: FallbackFamily; scale: number; distance: number } = { family: 'sans', scale: 1, distance: Infinity };
+        families.forEach((family, i) => {
+          const like = letters.font.likeness((char) => this.drawGlyph(fonts[i]!, char, TYPEFACE_SAMPLE_SIZE, false)?.glyph ?? null);
+          if (!like) return;
+          const distance = like.distance - (family === 'sans' ? TYPEFACE_MARGIN : 0);
+          if (distance < best.distance) best = { family, scale: Math.min(1.25, Math.max(0.8, like.scale)), distance };
+        });
+        return { family: best.family, scale: best.scale };
+      })();
+      this.scanTypefaces.set(letters, typeface);
+    }
+    return typeface;
+  }
+
+  /**
+   * A letter the scan lacks, drawn from the fallback font's outline as tall as
+   * the scan's letters, as a grey image like the scan's own.
+   */
+  private outlineGlyph(edit: ScanEdit, char: string): PlacedScanGlyph | null {
+    if (!edit.outlines.has(char)) edit.outlines.set(char, this.drawGlyph(edit.fallback, char, edit.style.size * edit.scale, edit.bold));
+    return edit.outlines.get(char)!;
+  }
+
+  /**
+   * A font's letter as a grey image (255 is paper) at a size in pixels, like
+   * a letter cut from a scan: its ink, and where that starts after the pen.
+   */
+  private drawGlyph(font: number, char: string, size: number, bold: boolean): PlacedScanGlyph | null {
+    const { glyph } = this.glyphs.resolve(font, char);
+    if (!glyph?.path) return null;
+    const scale = size / glyph.unitsPerEm;
+    const width = Math.ceil(glyph.advance * size) + 6;
+    const height = Math.ceil(size * 1.6);
+    const baseline = Math.round(size * 1.2);
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.setTransform(scale, 0, 0, -scale, 3, baseline);
+    ctx.fillStyle = '#000';
+    ctx.fill(new Path2D(glyph.path));
+    const data = ctx.getImageData(0, 0, width, height).data;
+    let x0 = width;
+    let y0 = height;
+    let x1 = -1;
+    let y1 = -1;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (data[(y * width + x) * 4]! >= 250) continue;
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
       }
     }
-    edit.outlines.set(char, result);
-    return result;
+    if (x1 < 0) return null;
+    const w = x1 - x0 + 1;
+    const h = y1 - y0 + 1;
+    const pixels = new Uint8ClampedArray(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) pixels[y * w + x] = data[((y0 + y) * width + x0 + x) * 4]!;
+    const box = { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const cut: ScanGlyph = { char, width: w, height: h, pixels, top: y0 - baseline, size, bold, confidence: 0, ink: 0, line: -1, at: box };
+    return { glyph: cut, left: x0 - 3, right: 0 };
   }
 
   private scanEraseFor(paragraph: TextParagraph): Promise<ScanErase> {

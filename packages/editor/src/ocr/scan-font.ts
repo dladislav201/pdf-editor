@@ -80,12 +80,36 @@ function shapeOf(glyph: ScanGlyph): { ink: Float32Array; width: number; height: 
   return { ink, width: glyph.width / glyph.size, height: glyph.height / glyph.size };
 }
 
-function distance(a: ReturnType<typeof shapeOf>, b: ReturnType<typeof shapeOf>): number {
+function inkDistance(a: ReturnType<typeof shapeOf>, b: ReturnType<typeof shapeOf>): number {
   let sum = 0;
   for (let i = 0; i < a.ink.length; i++) sum += Math.abs(a.ink[i]! - b.ink[i]!);
-  // Proportions count as much as the picture: a capital is a scaled-up small letter.
-  return sum / a.ink.length + Math.abs(a.width - b.width) + Math.abs(a.height - b.height);
+  return sum / a.ink.length;
 }
+
+function distance(a: ReturnType<typeof shapeOf>, b: ReturnType<typeof shapeOf>): number {
+  // Proportions count as much as the picture: a capital is a scaled-up small letter.
+  return inkDistance(a, b) + Math.abs(a.width - b.width) + Math.abs(a.height - b.height);
+}
+
+/** The sample most like all the others of its letter. */
+function typical(samples: ScanGlyph[]): ScanGlyph {
+  const shapes = samples.map(shapeOf);
+  const totals = shapes.map((a) => shapes.reduce((sum, b) => sum + distance(a, b), 0));
+  return samples[totals.indexOf(Math.min(...totals))]!;
+}
+
+/** How a page's letters compare with those of a typeface. */
+export interface Likeness {
+  /** Mean difference of shape (0–1 ink per cell, plus the difference of width to height) over the letters compared. */
+  distance: number;
+  /** How much taller the page's letters are than the typeface's at the same size: what to set it larger by. */
+  scale: number;
+  /** How many letters were compared. */
+  letters: number;
+}
+
+/** Fewer letters in common than this say little about a typeface. */
+const MIN_LIKENESS_LETTERS = 5;
 
 const centreIn = (box: PixelBox, area: PixelBox) => {
   const x = (box.x0 + box.x1) / 2;
@@ -112,18 +136,149 @@ export function wordBaseline(word: ScanWord): number {
   return median(bottoms.map((s) => s.box.y1), word.baseline);
 }
 
-function crop(image: Raster, box: PixelBox): { width: number; height: number; pixels: Uint8ClampedArray } {
-  const x0 = Math.max(0, Math.floor(box.x0));
-  const y0 = Math.max(0, Math.floor(box.y0));
-  const x1 = Math.min(image.width, Math.ceil(box.x1));
-  const y1 = Math.min(image.height, Math.ceil(box.y1));
-  const width = Math.max(0, x1 - x0);
-  const height = Math.max(0, y1 - y0);
-  const pixels = new Uint8ClampedArray(width * height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) pixels[y * width + x] = image.rgba[((y0 + y) * image.width + x0 + x) * 4]!;
+/** Darker than this is the core of a letter's ink, which the pieces of a letter are found by. */
+const INK = 128;
+/** Pixels this close to a letter's core keep their grey: its soft, anti-aliased edge. */
+const EDGE = 2;
+
+/** A letter's own ink, cut from the scan: its box, and its pixels with everything else turned to paper. */
+export interface LetterInk {
+  box: PixelBox;
+  width: number;
+  height: number;
+  pixels: Uint8ClampedArray;
+}
+
+/**
+ * The letters of a word, cut out by their ink. OCR's letter boxes are
+ * approximate: they overlap, or miss a bit of the letter. Every connected
+ * piece of ink goes to the letter whose box has its centre inside the piece
+ * (else to the box it overlaps most: a dot, a breve), and each letter keeps
+ * only its own pieces. A piece across two centres is letters that touch:
+ * both are left out (null), as is a letter with no ink of its own.
+ */
+export function letterInk(image: Raster, symbols: { box: PixelBox }[], size: number): (LetterInk | null)[] {
+  if (!symbols.length) return [];
+  const pad = Math.ceil(size * 0.15);
+  const rx0 = Math.max(0, Math.floor(Math.min(...symbols.map((s) => s.box.x0))) - pad);
+  const ry0 = Math.max(0, Math.floor(Math.min(...symbols.map((s) => s.box.y0))) - pad);
+  const rx1 = Math.min(image.width, Math.ceil(Math.max(...symbols.map((s) => s.box.x1))) + pad);
+  const ry1 = Math.min(image.height, Math.ceil(Math.max(...symbols.map((s) => s.box.y1))) + pad);
+  const W = rx1 - rx0;
+  const H = ry1 - ry0;
+  if (W <= 0 || H <= 0) return symbols.map(() => null);
+  const grey = (x: number, y: number) => image.rgba[((ry0 + y) * image.width + rx0 + x) * 4]!;
+
+  // Connected pieces of ink (8-connected), smallest specks left out.
+  const piece = new Int32Array(W * H).fill(-1);
+  const pieces: { x0: number; y0: number; x1: number; y1: number; pixels: number[] }[] = [];
+  const minArea = Math.max(3, (size * 0.04) ** 2);
+  for (let start = 0; start < W * H; start++) {
+    if (piece[start]! !== -1 || grey(start % W, Math.floor(start / W)) >= INK) continue;
+    const id = pieces.length;
+    const found = { x0: W, y0: H, x1: -1, y1: -1, pixels: [] as number[] };
+    const stack = [start];
+    piece[start] = id;
+    while (stack.length) {
+      const p = stack.pop()!;
+      const x = p % W;
+      const y = Math.floor(p / W);
+      found.pixels.push(p);
+      found.x0 = Math.min(found.x0, x);
+      found.y0 = Math.min(found.y0, y);
+      found.x1 = Math.max(found.x1, x);
+      found.y1 = Math.max(found.y1, y);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const q = ny * W + nx;
+          if (piece[q] === -1 && grey(nx, ny) < INK) {
+            piece[q] = id;
+            stack.push(q);
+          }
+        }
+      }
+    }
+    pieces.push(found);
   }
-  return { width, height, pixels };
+
+  // Letters as clusters of pieces: a dot, a breve or a colon's other half goes with the piece it sits over.
+  const kept = pieces.map((p, id) => ({ ...p, id })).filter((p) => p.pixels.length >= minArea);
+  const span = (p: { x0: number; x1: number }) => p.x1 + 1 - p.x0;
+  const clusterOf = new Map<number, number>();
+  const widest = [...kept].sort((a, b) => span(b) - span(a));
+  const sitsOn = (p: (typeof kept)[number], q: (typeof kept)[number]) =>
+    Math.min(q.x1, p.x1) + 1 - Math.max(q.x0, p.x0) >= 0.5 * span(p) ||
+    // A small mark above or below it, a little wider maybe: the dots of "ї".
+    (span(p) < 0.25 * size && p.x0 >= q.x0 - 0.1 * size && p.x1 <= q.x1 + 0.1 * size && (p.y1 < q.y0 || p.y0 > q.y1));
+  for (const p of widest) {
+    const base = widest.find((q) => q.id !== p.id && clusterOf.has(q.id) && span(q) >= span(p) && sitsOn(p, q));
+    clusterOf.set(p.id, base ? clusterOf.get(base.id)! : p.id);
+  }
+  const clusters = [...new Set(clusterOf.values())]
+    .map((root) => {
+      const members = kept.filter((p) => clusterOf.get(p.id) === root);
+      return { ids: members.map((p) => p.id), x0: Math.min(...members.map((p) => p.x0)), x1: Math.max(...members.map((p) => p.x1)) };
+    })
+    .sort((a, b) => a.x0 - b.x0);
+
+  const boxes = symbols.map((s) => ({ x0: s.box.x0 - rx0, x1: s.box.x1 - rx0 }));
+  const owner = pieces.map(() => -1);
+  const unsure = new Set<number>();
+  if (clusters.length === symbols.length) {
+    // As many letters of ink as OCR read: they go in order, whatever the boxes say.
+    clusters.forEach((cluster, k) => cluster.ids.forEach((id) => (owner[id] = k)));
+  } else {
+    // Otherwise by the centres of the boxes. Ink across two centres is touching letters;
+    // ink with none means the boxes are off here: the letters they overlap are left out.
+    const centres = boxes.map((b) => (b.x0 + b.x1) / 2);
+    for (const cluster of clusters) {
+      const inside = centres.flatMap((c, k) => (c >= cluster.x0 && c <= cluster.x1 + 1 ? [k] : []));
+      if (inside.length === 1) cluster.ids.forEach((id) => (owner[id] = inside[0]!));
+      const suspects =
+        inside.length > 1
+          ? inside
+          : inside.length
+            ? []
+            : boxes.flatMap((b, k) => (Math.min(b.x1, cluster.x1 + 1) - Math.max(b.x0, cluster.x0) > 0.3 * span(cluster) ? [k] : []));
+      for (const k of suspects) unsure.add(k);
+    }
+  }
+
+  return symbols.map((_, k) => {
+    const own = pieces.filter((_, id) => owner[id] === k);
+    if (unsure.has(k) || !own.length) return null;
+    const x0 = Math.min(...own.map((p) => p.x0));
+    const y0 = Math.min(...own.map((p) => p.y0));
+    const x1 = Math.max(...own.map((p) => p.x1)) + 1;
+    const y1 = Math.max(...own.map((p) => p.y1)) + 1;
+    const width = x1 - x0;
+    const height = y1 - y0;
+    // Ink much wider than the box: two touching letters, the other one boxed off its ink.
+    if (width > 1.5 * (boxes[k]!.x1 - boxes[k]!.x0) + 0.15 * size) return null;
+    // Its ink and the soft edge around it; another letter's ink, specks and the rest are paper.
+    const near = new Uint8Array(width * height);
+    for (const p of own) {
+      for (const at of p.pixels) {
+        const px = (at % W) - x0;
+        const py = Math.floor(at / W) - y0;
+        for (let y = Math.max(0, py - EDGE); y <= Math.min(height - 1, py + EDGE); y++) {
+          for (let x = Math.max(0, px - EDGE); x <= Math.min(width - 1, px + EDGE); x++) near[y * width + x] = 1;
+        }
+      }
+    }
+    const pixels = new Uint8ClampedArray(width * height).fill(255);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const id = piece[(y0 + y) * W + x0 + x]!;
+        const theirs = id !== -1 && owner[id] !== k;
+        if (near[y * width + x] && !theirs) pixels[y * width + x] = grey(x0 + x, y0 + y);
+      }
+    }
+    return { box: { x0: rx0 + x0, y0: ry0 + y0, x1: rx0 + x1, y1: ry0 + y1 }, width, height, pixels };
+  });
 }
 
 /**
@@ -218,29 +373,30 @@ export class ScanFont {
           }
         }
         const symbols = word.symbols ?? [];
+        const letters = letterInk(image, symbols, word.size);
         symbols.forEach((symbol, k) => {
           const following = symbols[k + 1];
-          if (following && symbol.confidence >= MIN_CONFIDENCE && following.confidence >= MIN_CONFIDENCE) {
-            const gap = (following.box.x0 - symbol.box.x1) / word.size;
+          const box = letters[k]?.box;
+          const nextBox = letters[k + 1]?.box;
+          if (following && box && nextBox && symbol.confidence >= MIN_CONFIDENCE && following.confidence >= MIN_CONFIDENCE) {
+            const gap = (nextBox.x0 - box.x1) / word.size;
             letterGaps[String(word.bold) as 'true'].push(gap);
             own.letters.push(gap);
             add(after, `${symbol.text}|${word.bold}`, gap);
             add(before, `${following.text}|${word.bold}`, gap);
             if (/^\d$/.test(symbol.text) && /^\d$/.test(following.text)) {
-              pitches[String(word.bold) as 'true'].push((following.box.x0 - symbol.box.x0) / word.size);
+              pitches[String(word.bold) as 'true'].push((nextBox.x0 - box.x0) / word.size);
             }
           }
-          const { box } = symbol;
+          // A letter that can't be cut apart from its neighbours would bring a piece of them along.
+          if (!box) return;
           const w = box.x1 - box.x0;
           const h = box.y1 - box.y0;
           if ([...symbol.text].length !== 1 || symbol.confidence < MIN_CONFIDENCE) return;
           if (w <= 0 || h <= 0 || w > 1.6 * word.size || h > 1.6 * word.size) return;
           // Punctuation is small; a wide "quote" is a letter OCR folded into it.
           if (!/[\p{L}\p{N}]/u.test(symbol.text) && w > 0.45 * word.size) return;
-          // Letters that touch their neighbours would bring a piece of them along.
-          const previous = symbols[k - 1];
-          if ((previous && previous.box.x1 > box.x0) || (following && following.box.x0 < box.x1)) return;
-          const cut = crop(image, box);
+          const cut = letters[k]!;
           let ink = 0;
           for (const p of cut.pixels) ink += 255 - p;
           const glyph: ScanGlyph = {
@@ -332,6 +488,33 @@ export class ScanFont {
     }
   }
 
+  /**
+   * The page's letters against a typeface's (`reference` draws one, at any
+   * size): to tell which typeface the page is set in, and how much larger to
+   * set it for its letters to stand as tall as the page's. Regular letters
+   * are compared where the page has enough of them. Null with too few
+   * letters in common.
+   */
+  likeness(reference: (char: string) => ScanGlyph | null): Likeness | null {
+    const letters = [...this.glyphs].filter(([char]) => /\p{L}/u.test(char));
+    const regular = letters.map(([char, samples]) => [char, samples.filter((g) => !g.bold)] as const).filter(([, s]) => s.length);
+    const pool = regular.length >= MIN_LIKENESS_LETTERS ? regular : letters;
+    const distances: number[] = [];
+    const ratios: number[] = [];
+    for (const [char, samples] of pool) {
+      const glyph = reference(char);
+      if (!glyph || !glyph.height) continue;
+      const sample = typical(samples);
+      const a = shapeOf(sample);
+      const b = shapeOf(glyph);
+      // Width to height, not ems: the page's size was measured as if it were Arial.
+      distances.push(inkDistance(a, b) + Math.abs(a.width / a.height - b.width / b.height));
+      ratios.push(a.height / b.height);
+    }
+    if (distances.length < MIN_LIKENESS_LETTERS) return null;
+    return { distance: distances.reduce((sum, d) => sum + d, 0) / distances.length, scale: median(ratios, 1), letters: distances.length };
+  }
+
   /** Characters the page has samples of. */
   get chars(): string[] {
     return [...this.glyphs.keys()];
@@ -349,12 +532,13 @@ export class ScanFont {
     // Letters from under a stamp bring bits of it along; clean ones from anywhere on the page do better.
     const clean = samples.filter((g) => !g.stamped);
     const all = clean.length ? clean : samples;
-    const own = all.filter((g) => (style.line !== undefined ? g.line === style.line : style.near ? centreIn(g.at, style.near) : false));
     const ratio = (g: ScanGlyph) => g.size / style.size;
     const fits = (g: ScanGlyph) => Math.abs(ratio(g) - 1) <= SAME_SIZE;
     const sameWeight = all.filter((g) => g.bold === style.bold);
-    // In order: the area's own letters; the same weight and size; the other weight at that
-    // size (made bolder or kept as is); the same weight scaled from the nearest size.
+    const own = sameWeight.filter((g) => (style.line !== undefined ? g.line === style.line : style.near ? centreIn(g.at, style.near) : false));
+    // In order: the area's own letters; the same weight and size; for bold, regular letters of
+    // that size made bolder; the same weight scaled from the nearest size. Never a bold letter
+    // in regular text: it stands out more than a letter of the fallback typeface does.
     let candidates = own.filter(fits);
     if (!candidates.length) candidates = sameWeight.filter(fits);
     let embolden = false;
@@ -362,9 +546,8 @@ export class ScanFont {
       candidates = all.filter((g) => !g.bold && fits(g));
       embolden = candidates.length > 0;
     }
-    if (!candidates.length) candidates = all.filter(fits);
     if (!candidates.length) {
-      const pool = sameWeight.length ? sameWeight : all;
+      const pool = sameWeight.length || !style.bold ? sameWeight : all;
       if (!pool.length) return null;
       const nearest = Math.min(...pool.map((g) => Math.abs(ratio(g) - 1)));
       if (nearest > MAX_SCALE) return null;

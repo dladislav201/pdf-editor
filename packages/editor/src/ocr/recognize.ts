@@ -212,9 +212,10 @@ export async function recognizeRaster(source: Raster, engine: OcrEngine, options
       // Short words ("№", "1") measure poorly: a line that is mostly bold is all bold, and vice versa.
       const boldShare = lineWords.filter(isBold).length / lineWords.length;
       const bold = boldShare >= 0.6 || (boldShare > 0.4 && isBold(w));
-      // Fixed look-alikes apply to the letters too, when they still line up one to one.
+      // Fixed look-alikes apply to the letters too, when they still line up one to one. When they
+      // don't ("Мо17" was "№17"), the letters say nothing about what is where: none are cut from it.
       const letters = [...texts[i]!];
-      const symbols = w.symbols?.length === letters.length ? w.symbols.map((s, k) => ({ ...s, text: letters[k]! })) : w.symbols;
+      const symbols = w.symbols?.length === letters.length ? w.symbols.map((s, k) => ({ ...s, text: letters[k]! })) : undefined;
       w = { ...w, box: own };
       const box = straight === clean ? own : unrotateBox(own, angle, source.width, source.height);
       const stamped = share(colored, source.width, box) >= STAMPED_SHARE;
