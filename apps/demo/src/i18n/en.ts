@@ -63,7 +63,7 @@ export const en = {
     allTools: 'All tools',
     guides: 'Guides',
     sdk: 'PDF SDK for developers',
-    privacy: 'No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used, with no cookies.',
+    privacy: 'No sign-up, no uploads: files are opened and saved on your device. We only count which tools get used and whether you came from one of our answers in a community, with no cookies.',
   },
   workspace: {
     back: 'Back to start',

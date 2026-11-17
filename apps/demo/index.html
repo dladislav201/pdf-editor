@@ -30,6 +30,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Tact, our community helper: counts visits from links in our answers on Reddit, HN and the like, and an SDK
+         trial request after them. No cookies. It stays before /src/main.tsx, which may rewrite the address first. -->
+    <script defer src="https://tact.peer-mcp.workers.dev/t.js" data-project="pdf-sdk"></script>
   </head>
   <body>
     <div id="root"><!--app--></div>

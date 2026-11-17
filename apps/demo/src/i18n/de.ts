@@ -47,7 +47,7 @@ export const de: Messages = {
     guides: 'Anleitungen',
     sdk: 'PDF-SDK für Entwickler',
     privacy:
-      'Ohne Anmeldung, ohne Upload: Dateien werden auf Ihrem Gerät geöffnet und gespeichert. Wir zählen nur, welche Werkzeuge genutzt werden – ohne Cookies.',
+      'Ohne Anmeldung, ohne Upload: Dateien werden auf Ihrem Gerät geöffnet und gespeichert. Wir zählen nur, welche Werkzeuge genutzt werden und ob Sie über eine unserer Antworten in einer Community kamen – ohne Cookies.',
   },
   workspace: {
     back: 'Zurück zum Start',

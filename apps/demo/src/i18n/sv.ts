@@ -47,7 +47,7 @@ export const sv: Messages = {
     guides: 'Guider',
     sdk: 'PDF-SDK för utvecklare',
     privacy:
-      'Ingen registrering, ingen uppladdning: filerna öppnas och sparas på din enhet. Vi räknar bara vilka verktyg som används, utan cookies.',
+      'Ingen registrering, ingen uppladdning: filerna öppnas och sparas på din enhet. Vi räknar bara vilka verktyg som används och om du kom från ett av våra svar i en community, utan cookies.',
   },
   workspace: {
     back: 'Tillbaka till start',

@@ -101,6 +101,8 @@ export function SdkPage() {
       const response = await fetch('/api/trial', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!response.ok) throw new Error(String(response.status));
       track('sdk.trial');
+      // A trial request is the result Tact counts for a visit from one of our community answers (index.html).
+      window.tact?.('signup');
       setSentTo(body.email ?? '');
       setStatus('sent');
     } catch {

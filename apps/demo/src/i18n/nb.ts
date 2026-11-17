@@ -47,7 +47,7 @@ export const nb: Messages = {
     guides: 'Veiledninger',
     sdk: 'PDF-SDK for utviklere',
     privacy:
-      'Ingen registrering, ingen opplasting: filene åpnes og lagres på enheten din. Vi teller bare hvilke verktøy som brukes, uten informasjonskapsler.',
+      'Ingen registrering, ingen opplasting: filene åpnes og lagres på enheten din. Vi teller bare hvilke verktøy som brukes og om du kom fra et av svarene våre i et fellesskap, uten informasjonskapsler.',
   },
   workspace: {
     back: 'Tilbake til start',
